@@ -4,10 +4,10 @@ import os
 from pathlib import Path
 
 # Qt/QUrl 提供表格对齐、颜色常量和本地文件 URL。
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QEvent, QSize, Qt, QUrl
 # QDesktopServices 用于调用系统默认程序打开合同文件。
-from PySide6.QtGui import QDesktopServices
-# 这些控件用于构建主窗口、工具栏、搜索框和合同表格。
+from PySide6.QtGui import QBrush, QDesktopServices
+# 这些控件用于构建主窗口、工具栏、搜索框和可展开合同列表。
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -17,36 +17,53 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
     QToolBar,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 # Database 提供合同查询、统计和增删改查能力。
-from database import Database
+from database import Database, DuplicateContractNumberError, InvalidContractNumberError
 # Contract 是主窗口中保存合同列表时使用的数据类型。
 from models import Contract
 # ContractForm 是新增和编辑合同的弹窗。
 from ui.contract_form import ContractForm
+# RecordForm 是批量添加开票/收款记录的弹窗。
+from ui.record_form import RecordForm
+# RecordsWindow 是查看某份合同全部记录的独立窗口。
+from ui.records_window import RecordsWindow
 # StatsWindow 是合同统计弹窗。
 from ui.stats_window import StatsWindow
 
 
+class ContractTreeWidget(QTreeWidget):
+    # 点击树形列表空白区域时清空当前选中行。
+    def mousePressEvent(self, event) -> None:
+        if not self.indexAt(event.position().toPoint()).isValid():
+            parent = self.window()
+            if hasattr(parent, "clear_table_selection"):
+                parent.clear_table_selection()
+            else:
+                self.clearSelection()
+                self.setCurrentItem(None)
+        super().mousePressEvent(event)
+
+
 class MainWindow(QMainWindow):
-    # 合同列表表格的列标题，后续创建表格和填充数据时会复用。
+    # 树形列表的列标题；合同是父行，开票/收款记录是子行。
     columns = [
         "ID",
         "合同名称",
         "合同编号",
-        "对方名称",
+        "甲方名称",
         "金额",
+        "是否开局发票",
         "签订日期",
         "开始日期",
         "截止日期",
         "状态",
-        "文件路径",
         "备注",
     ]
 
@@ -64,19 +81,16 @@ class MainWindow(QMainWindow):
         self.refresh_table()
         self.show_expiring_reminder()
 
-    # 创建主窗口中的工具栏、搜索框、按钮、合同表格和底部提示。
+    # 创建主窗口中的工具栏、搜索框、按钮、树形列表和底部提示。
     def _build_ui(self) -> None:
-        # 顶部工具栏承载搜索、新增、编辑、删除和统计入口。
         toolbar = QToolBar("工具栏")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        # 搜索框按回车时直接刷新合同列表。
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("搜索合同名称、合同编号、对方名称")
+        self.search_edit.setPlaceholderText("搜索合同名称、合同编号、甲方名称")
         self.search_edit.returnPressed.connect(self.refresh_table)
 
-        # 将按钮点击信号连接到对应的窗口方法。
         search_button = QPushButton("搜索")
         search_button.clicked.connect(self.refresh_table)
 
@@ -86,47 +100,67 @@ class MainWindow(QMainWindow):
         add_button = QPushButton("新增")
         add_button.clicked.connect(self.add_contract)
 
-        edit_button = QPushButton("编辑")
-        edit_button.clicked.connect(self.edit_selected_contract)
+        self.edit_button = QPushButton("编辑")
+        self.edit_button.setEnabled(False)
+        self.edit_button.clicked.connect(self.edit_selected_contract)
+
+        self.open_file_button = QPushButton("打开文件")
+        self.open_file_button.setEnabled(False)
+        self.open_file_button.clicked.connect(self.open_selected_file)
 
         delete_button = QPushButton("删除")
         delete_button.clicked.connect(self.delete_selected_contract)
 
+        self.add_record_button = QPushButton("添加记录")
+        self.add_record_button.setEnabled(False)
+        self.add_record_button.clicked.connect(self.add_records)
+
+        self.view_records_button = QPushButton("查看记录")
+        self.view_records_button.setEnabled(False)
+        self.view_records_button.clicked.connect(self.view_records)
+
         stats_button = QPushButton("统计")
         stats_button.clicked.connect(self.open_stats)
 
-        # 按从左到右的顺序把控件放入工具栏。
         toolbar.addWidget(QLabel("关键词："))
         toolbar.addWidget(self.search_edit)
         toolbar.addWidget(search_button)
         toolbar.addWidget(reset_button)
         toolbar.addSeparator()
         toolbar.addWidget(add_button)
-        toolbar.addWidget(edit_button)
+        toolbar.addWidget(self.edit_button)
         toolbar.addWidget(delete_button)
         toolbar.addSeparator()
+        toolbar.addWidget(self.add_record_button)
+        toolbar.addWidget(self.open_file_button)
+        toolbar.addWidget(self.view_records_button)
         toolbar.addWidget(stats_button)
 
-        #顶部摘要标签显示合同总数和金额统计，后续会在刷新表格时更新文本内容。
         self.summary_label = QLabel()
 
-        # 合同列表使用表格展示，禁止直接编辑，编辑动作统一走弹窗。
-        self.table = QTableWidget(0, len(self.columns))
-        self.table.setHorizontalHeaderLabels(self.columns)
+        self.table = ContractTreeWidget()
+        self.table.setColumnCount(len(self.columns))
+        self.table.setHeaderLabels(self.columns)
+        for column in range(len(self.columns)):
+            self.table.headerItem().setTextAlignment(column, Qt.AlignCenter)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.doubleClicked.connect(self.open_selected_file)
-        self.table.verticalHeader().setVisible(False)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(9, QHeaderView.Stretch)
-        
-        #创建一个显示提示文字的标签
-        hint = QLabel("提示：双击合同所在行可打开扫描件或 PDF 文件。")
+        self.table.itemDoubleClicked.connect(lambda _item, _column: self.edit_selected_contract())
+        self.table.itemSelectionChanged.connect(self.update_action_buttons)
+        self.table.setFocusPolicy(Qt.NoFocus)
+        self.table.setRootIsDecorated(False)
+        self.table.setItemsExpandable(True)
+        self.table.setIndentation(0)
+        self.table.setUniformRowHeights(True)
+        self.table.setSortingEnabled(True)
+        self.table.header().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.header().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.header().setSectionResizeMode(10, QHeaderView.Stretch)
+
+        hint = QLabel("提示：双击合同所在行可编辑合同；选中合同后可添加或查看记录。")
         hint.setObjectName("hintLabel")
 
-        # 主内容区从上到下依次放摘要、表格和操作提示。
         content = QWidget()
         layout = QVBoxLayout(content)
         top_row = QHBoxLayout()
@@ -137,7 +171,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(hint)
         self.setCentralWidget(content)
 
-    # 设置窗口、工具栏、按钮、表格等控件的整体视觉样式。
+        content.installEventFilter(self)
+        self.summary_label.installEventFilter(self)
+        hint.installEventFilter(self)
+
+    # 设置窗口、工具栏、按钮、树形列表等控件的整体视觉样式。
     def _apply_styles(self) -> None:
         self.setStyleSheet(
             """
@@ -167,12 +205,26 @@ class MainWindow(QMainWindow):
                 background: #eef4ff;
                 border-color: #7aa7e8;
             }
-            QTableWidget {
+            QPushButton:disabled {
+                color: #98a2b3;
+                background: #f2f4f7;
+                border-color: #d0d5dd;
+            }
+            QTreeWidget {
                 background: #ffffff;
                 border: 1px solid #d9dee7;
-                gridline-color: #edf0f5;
-                selection-background-color: #d8e8ff;
-                selection-color: #1f2937;
+                selection-background-color: #b9d8ff;
+                selection-color: #0f172a;
+                alternate-background-color: #fafbfc;
+            }
+            QTreeWidget::item {
+                padding: 2px 6px;
+                border-bottom: 1px solid #edf0f5;
+            }
+            QTreeWidget::item:selected {
+                background: #b9d8ff;
+                color: #0f172a;
+                outline: none;
             }
             QHeaderView::section {
                 background: #eef1f5;
@@ -193,46 +245,86 @@ class MainWindow(QMainWindow):
             """
         )
 
-    # 按当前搜索关键词重新查询合同，并把结果填入表格。
+    # 按当前搜索关键词重新查询合同，并把合同和子记录填入树形列表。
     def refresh_table(self) -> None:
         keyword = self.search_edit.text()
         self.contracts = self.database.list_contracts(keyword)
-        self.table.setRowCount(len(self.contracts))
+        self.table.setSortingEnabled(False)
+        self.table.clear()
 
-        for row, contract in enumerate(self.contracts):
-            # 每个合同对象转换成一行表格数据。
-            values = [
-                contract.id,
-                contract.contract_name,
-                contract.contract_number,
-                contract.party_name,
-                f"¥ {contract.amount:,.2f}",
-                contract.sign_date,
-                contract.start_date,
-                contract.end_date,
-                contract.status,
-                contract.file_path,
-                contract.remark,
-            ]
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(str(value))
-                if column in (0, 4, 5, 6, 7, 8):
-                    item.setTextAlignment(Qt.AlignCenter)
-                item.setData(Qt.UserRole, contract.id)
-                self.table.setItem(row, column, item)
+        for contract in self.contracts:
+            contract_item = self._create_contract_item(contract)
+            self.table.addTopLevelItem(contract_item)
 
-            # 状态列使用颜色提示合同风险。
-            status_item = self.table.item(row, 8)
-            if contract.status == "已到期":
-                status_item.setForeground(Qt.red)
-            elif contract.status == "即将到期":
-                status_item.setForeground(Qt.darkYellow)
-            else:
-                status_item.setForeground(Qt.darkGreen)
+            # 如需在合同下方展开显示开票/收款子记录，可以取消下面两行注释。
+            # for record in self.database.list_contract_records(contract.id or 0):
+            #     contract_item.addChild(self._create_record_item(record, contract.id or 0))
 
         self.summary_label.setText(
             f"共 {len(self.contracts)} 份合同    总金额：¥ {self.database.total_amount():,.2f}"
         )
+        self.table.setSortingEnabled(True)
+        self.clear_table_selection()
+
+    # 把一份合同转换为树形列表中的父行。
+    def _create_contract_item(self, contract: Contract) -> QTreeWidgetItem:
+        values = [
+            contract.id,
+            contract.contract_name,
+            contract.contract_number,
+            contract.party_name,
+            f"¥ {contract.amount:,.2f}",
+            contract.invoice_status,
+            contract.sign_date,
+            contract.start_date,
+            contract.end_date,
+            contract.status,
+            contract.remark,
+        ]
+        item = QTreeWidgetItem([str(value) for value in values])
+        item.setData(0, Qt.UserRole, contract.id)
+        item.setData(4, Qt.EditRole, contract.amount)
+        item.setSizeHint(0, QSize(0, 28))
+
+        for column in (0, 4, 5, 6, 7, 8, 9):
+            item.setTextAlignment(column, Qt.AlignCenter)
+
+        if contract.status == "已到期":
+            item.setForeground(9, QBrush(Qt.red))
+        elif contract.status == "即将到期":
+            item.setForeground(9, QBrush(Qt.darkYellow))
+        else:
+            item.setForeground(9, QBrush(Qt.darkGreen))
+
+        return item
+
+    # 把一条开票或收款记录转换为合同父行下面的子行。
+    def _create_record_item(self, record, contract_id: int) -> QTreeWidgetItem:
+        amount = float(record["amount"] or 0)
+        values = [
+            record["record_type"],
+            record["record_date"],
+            "",
+            "",
+            f"¥ {amount:,.2f}",
+            "",
+            "",
+            "",
+            "",
+            "",
+            record["remark"] or "",
+        ]
+        item = QTreeWidgetItem([str(value) for value in values])
+        item.setData(0, Qt.UserRole, contract_id)
+        item.setData(4, Qt.EditRole, amount)
+        item.setSizeHint(0, QSize(0, 22))
+
+        color = Qt.darkBlue if record["record_type"] == "开票记录" else Qt.darkGreen
+        item.setForeground(0, QBrush(color))
+        item.setTextAlignment(0, Qt.AlignCenter)
+        item.setTextAlignment(1, Qt.AlignLeft | Qt.AlignVCenter)
+        item.setTextAlignment(4, Qt.AlignCenter)
+        return item
 
     # 程序启动时提醒 30 天内即将到期的合同。
     def show_expiring_reminder(self) -> None:
@@ -251,22 +343,56 @@ class MainWindow(QMainWindow):
         self.search_edit.clear()
         self.refresh_table()
 
-    # 读取当前选中行的合同 ID；没有选中时返回 None。
-    def selected_contract_id(self) -> int | None:
-        row = self.table.currentRow()
-        if row < 0:
-            return None
-        item = self.table.item(row, 0)
-        return int(item.text()) if item else None
+    # 捕获主内容区空白点击，用于取消当前选中行。
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.MouseButtonPress and watched is not self.table:
+            self.clear_table_selection()
+        return super().eventFilter(watched, event)
 
-    # 打开新增合同弹窗，保存成功后刷新表格。
+    # 清空树形列表当前选择，并同步禁用依赖选中行的按钮。
+    def clear_table_selection(self) -> None:
+        self.table.clearSelection()
+        self.table.setCurrentItem(None)
+        self.update_action_buttons()
+
+    # 读取当前选中行对应的合同 ID；选中子记录时会回到它所属的合同。
+    def selected_contract_id(self) -> int | None:
+        selection = self.table.selectionModel()
+        if selection is None or not selection.hasSelection():
+            return None
+
+        item = self.table.currentItem()
+        if item is None:
+            return None
+        if item.parent() is not None:
+            item = item.parent()
+
+        contract_id = item.data(0, Qt.UserRole)
+        return int(contract_id) if contract_id is not None else None
+
+    # 根据当前是否选中合同，启用或禁用编辑、打开文件、添加记录和查看记录按钮。
+    def update_action_buttons(self) -> None:
+        has_selection = self.selected_contract_id() is not None
+        self.edit_button.setEnabled(has_selection)
+        self.open_file_button.setEnabled(has_selection)
+        self.add_record_button.setEnabled(has_selection)
+        self.view_records_button.setEnabled(has_selection)
+
+    # 打开新增合同弹窗，保存成功后刷新树形列表。
     def add_contract(self) -> None:
         dialog = ContractForm(self)
         if dialog.exec():
-            self.database.add_contract(dialog.get_contract())
+            try:
+                self.database.add_contract(dialog.get_contract())
+            except InvalidContractNumberError:
+                QMessageBox.warning(self, "合同编号格式错误", "合同编号必须是 12 位数字。")
+                return
+            except DuplicateContractNumberError:
+                QMessageBox.warning(self, "合同编号重复", "该合同编号已存在，请修改后再保存。")
+                return
             self.refresh_table()
 
-    # 打开编辑合同弹窗，保存成功后更新数据库并刷新表格。
+    # 打开编辑合同弹窗，保存成功后更新数据库并刷新树形列表。
     def edit_selected_contract(self) -> None:
         contract_id = self.selected_contract_id()
         if contract_id is None:
@@ -281,7 +407,14 @@ class MainWindow(QMainWindow):
 
         dialog = ContractForm(self, contract)
         if dialog.exec():
-            self.database.update_contract(dialog.get_contract())
+            try:
+                self.database.update_contract(dialog.get_contract())
+            except InvalidContractNumberError:
+                QMessageBox.warning(self, "合同编号格式错误", "合同编号必须是 12 位数字。")
+                return
+            except DuplicateContractNumberError:
+                QMessageBox.warning(self, "合同编号重复", "该合同编号已存在，请修改后再保存。")
+                return
             self.refresh_table()
 
     # 删除当前选中的合同，删除前先要求用户确认。
@@ -294,7 +427,7 @@ class MainWindow(QMainWindow):
         reply = QMessageBox.question(
             self,
             "确认删除",
-            "确定要删除选中的合同吗？此操作不可撤销。",
+            "确定要删除选中的合同吗？此操作不可撤销。\n该合同下的开票记录和收款记录也会一起删除。",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -302,7 +435,7 @@ class MainWindow(QMainWindow):
             self.database.delete_contract(contract_id)
             self.refresh_table()
 
-    # 双击合同表格行时，用系统默认程序打开已保存的合同文件。
+    # 选中合同后，用系统默认程序打开已保存的合同文件。
     def open_selected_file(self) -> None:
         contract_id = self.selected_contract_id()
         if contract_id is None:
@@ -321,7 +454,44 @@ class MainWindow(QMainWindow):
         if not QDesktopServices.openUrl(QUrl.fromLocalFile(os.fspath(path))):
             QMessageBox.warning(self, "打开失败", "系统无法打开该文件。")
 
-    # 打开统计窗口，关闭后刷新主表格以同步最新状态。
+    # 为当前合同批量添加开票记录和收款记录，保存后刷新子条目。
+    def add_records(self) -> None:
+        contract_id = self.selected_contract_id()
+        if contract_id is None:
+            QMessageBox.information(self, "提示", "请先选择一份合同。")
+            return
+
+        contract = self.database.get_contract(contract_id)
+        if contract is None:
+            QMessageBox.warning(self, "提示", "未找到该合同，列表将刷新。")
+            self.refresh_table()
+            return
+
+        dialog = RecordForm(contract.contract_name, self)
+        if dialog.exec():
+            self.database.add_invoice_records(contract_id, dialog.invoice_records())
+            self.database.add_payment_records(contract_id, dialog.payment_records())
+            self.refresh_table()
+            QMessageBox.information(self, "保存成功", "开票记录和收款记录已保存，可展开合同查看。")
+
+    # 打开独立记录查看窗口，按页签查看开票和收款明细。
+    def view_records(self) -> None:
+        contract_id = self.selected_contract_id()
+        if contract_id is None:
+            QMessageBox.information(self, "提示", "请先选择一份合同。")
+            return
+
+        contract = self.database.get_contract(contract_id)
+        if contract is None:
+            QMessageBox.warning(self, "提示", "未找到该合同，列表将刷新。")
+            self.refresh_table()
+            return
+
+        dialog = RecordsWindow(self.database, contract_id, contract.contract_name, self)
+        dialog.exec()
+        self.refresh_table()
+
+    # 打开统计窗口，关闭后刷新主列表以同步最新状态。
     def open_stats(self) -> None:
         dialog = StatsWindow(self.database, self)
         dialog.exec()

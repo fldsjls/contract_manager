@@ -17,6 +17,7 @@ class Contract:
     start_date: str = ""
     end_date: str = ""
     status: str = "进行中"
+    invoice_status: str = "不开票"
     file_path: str = ""
     remark: str = ""
     created_at: str = ""
@@ -35,6 +36,7 @@ class Contract:
             start_date=row["start_date"] or "",
             end_date=row["end_date"] or "",
             status=row["status"] or "",
+            invoice_status=row["invoice_status"] or "不开票",
             file_path=row["file_path"] or "",
             remark=row["remark"] or "",
             created_at=row["created_at"] or "",

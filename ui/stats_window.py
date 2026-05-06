@@ -32,7 +32,7 @@ class StatsWindow(QDialog):
 
         # 即将到期合同使用表格展示，禁止在统计窗口中直接编辑。
         self.expiring_table = QTableWidget(0, 4)
-        self.expiring_table.setHorizontalHeaderLabels(["合同名称", "合同编号", "对方名称", "截止日期"])
+        self.expiring_table.setHorizontalHeaderLabels(["合同名称", "合同编号", "甲方名称", "截止日期"])
         self.expiring_table.horizontalHeader().setStretchLastSection(True)
         self.expiring_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.expiring_table.setSelectionBehavior(QTableWidget.SelectRows)

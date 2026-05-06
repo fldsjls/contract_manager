@@ -23,6 +23,22 @@ EXPIRING_STATUS = "即将到期"
 EXPIRED_STATUS = "已到期"
 
 
+# 合同编号重复时抛出的自定义异常，便于界面层显示对应提示。
+class DuplicateContractNumberError(ValueError):
+    pass
+
+
+# 合同编号格式不符合 12 位数字要求时抛出的自定义异常。
+class InvalidContractNumberError(ValueError):
+    pass
+
+
+# 校验合同编号格式：必须是 12 位数字。
+def validate_contract_number(contract_number: str) -> None:
+    if len(contract_number) != 12 or not contract_number.isdigit():
+        raise InvalidContractNumberError("合同编号必须是 12 位数字")
+
+
 # 将 yyyy-MM-dd 文本转换为 date；无法解析时返回 None。
 def parse_date(value: str) -> Optional[date]:
     if not value:
@@ -69,6 +85,7 @@ class Database:
                     start_date TEXT,
                     end_date TEXT,
                     status TEXT NOT NULL DEFAULT '进行中',
+                    invoice_status TEXT NOT NULL DEFAULT '不开票',
                     file_path TEXT,
                     remark TEXT,
                     created_at TEXT NOT NULL,
@@ -80,12 +97,54 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_contracts_search "
                 "ON contracts(contract_name, contract_number, party_name)"
             )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_contracts_number_unique "
+                "ON contracts(contract_number)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS invoice_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    contract_id INTEGER NOT NULL,
+                    record_date TEXT NOT NULL,
+                    amount REAL NOT NULL DEFAULT 0,
+                    remark TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(contract_id) REFERENCES contracts(id) ON DELETE CASCADE
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS payment_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    contract_id INTEGER NOT NULL,
+                    record_date TEXT NOT NULL,
+                    amount REAL NOT NULL DEFAULT 0,
+                    remark TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(contract_id) REFERENCES contracts(id) ON DELETE CASCADE
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_invoice_records_contract "
+                "ON invoice_records(contract_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_payment_records_contract "
+                "ON payment_records(contract_id)"
+            )
             self.migrate_schema(conn)
+            self.ensure_invoice_column(conn)
 
     # 创建数据库连接，并在操作结束后自动提交和关闭。
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
         conn.row_factory = sqlite3.Row
         try:
             yield conn
@@ -114,6 +173,7 @@ class Database:
                 start_date TEXT,
                 end_date TEXT,
                 status TEXT NOT NULL DEFAULT '进行中',
+                invoice_status TEXT NOT NULL DEFAULT '不开票',
                 file_path TEXT,
                 remark TEXT,
                 created_at TEXT NOT NULL,
@@ -125,12 +185,12 @@ class Database:
             """
             INSERT INTO contracts (
                 id, contract_name, contract_number, party_name, amount,
-                sign_date, start_date, end_date, status, file_path,
+                sign_date, start_date, end_date, status, invoice_status, file_path,
                 remark, created_at, updated_at
             )
             SELECT
                 id, contract_name, contract_number, party_name, amount,
-                sign_date, start_date, end_date, status, file_path,
+                sign_date, start_date, end_date, status, '不开票', file_path,
                 remark, created_at, updated_at
             FROM contracts_old
             """
@@ -140,6 +200,10 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_contracts_search "
             "ON contracts(contract_name, contract_number, party_name)"
         )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_contracts_number_unique "
+            "ON contracts(contract_number)"
+        )
         rows = conn.execute("SELECT id, end_date FROM contracts").fetchall()
         for item in rows:
             conn.execute(
@@ -147,8 +211,43 @@ class Database:
                 (calculate_status(item["end_date"] or ""), item["id"]),
             )
 
+    # 确保旧数据库也具备“是否开局发票”字段。
+    def ensure_invoice_column(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(contracts)").fetchall()
+        }
+        if "invoice_status" not in columns:
+            conn.execute(
+                "ALTER TABLE contracts "
+                "ADD COLUMN invoice_status TEXT NOT NULL DEFAULT '不开票'"
+            )
+
+    # 检查合同编号是否已被其他合同使用。
+    def contract_number_exists(self, contract_number: str, exclude_id: int | None = None) -> bool:
+        with self.connect() as conn:
+            if exclude_id is None:
+                row = conn.execute(
+                    "SELECT 1 FROM contracts WHERE contract_number = ? LIMIT 1",
+                    (contract_number,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT 1 FROM contracts
+                    WHERE contract_number = ? AND id != ?
+                    LIMIT 1
+                    """,
+                    (contract_number, exclude_id),
+                ).fetchone()
+        return row is not None
+
     # 新增一份合同，并返回新合同的数据库 ID。
     def add_contract(self, contract: Contract) -> int:
+        validate_contract_number(contract.contract_number)
+        if self.contract_number_exists(contract.contract_number):
+            raise DuplicateContractNumberError("合同编号已存在")
+
         timestamp = now_text()
         status = calculate_status(contract.end_date)
         with self.connect() as conn:
@@ -156,10 +255,10 @@ class Database:
                 """
                 INSERT INTO contracts (
                     contract_name, contract_number, party_name, amount,
-                    sign_date, start_date, end_date, status, file_path,
+                    sign_date, start_date, end_date, status, invoice_status, file_path,
                     remark, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     contract.contract_name,
@@ -170,6 +269,7 @@ class Database:
                     contract.start_date,
                     contract.end_date,
                     status,
+                    contract.invoice_status,
                     contract.file_path,
                     contract.remark,
                     timestamp,
@@ -182,6 +282,9 @@ class Database:
     def update_contract(self, contract: Contract) -> None:
         if contract.id is None:
             raise ValueError("更新合同时缺少 ID")
+        validate_contract_number(contract.contract_number)
+        if self.contract_number_exists(contract.contract_number, contract.id):
+            raise DuplicateContractNumberError("合同编号已存在")
 
         with self.connect() as conn:
             conn.execute(
@@ -195,6 +298,7 @@ class Database:
                     start_date = ?,
                     end_date = ?,
                     status = ?,
+                    invoice_status = ?,
                     file_path = ?,
                     remark = ?,
                     updated_at = ?
@@ -209,6 +313,7 @@ class Database:
                     contract.start_date,
                     contract.end_date,
                     calculate_status(contract.end_date),
+                    contract.invoice_status,
                     contract.file_path,
                     contract.remark,
                     now_text(),
@@ -221,13 +326,98 @@ class Database:
         with self.connect() as conn:
             conn.execute("DELETE FROM contracts WHERE id = ?", (contract_id,))
 
+    # 批量新增某份合同的开票记录。
+    def add_invoice_records(self, contract_id: int, records: Iterable[dict]) -> None:
+        self.add_contract_records("invoice_records", contract_id, records)
+
+    # 批量新增某份合同的收款记录。
+    def add_payment_records(self, contract_id: int, records: Iterable[dict]) -> None:
+        self.add_contract_records("payment_records", contract_id, records)
+
+    # 查询某份合同的开票记录，用于主窗口子条目和记录查看窗口展示。
+    def list_invoice_records(self, contract_id: int) -> list[sqlite3.Row]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, contract_id, record_date, amount, remark, created_at, updated_at
+                FROM invoice_records
+                WHERE contract_id = ?
+                ORDER BY record_date ASC, id ASC
+                """,
+                (contract_id,),
+            ).fetchall()
+        return rows
+
+    # 查询某份合同的收款记录，用于主窗口子条目和记录查看窗口展示。
+    def list_payment_records(self, contract_id: int) -> list[sqlite3.Row]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, contract_id, record_date, amount, remark, created_at, updated_at
+                FROM payment_records
+                WHERE contract_id = ?
+                ORDER BY record_date ASC, id ASC
+                """,
+                (contract_id,),
+            ).fetchall()
+        return rows
+
+    # 合并查询某份合同的开票和收款记录，方便在主窗口作为合同子条目显示。
+    def list_contract_records(self, contract_id: int) -> list[sqlite3.Row]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT '开票记录' AS record_type, id, contract_id, record_date, amount, remark
+                FROM invoice_records
+                WHERE contract_id = ?
+                UNION ALL
+                SELECT '收款记录' AS record_type, id, contract_id, record_date, amount, remark
+                FROM payment_records
+                WHERE contract_id = ?
+                ORDER BY record_date ASC, record_type ASC, id ASC
+                """,
+                (contract_id, contract_id),
+            ).fetchall()
+        return rows
+
+    # 向指定记录表批量写入记录；table 只允许内部固定表名。
+    def add_contract_records(self, table: str, contract_id: int, records: Iterable[dict]) -> None:
+        if table not in {"invoice_records", "payment_records"}:
+            raise ValueError("未知记录表")
+
+        timestamp = now_text()
+        rows = [
+            (
+                contract_id,
+                item["record_date"],
+                float(item["amount"]),
+                item.get("remark", ""),
+                timestamp,
+                timestamp,
+            )
+            for item in records
+        ]
+        if not rows:
+            return
+
+        with self.connect() as conn:
+            conn.executemany(
+                f"""
+                INSERT INTO {table} (
+                    contract_id, record_date, amount, remark, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+
     # 根据合同 ID 查询单份合同；查不到时返回 None。
     def get_contract(self, contract_id: int) -> Optional[Contract]:
         with self.connect() as conn:
             row = conn.execute("SELECT * FROM contracts WHERE id = ?", (contract_id,)).fetchone()
         return Contract.from_row(row) if row else None
 
-    # 查询合同列表，支持按合同名称、合同编号、对方名称模糊搜索。
+    # 查询合同列表，支持按合同名称、合同编号、甲方名称模糊搜索。
     def list_contracts(self, keyword: str = "") -> list[Contract]:
         self.refresh_statuses()
         keyword = keyword.strip()

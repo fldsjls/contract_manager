@@ -1,10 +1,11 @@
-# date 用于在日期字段为空或格式异常时提供默认日期。
-from datetime import date
+# date/datetime 用于处理默认日期和默认合同编号。
+from datetime import date, datetime
 
 # QDate 是 PySide6 的日期类型，配合日期选择控件使用。
 from PySide6.QtCore import QDate
 # 这些控件用于构建新增/编辑合同的弹窗表单。
 from PySide6.QtWidgets import (
+    QComboBox,
     QDateEdit,
     QDialog,
     QDialogButtonBox,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 # Contract 是表单保存后返回给数据库层的数据对象。
+from database import InvalidContractNumberError, validate_contract_number
 from models import Contract
 
 
@@ -36,6 +38,7 @@ class ContractForm(QDialog):
         # 基础文本输入框。
         self.name_edit = QLineEdit()
         self.number_edit = QLineEdit()
+        self.number_edit.setText(generate_contract_number())
         self.party_edit = QLineEdit()
 
         # 金额输入框支持小数，并限制为非负金额。
@@ -44,6 +47,10 @@ class ContractForm(QDialog):
         self.amount_edit.setDecimals(2)
         self.amount_edit.setSingleStep(1000)
         self.amount_edit.setPrefix("¥ ")
+
+        # 是否开局发票使用固定选项，避免手工输入不一致。
+        self.invoice_status_edit = QComboBox()
+        self.invoice_status_edit.addItems(["不开票", "开票"])
 
         # 日期字段统一使用可弹出日历的日期选择控件。
         self.sign_date_edit = self._date_edit()
@@ -65,8 +72,9 @@ class ContractForm(QDialog):
         form = QFormLayout()
         form.addRow("合同名称 *", self.name_edit)
         form.addRow("合同编号 *", self.number_edit)
-        form.addRow("对方名称 *", self.party_edit)
+        form.addRow("甲方名称 *", self.party_edit)
         form.addRow("合同金额", self.amount_edit)
+        form.addRow("是否开局发票", self.invoice_status_edit)
         form.addRow("签订日期", self.sign_date_edit)
         form.addRow("开始日期", self.start_date_edit)
         form.addRow("截止日期", self.end_date_edit)
@@ -102,6 +110,7 @@ class ContractForm(QDialog):
         self.number_edit.setText(contract.contract_number)
         self.party_edit.setText(contract.party_name)
         self.amount_edit.setValue(contract.amount)
+        self.invoice_status_edit.setCurrentText(contract.invoice_status or "不开票")
         self.sign_date_edit.setDate(to_qdate(contract.sign_date))
         self.start_date_edit.setDate(to_qdate(contract.start_date))
         self.end_date_edit.setDate(to_qdate(contract.end_date))
@@ -127,8 +136,13 @@ class ContractForm(QDialog):
         if not self.number_edit.text().strip():
             QMessageBox.warning(self, "提示", "请填写合同编号。")
             return
+        try:
+            validate_contract_number(self.number_edit.text().strip())
+        except InvalidContractNumberError:
+            QMessageBox.warning(self, "提示", "合同编号必须是 12 位数字。")
+            return
         if not self.party_edit.text().strip():
-            QMessageBox.warning(self, "提示", "请填写对方名称。")
+            QMessageBox.warning(self, "提示", "请填写甲方名称。")
             return
         self.accept()
 
@@ -141,6 +155,7 @@ class ContractForm(QDialog):
             contract_number=self.number_edit.text().strip(),
             party_name=self.party_edit.text().strip(),
             amount=float(self.amount_edit.value()),
+            invoice_status=self.invoice_status_edit.currentText(),
             sign_date=self.sign_date_edit.date().toString("yyyy-MM-dd"),
             start_date=self.start_date_edit.date().toString("yyyy-MM-dd"),
             end_date=self.end_date_edit.date().toString("yyyy-MM-dd"),
@@ -157,3 +172,8 @@ def to_qdate(value: str) -> QDate:
     except (ValueError, AttributeError):
         today = date.today()
         return QDate(today.year, today.month, today.day)
+
+
+# 生成默认合同编号，格式为 年月日时分，例如 202605061508。
+def generate_contract_number() -> str:
+    return datetime.now().strftime("%Y%m%d%H%M")

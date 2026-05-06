@@ -5,10 +5,9 @@ from datetime import datetime
 # Optional 表示某个字段可以是指定类型，也可以是 None。
 from typing import Optional
 
-
+# 合同在程序内使用的数据结构，对应数据库 contracts 表的字段。
 @dataclass
 class Contract:
-    # 合同在程序内使用的数据结构，对应数据库 contracts 表的字段。
     id: Optional[int] = None
     contract_name: str = ""
     contract_number: str = ""
@@ -23,9 +22,9 @@ class Contract:
     created_at: str = ""
     updated_at: str = ""
 
+    # 将 SQLite 查询结果转换成 Contract 对象，方便界面层使用。
     @classmethod
     def from_row(cls, row) -> "Contract":
-        # 将 SQLite 查询结果转换成 Contract 对象，方便界面层使用。
         return cls(
             id=row["id"],
             contract_name=row["contract_name"],
@@ -42,7 +41,6 @@ class Contract:
             updated_at=row["updated_at"] or "",
         )
 
-
+# 统一生成数据库中 created_at / updated_at 使用的时间文本。
 def now_text() -> str:
-    # 统一生成数据库中 created_at / updated_at 使用的时间文本。
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")

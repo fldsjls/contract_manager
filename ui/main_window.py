@@ -35,6 +35,7 @@ from ui.stats_window import StatsWindow
 
 
 class MainWindow(QMainWindow):
+    # 合同列表表格的列标题，后续创建表格和填充数据时会复用。
     columns = [
         "ID",
         "合同名称",
@@ -49,6 +50,7 @@ class MainWindow(QMainWindow):
         "备注",
     ]
 
+    # 初始化主窗口，接收数据库对象并完成界面创建、样式设置和数据加载。
     def __init__(self, database: Database) -> None:
         super().__init__()
         self.database = database
@@ -62,15 +64,19 @@ class MainWindow(QMainWindow):
         self.refresh_table()
         self.show_expiring_reminder()
 
+    # 创建主窗口中的工具栏、搜索框、按钮、合同表格和底部提示。
     def _build_ui(self) -> None:
+        # 顶部工具栏承载搜索、新增、编辑、删除和统计入口。
         toolbar = QToolBar("工具栏")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
+        # 搜索框按回车时直接刷新合同列表。
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("搜索合同名称、合同编号、对方名称")
         self.search_edit.returnPressed.connect(self.refresh_table)
 
+        # 将按钮点击信号连接到对应的窗口方法。
         search_button = QPushButton("搜索")
         search_button.clicked.connect(self.refresh_table)
 
@@ -89,6 +95,7 @@ class MainWindow(QMainWindow):
         stats_button = QPushButton("统计")
         stats_button.clicked.connect(self.open_stats)
 
+        # 按从左到右的顺序把控件放入工具栏。
         toolbar.addWidget(QLabel("关键词："))
         toolbar.addWidget(self.search_edit)
         toolbar.addWidget(search_button)
@@ -100,8 +107,10 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addWidget(stats_button)
 
+        #顶部摘要标签显示合同总数和金额统计，后续会在刷新表格时更新文本内容。
         self.summary_label = QLabel()
 
+        # 合同列表使用表格展示，禁止直接编辑，编辑动作统一走弹窗。
         self.table = QTableWidget(0, len(self.columns))
         self.table.setHorizontalHeaderLabels(self.columns)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -112,10 +121,12 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(9, QHeaderView.Stretch)
-
+        
+        #创建一个显示提示文字的标签
         hint = QLabel("提示：双击合同所在行可打开扫描件或 PDF 文件。")
         hint.setObjectName("hintLabel")
 
+        # 主内容区从上到下依次放摘要、表格和操作提示。
         content = QWidget()
         layout = QVBoxLayout(content)
         top_row = QHBoxLayout()
@@ -126,6 +137,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(hint)
         self.setCentralWidget(content)
 
+    # 设置窗口、工具栏、按钮、表格等控件的整体视觉样式。
     def _apply_styles(self) -> None:
         self.setStyleSheet(
             """
@@ -181,12 +193,14 @@ class MainWindow(QMainWindow):
             """
         )
 
+    # 按当前搜索关键词重新查询合同，并把结果填入表格。
     def refresh_table(self) -> None:
         keyword = self.search_edit.text()
         self.contracts = self.database.list_contracts(keyword)
         self.table.setRowCount(len(self.contracts))
 
         for row, contract in enumerate(self.contracts):
+            # 每个合同对象转换成一行表格数据。
             values = [
                 contract.id,
                 contract.contract_name,
@@ -207,6 +221,7 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.UserRole, contract.id)
                 self.table.setItem(row, column, item)
 
+            # 状态列使用颜色提示合同风险。
             status_item = self.table.item(row, 8)
             if contract.status == "已到期":
                 status_item.setForeground(Qt.red)
@@ -219,6 +234,7 @@ class MainWindow(QMainWindow):
             f"共 {len(self.contracts)} 份合同    总金额：¥ {self.database.total_amount():,.2f}"
         )
 
+    # 程序启动时提醒 30 天内即将到期的合同。
     def show_expiring_reminder(self) -> None:
         expiring = self.database.expiring_contracts(30)
         if not expiring:
@@ -230,10 +246,12 @@ class MainWindow(QMainWindow):
         extra = "" if len(expiring) <= 8 else f"\n等共 {len(expiring)} 份合同"
         QMessageBox.information(self, "到期提醒", f"以下合同将在 30 天内到期：\n\n{names}{extra}")
 
+    # 清空搜索框并恢复显示全部合同。
     def reset_search(self) -> None:
         self.search_edit.clear()
         self.refresh_table()
 
+    # 读取当前选中行的合同 ID；没有选中时返回 None。
     def selected_contract_id(self) -> int | None:
         row = self.table.currentRow()
         if row < 0:
@@ -241,12 +259,14 @@ class MainWindow(QMainWindow):
         item = self.table.item(row, 0)
         return int(item.text()) if item else None
 
+    # 打开新增合同弹窗，保存成功后刷新表格。
     def add_contract(self) -> None:
         dialog = ContractForm(self)
         if dialog.exec():
             self.database.add_contract(dialog.get_contract())
             self.refresh_table()
 
+    # 打开编辑合同弹窗，保存成功后更新数据库并刷新表格。
     def edit_selected_contract(self) -> None:
         contract_id = self.selected_contract_id()
         if contract_id is None:
@@ -264,6 +284,7 @@ class MainWindow(QMainWindow):
             self.database.update_contract(dialog.get_contract())
             self.refresh_table()
 
+    # 删除当前选中的合同，删除前先要求用户确认。
     def delete_selected_contract(self) -> None:
         contract_id = self.selected_contract_id()
         if contract_id is None:
@@ -281,6 +302,7 @@ class MainWindow(QMainWindow):
             self.database.delete_contract(contract_id)
             self.refresh_table()
 
+    # 双击合同表格行时，用系统默认程序打开已保存的合同文件。
     def open_selected_file(self) -> None:
         contract_id = self.selected_contract_id()
         if contract_id is None:
@@ -299,6 +321,7 @@ class MainWindow(QMainWindow):
         if not QDesktopServices.openUrl(QUrl.fromLocalFile(os.fspath(path))):
             QMessageBox.warning(self, "打开失败", "系统无法打开该文件。")
 
+    # 打开统计窗口，关闭后刷新主表格以同步最新状态。
     def open_stats(self) -> None:
         dialog = StatsWindow(self.database, self)
         dialog.exec()

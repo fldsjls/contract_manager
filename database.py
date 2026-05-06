@@ -79,6 +79,7 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     contract_name TEXT NOT NULL,
                     contract_number TEXT NOT NULL,
+                    contract_type TEXT NOT NULL DEFAULT '其他项目',
                     party_name TEXT NOT NULL,
                     amount REAL NOT NULL DEFAULT 0,
                     sign_date TEXT,
@@ -108,6 +109,7 @@ class Database:
                     contract_id INTEGER NOT NULL,
                     record_date TEXT NOT NULL,
                     amount REAL NOT NULL DEFAULT 0,
+                    file_path TEXT,
                     remark TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -122,6 +124,7 @@ class Database:
                     contract_id INTEGER NOT NULL,
                     record_date TEXT NOT NULL,
                     amount REAL NOT NULL DEFAULT 0,
+                    file_path TEXT,
                     remark TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -139,6 +142,8 @@ class Database:
             )
             self.migrate_schema(conn)
             self.ensure_invoice_column(conn)
+            self.ensure_contract_type_column(conn)
+            self.ensure_record_file_columns(conn)
 
     # 创建数据库连接，并在操作结束后自动提交和关闭。
     @contextmanager
@@ -167,6 +172,7 @@ class Database:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 contract_name TEXT NOT NULL,
                 contract_number TEXT NOT NULL,
+                contract_type TEXT NOT NULL DEFAULT '其他项目',
                 party_name TEXT NOT NULL,
                 amount REAL NOT NULL DEFAULT 0,
                 sign_date TEXT,
@@ -184,12 +190,12 @@ class Database:
         conn.execute(
             """
             INSERT INTO contracts (
-                id, contract_name, contract_number, party_name, amount,
+                id, contract_name, contract_number, contract_type, party_name, amount,
                 sign_date, start_date, end_date, status, invoice_status, file_path,
                 remark, created_at, updated_at
             )
             SELECT
-                id, contract_name, contract_number, party_name, amount,
+                id, contract_name, contract_number, '其他项目', party_name, amount,
                 sign_date, start_date, end_date, status, '不开票', file_path,
                 remark, created_at, updated_at
             FROM contracts_old
@@ -223,6 +229,28 @@ class Database:
                 "ADD COLUMN invoice_status TEXT NOT NULL DEFAULT '不开票'"
             )
 
+    # 确保旧数据库也具备“合同类型”字段。
+    def ensure_contract_type_column(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(contracts)").fetchall()
+        }
+        if "contract_type" not in columns:
+            conn.execute(
+                "ALTER TABLE contracts "
+                "ADD COLUMN contract_type TEXT NOT NULL DEFAULT '其他项目'"
+            )
+
+    # 确保开票记录和收款记录表都有附件路径字段。
+    def ensure_record_file_columns(self, conn: sqlite3.Connection) -> None:
+        for table in ("invoice_records", "payment_records"):
+            columns = {
+                row["name"]
+                for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            if "file_path" not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN file_path TEXT")
+
     # 检查合同编号是否已被其他合同使用。
     def contract_number_exists(self, contract_number: str, exclude_id: int | None = None) -> bool:
         with self.connect() as conn:
@@ -254,15 +282,16 @@ class Database:
             cursor = conn.execute(
                 """
                 INSERT INTO contracts (
-                    contract_name, contract_number, party_name, amount,
+                    contract_name, contract_number, contract_type, party_name, amount,
                     sign_date, start_date, end_date, status, invoice_status, file_path,
                     remark, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     contract.contract_name,
                     contract.contract_number,
+                    contract.contract_type,
                     contract.party_name,
                     contract.amount,
                     contract.sign_date,
@@ -292,6 +321,7 @@ class Database:
                 UPDATE contracts
                 SET contract_name = ?,
                     contract_number = ?,
+                    contract_type = ?,
                     party_name = ?,
                     amount = ?,
                     sign_date = ?,
@@ -307,6 +337,7 @@ class Database:
                 (
                     contract.contract_name,
                     contract.contract_number,
+                    contract.contract_type,
                     contract.party_name,
                     contract.amount,
                     contract.sign_date,
@@ -339,7 +370,7 @@ class Database:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, contract_id, record_date, amount, remark, created_at, updated_at
+                SELECT id, contract_id, record_date, amount, file_path, remark, created_at, updated_at
                 FROM invoice_records
                 WHERE contract_id = ?
                 ORDER BY record_date ASC, id ASC
@@ -353,7 +384,7 @@ class Database:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, contract_id, record_date, amount, remark, created_at, updated_at
+                SELECT id, contract_id, record_date, amount, file_path, remark, created_at, updated_at
                 FROM payment_records
                 WHERE contract_id = ?
                 ORDER BY record_date ASC, id ASC
@@ -367,11 +398,11 @@ class Database:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT '开票记录' AS record_type, id, contract_id, record_date, amount, remark
+                SELECT '开票记录' AS record_type, id, contract_id, record_date, amount, file_path, remark
                 FROM invoice_records
                 WHERE contract_id = ?
                 UNION ALL
-                SELECT '收款记录' AS record_type, id, contract_id, record_date, amount, remark
+                SELECT '收款记录' AS record_type, id, contract_id, record_date, amount, file_path, remark
                 FROM payment_records
                 WHERE contract_id = ?
                 ORDER BY record_date ASC, record_type ASC, id ASC
@@ -391,6 +422,7 @@ class Database:
                 contract_id,
                 item["record_date"],
                 float(item["amount"]),
+                item.get("file_path", ""),
                 item.get("remark", ""),
                 timestamp,
                 timestamp,
@@ -404,9 +436,9 @@ class Database:
             conn.executemany(
                 f"""
                 INSERT INTO {table} (
-                    contract_id, record_date, amount, remark, created_at, updated_at
+                    contract_id, record_date, amount, file_path, remark, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 rows,
             )

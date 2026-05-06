@@ -2,7 +2,6 @@
 import os
 # Path 用于检查合同文件路径是否存在。
 from pathlib import Path
-
 # Qt/QUrl 提供表格对齐、颜色常量和本地文件 URL。
 from PySide6.QtCore import QEvent, QSize, Qt, QUrl
 # QDesktopServices 用于调用系统默认程序打开合同文件。
@@ -23,7 +22,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 # Database 提供合同查询、统计和增删改查能力。
 from database import Database, DuplicateContractNumberError, InvalidContractNumberError
 # Contract 是主窗口中保存合同列表时使用的数据类型。
@@ -36,6 +34,9 @@ from ui.record_form import RecordForm
 from ui.records_window import RecordsWindow
 # StatsWindow 是合同统计弹窗。
 from ui.stats_window import StatsWindow
+# MAIN_WINDOW_STYLE 集中保存主窗口的视觉样式。
+from ui.styles import MAIN_WINDOW_STYLE
+from ui.file_utils import archive_file
 
 
 class ContractTreeWidget(QTreeWidget):
@@ -57,6 +58,7 @@ class MainWindow(QMainWindow):
         "ID",
         "合同名称",
         "合同编号",
+        "合同类型",
         "甲方名称",
         "金额",
         "是否开局发票",
@@ -156,7 +158,7 @@ class MainWindow(QMainWindow):
         self.table.setSortingEnabled(True)
         self.table.header().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.header().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.header().setSectionResizeMode(10, QHeaderView.Stretch)
+        self.table.header().setSectionResizeMode(11, QHeaderView.Stretch)
 
         hint = QLabel("提示：双击合同所在行可编辑合同；选中合同后可添加或查看记录。")
         hint.setObjectName("hintLabel")
@@ -177,73 +179,7 @@ class MainWindow(QMainWindow):
 
     # 设置窗口、工具栏、按钮、树形列表等控件的整体视觉样式。
     def _apply_styles(self) -> None:
-        self.setStyleSheet(
-            """
-            QMainWindow {
-                background: #f6f7f9;
-            }
-            QToolBar {
-                background: #ffffff;
-                border-bottom: 1px solid #d9dee7;
-                spacing: 8px;
-                padding: 8px;
-            }
-            QLineEdit {
-                min-width: 280px;
-                padding: 7px 9px;
-                border: 1px solid #cbd3df;
-                border-radius: 4px;
-                background: #ffffff;
-            }
-            QPushButton {
-                padding: 7px 13px;
-                border: 1px solid #b9c3d1;
-                border-radius: 4px;
-                background: #ffffff;
-            }
-            QPushButton:hover {
-                background: #eef4ff;
-                border-color: #7aa7e8;
-            }
-            QPushButton:disabled {
-                color: #98a2b3;
-                background: #f2f4f7;
-                border-color: #d0d5dd;
-            }
-            QTreeWidget {
-                background: #ffffff;
-                border: 1px solid #d9dee7;
-                selection-background-color: #b9d8ff;
-                selection-color: #0f172a;
-                alternate-background-color: #fafbfc;
-            }
-            QTreeWidget::item {
-                padding: 2px 6px;
-                border-bottom: 1px solid #edf0f5;
-            }
-            QTreeWidget::item:selected {
-                background: #b9d8ff;
-                color: #0f172a;
-                outline: none;
-            }
-            QHeaderView::section {
-                background: #eef1f5;
-                border: 0;
-                border-right: 1px solid #d9dee7;
-                border-bottom: 1px solid #d9dee7;
-                padding: 8px;
-                font-weight: 600;
-            }
-            QLabel#hintLabel {
-                color: #667085;
-            }
-            QLabel#totalLabel {
-                font-size: 18px;
-                font-weight: 700;
-                padding: 8px 0;
-            }
-            """
-        )
+        self.setStyleSheet(MAIN_WINDOW_STYLE)
 
     # 按当前搜索关键词重新查询合同，并把合同和子记录填入树形列表。
     def refresh_table(self) -> None:
@@ -272,6 +208,7 @@ class MainWindow(QMainWindow):
             contract.id,
             contract.contract_name,
             contract.contract_number,
+            contract.contract_type,
             contract.party_name,
             f"¥ {contract.amount:,.2f}",
             contract.invoice_status,
@@ -283,18 +220,18 @@ class MainWindow(QMainWindow):
         ]
         item = QTreeWidgetItem([str(value) for value in values])
         item.setData(0, Qt.UserRole, contract.id)
-        item.setData(4, Qt.EditRole, contract.amount)
+        item.setData(5, Qt.EditRole, contract.amount)
         item.setSizeHint(0, QSize(0, 28))
 
-        for column in (0, 4, 5, 6, 7, 8, 9):
+        for column in (0, 3, 5, 6, 7, 8, 9, 10):
             item.setTextAlignment(column, Qt.AlignCenter)
 
         if contract.status == "已到期":
-            item.setForeground(9, QBrush(Qt.red))
+            item.setForeground(10, QBrush(Qt.red))
         elif contract.status == "即将到期":
-            item.setForeground(9, QBrush(Qt.darkYellow))
+            item.setForeground(10, QBrush(Qt.darkYellow))
         else:
-            item.setForeground(9, QBrush(Qt.darkGreen))
+            item.setForeground(10, QBrush(Qt.darkGreen))
 
         return item
 
@@ -304,6 +241,7 @@ class MainWindow(QMainWindow):
         values = [
             record["record_type"],
             record["record_date"],
+            "",
             "",
             "",
             f"¥ {amount:,.2f}",
@@ -316,14 +254,14 @@ class MainWindow(QMainWindow):
         ]
         item = QTreeWidgetItem([str(value) for value in values])
         item.setData(0, Qt.UserRole, contract_id)
-        item.setData(4, Qt.EditRole, amount)
+        item.setData(5, Qt.EditRole, amount)
         item.setSizeHint(0, QSize(0, 22))
 
         color = Qt.darkBlue if record["record_type"] == "开票记录" else Qt.darkGreen
         item.setForeground(0, QBrush(color))
         item.setTextAlignment(0, Qt.AlignCenter)
         item.setTextAlignment(1, Qt.AlignLeft | Qt.AlignVCenter)
-        item.setTextAlignment(4, Qt.AlignCenter)
+        item.setTextAlignment(5, Qt.AlignCenter)
         return item
 
     # 程序启动时提醒 30 天内即将到期的合同。
@@ -382,8 +320,10 @@ class MainWindow(QMainWindow):
     def add_contract(self) -> None:
         dialog = ContractForm(self)
         if dialog.exec():
+            contract = dialog.get_contract()
+            contract.file_path = archive_file(contract.file_path, contract.contract_name)
             try:
-                self.database.add_contract(dialog.get_contract())
+                self.database.add_contract(contract)
             except InvalidContractNumberError:
                 QMessageBox.warning(self, "合同编号格式错误", "合同编号必须是 12 位数字。")
                 return
@@ -407,8 +347,13 @@ class MainWindow(QMainWindow):
 
         dialog = ContractForm(self, contract)
         if dialog.exec():
+            updated_contract = dialog.get_contract()
+            updated_contract.file_path = archive_file(
+                updated_contract.file_path,
+                updated_contract.contract_name,
+            )
             try:
-                self.database.update_contract(dialog.get_contract())
+                self.database.update_contract(updated_contract)
             except InvalidContractNumberError:
                 QMessageBox.warning(self, "合同编号格式错误", "合同编号必须是 12 位数字。")
                 return
@@ -467,12 +412,27 @@ class MainWindow(QMainWindow):
             self.refresh_table()
             return
 
-        dialog = RecordForm(contract.contract_name, self)
+        dialog = RecordForm(contract.contract_name, contract.invoice_status, self)
         if dialog.exec():
-            self.database.add_invoice_records(contract_id, dialog.invoice_records())
-            self.database.add_payment_records(contract_id, dialog.payment_records())
+            self.database.add_invoice_records(
+                contract_id,
+                self._archive_record_files(dialog.invoice_records(), contract.contract_name),
+            )
+            self.database.add_payment_records(
+                contract_id,
+                self._archive_record_files(dialog.payment_records(), contract.contract_name),
+            )
             self.refresh_table()
             QMessageBox.information(self, "保存成功", "开票记录和收款记录已保存，可展开合同查看。")
+
+    # 将开票/收款记录中的附件复制到合同目录，并把记录路径替换为复制后的路径。
+    def _archive_record_files(self, records: list[dict], contract_name: str) -> list[dict]:
+        archived_records = []
+        for record in records:
+            archived = dict(record)
+            archived["file_path"] = archive_file(archived.get("file_path", ""), contract_name)
+            archived_records.append(archived)
+        return archived_records
 
     # 打开独立记录查看窗口，按页签查看开票和收款明细。
     def view_records(self) -> None:

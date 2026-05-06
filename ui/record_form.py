@@ -7,7 +7,9 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
+    QFileDialog,
     QHBoxLayout,
+    QHeaderView,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -17,21 +19,32 @@ from PySide6.QtWidgets import (
     QTabWidget,
 )
 
+from ui.file_utils import COMMON_FILE_FILTER
+
 
 # 批量添加开票记录和收款记录的弹窗。
 class RecordForm(QDialog):
     # 初始化弹窗，显示合同名称，并创建两个记录页签。
-    def __init__(self, contract_name: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        contract_name: str,
+        invoice_status: str = "开票",
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"添加记录 - {contract_name}")
         self.setMinimumSize(720, 430)
+        self.invoice_status = invoice_status
 
         self.tabs = QTabWidget()
         self.invoice_table = self._create_record_table()
         self.payment_table = self._create_record_table()
 
         self.tabs.addTab(self._create_tab(self.invoice_table), "开票记录")
-        self.tabs.addTab(self._create_tab(self.payment_table), "收款记录")
+        self.tabs.addTab(self._create_tab(self.payment_table), "收票记录")
+        if self.invoice_status == "不开票":
+            self.tabs.setTabEnabled(0, False)
+            self.tabs.setCurrentIndex(1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Save).setText("保存")
@@ -66,14 +79,18 @@ class RecordForm(QDialog):
         layout.addWidget(table)
         return widget
 
-    # 创建记录表格，列为日期、金额和备注。
+    # 创建记录表格，列为日期、金额、附件和备注。
     def _create_record_table(self) -> QTableWidget:
-        table = QTableWidget(0, 3)
-        table.setHorizontalHeaderLabels(["日期", "金额", "备注"])
+        table = QTableWidget(0, 4)
+        table.setHorizontalHeaderLabels(["日期", "金额", "附件", "备注"])
         table.setSelectionBehavior(QAbstractItemView.SelectRows)
         table.setSelectionMode(QAbstractItemView.SingleSelection)
         table.verticalHeader().setVisible(False)
-        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        table.setColumnWidth(0, 125)
+        table.setColumnWidth(1, 125)
+        table.setColumnWidth(2, 360)
+        table.setColumnWidth(3, 180)
         return table
 
     # 给指定表格新增一行可编辑记录。
@@ -93,10 +110,33 @@ class RecordForm(QDialog):
         amount_edit.setPrefix("¥ ")
 
         remark_edit = QLineEdit()
+        file_edit = QLineEdit()
+        file_edit.setPlaceholderText("可选择 PDF、Word、Excel、图片等文件")
+        browse_button = QPushButton("选择")
+        browse_button.clicked.connect(lambda: self._choose_record_file(file_edit))
+
+        file_widget = QWidget()
+        file_layout = QHBoxLayout(file_widget)
+        file_layout.setContentsMargins(0, 0, 0, 0)
+        file_layout.addWidget(file_edit)
+        file_layout.addWidget(browse_button)
+        file_widget.setProperty("filePathEdit", file_edit)
 
         table.setCellWidget(row, 0, date_edit)
         table.setCellWidget(row, 1, amount_edit)
-        table.setCellWidget(row, 2, remark_edit)
+        table.setCellWidget(row, 2, file_widget)
+        table.setCellWidget(row, 3, remark_edit)
+
+    # 为单条开票或收款记录选择附件文件。
+    def _choose_record_file(self, file_edit: QLineEdit) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择记录附件",
+            "",
+            COMMON_FILE_FILTER,
+        )
+        if path:
+            file_edit.setText(path)
 
     # 删除当前选中的记录行。
     def _remove_selected_row(self, table: QTableWidget) -> None:
@@ -125,8 +165,10 @@ class RecordForm(QDialog):
         for row in range(table.rowCount()):
             date_edit = table.cellWidget(row, 0)
             amount_edit = table.cellWidget(row, 1)
-            remark_edit = table.cellWidget(row, 2)
+            file_widget = table.cellWidget(row, 2)
+            remark_edit = table.cellWidget(row, 3)
             amount = float(amount_edit.value())
+            file_edit = file_widget.findChild(QLineEdit) if file_widget else None
 
             if amount <= 0:
                 continue
@@ -135,6 +177,7 @@ class RecordForm(QDialog):
                 {
                     "record_date": date_edit.date().toString("yyyy-MM-dd"),
                     "amount": amount,
+                    "file_path": file_edit.text().strip() if file_edit else "",
                     "remark": remark_edit.text().strip(),
                 }
             )

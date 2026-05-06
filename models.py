@@ -11,6 +11,7 @@ class Contract:
     id: Optional[int] = None
     contract_name: str = ""
     contract_number: str = ""
+    contract_type: str = "其他项目"
     party_name: str = ""
     amount: float = 0.0
     sign_date: str = ""
@@ -30,6 +31,7 @@ class Contract:
             id=row["id"],
             contract_name=row["contract_name"],
             contract_number=row["contract_number"],
+            contract_type=row["contract_type"] or "其他项目",
             party_name=row["party_name"],
             amount=float(row["amount"] or 0),
             sign_date=row["sign_date"] or "",

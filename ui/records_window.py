@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
 
 # Database 提供开票记录和收款记录的查询方法。
 from database import Database
+# RECORDS_WINDOW_STYLE 集中保存记录查看窗口的视觉样式。
+from ui.styles import RECORDS_WINDOW_STYLE
 
 
 class RecordsTableWidget(QTableWidget):
@@ -55,10 +57,10 @@ class RecordsWindow(QDialog):
         self._apply_styles()
         self.refresh_records()
 
-    # 创建只读表格，列为日期、金额和备注。
+    # 创建只读表格，列为日期、金额、附件和备注。
     def _create_table(self) -> QTableWidget:
-        table = RecordsTableWidget(0, 3)
-        table.setHorizontalHeaderLabels(["日期", "金额", "备注"])
+        table = RecordsTableWidget(0, 4)
+        table.setHorizontalHeaderLabels(["日期", "金额", "附件路径", "备注"])
         for column in range(table.columnCount()):
             table.horizontalHeaderItem(column).setTextAlignment(Qt.AlignCenter)
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -68,37 +70,12 @@ class RecordsWindow(QDialog):
         table.verticalHeader().setVisible(False)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         return table
 
     # 设置记录查看窗口的选中颜色，让点击记录后整行更明显。
     def _apply_styles(self) -> None:
-        self.setStyleSheet(
-            """
-            QTableWidget {
-                background: #ffffff;
-                border: 1px solid #d9dee7;
-                gridline-color: #edf0f5;
-                selection-background-color: #9ec9ff;
-                selection-color: #0f172a;
-            }
-            QTableWidget::item {
-                padding: 5px 8px;
-            }
-            QTableWidget::item:selected {
-                background: #9ec9ff;
-                color: #0f172a;
-                outline: none;
-            }
-            QHeaderView::section {
-                background: #eef1f5;
-                border: 0;
-                border-right: 1px solid #d9dee7;
-                border-bottom: 1px solid #d9dee7;
-                padding: 8px;
-                font-weight: 600;
-            }
-            """
-        )
+        self.setStyleSheet(RECORDS_WINDOW_STYLE)
 
     # 给每个页签放入统计文字和对应记录表格。
     def _create_tab(self, table: QTableWidget, title: str) -> QWidget:
@@ -127,6 +104,7 @@ class RecordsWindow(QDialog):
             values = [
                 record["record_date"],
                 f"¥ {float(record['amount'] or 0):,.2f}",
+                record["file_path"] or "",
                 record["remark"] or "",
             ]
             for column, value in enumerate(values):

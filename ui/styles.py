@@ -3,6 +3,40 @@ MAIN_WINDOW_STYLE = """
 QMainWindow {
     background: #f6f7f9;
 }
+QWidget#sideBar {
+    background: #eef1f5;
+    border-right: 1px solid #d9dee7;
+}
+QPushButton#sideButton {
+    text-align: left;
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+}
+QPushButton#sideButton:hover {
+    background: #ffffff;
+    border-color: #d9dee7;
+}
+QPushButton#sideButton:checked {
+    background: #ffffff;
+    border-color: #b9c3d1;
+    font-weight: 700;
+}
+QLabel#pageTitle {
+    font-size: 20px;
+    font-weight: 700;
+    padding: 4px 0 8px 0;
+}
+QFrame#metricCard,
+QFrame#chartCard {
+    background: #ffffff;
+    border: 1px solid #d9dee7;
+    border-radius: 6px;
+}
+QFrame#metricCard {
+    min-height: 82px;
+}
 QToolBar {
     background: #ffffff;
     border-bottom: 1px solid #d9dee7;

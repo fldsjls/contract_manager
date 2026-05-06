@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QStackedWidget,
     QToolBar,
     QTreeWidget,
     QTreeWidgetItem,
@@ -28,12 +29,14 @@ from database import Database, DuplicateContractNumberError, InvalidContractNumb
 from models import Contract
 # ContractForm 是新增和编辑合同的弹窗。
 from ui.contract_form import ContractForm
+from ui.dashboard_page import DashboardPage
 # RecordForm 是批量添加开票/收款记录的弹窗。
 from ui.record_form import RecordForm
 # RecordsWindow 是查看某份合同全部记录的独立窗口。
 from ui.records_window import RecordsWindow
 # StatsWindow 是合同统计弹窗。
 from ui.stats_window import StatsWindow
+from ui.settings_page import SettingsPage
 # MAIN_WINDOW_STYLE 集中保存主窗口的视觉样式。
 from ui.styles import MAIN_WINDOW_STYLE
 from ui.file_utils import archive_file
@@ -70,12 +73,14 @@ class MainWindow(QMainWindow):
     ]
 
     # 初始化主窗口，接收数据库对象并完成界面创建、样式设置和数据加载。
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, is_guest: bool = False) -> None:
         super().__init__()
         self.database = database
+        self.is_guest = is_guest
         self.contracts: list[Contract] = []
 
-        self.setWindowTitle("合同管理系统")
+        title_suffix = " - 游客模式" if self.is_guest else ""
+        self.setWindowTitle(f"合同管理系统{title_suffix}")
         self.resize(1180, 720)
 
         self._build_ui()
@@ -87,7 +92,6 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         toolbar = QToolBar("工具栏")
         toolbar.setMovable(False)
-        self.addToolBar(toolbar)
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("搜索合同名称、合同编号、甲方名称")
@@ -99,8 +103,8 @@ class MainWindow(QMainWindow):
         reset_button = QPushButton("重置")
         reset_button.clicked.connect(self.reset_search)
 
-        add_button = QPushButton("新增")
-        add_button.clicked.connect(self.add_contract)
+        self.add_button = QPushButton("新增")
+        self.add_button.clicked.connect(self.add_contract)
 
         self.edit_button = QPushButton("编辑")
         self.edit_button.setEnabled(False)
@@ -110,8 +114,8 @@ class MainWindow(QMainWindow):
         self.open_file_button.setEnabled(False)
         self.open_file_button.clicked.connect(self.open_selected_file)
 
-        delete_button = QPushButton("删除")
-        delete_button.clicked.connect(self.delete_selected_contract)
+        self.delete_button = QPushButton("删除")
+        self.delete_button.clicked.connect(self.delete_selected_contract)
 
         self.add_record_button = QPushButton("添加记录")
         self.add_record_button.setEnabled(False)
@@ -129,9 +133,9 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(search_button)
         toolbar.addWidget(reset_button)
         toolbar.addSeparator()
-        toolbar.addWidget(add_button)
+        toolbar.addWidget(self.add_button)
         toolbar.addWidget(self.edit_button)
-        toolbar.addWidget(delete_button)
+        toolbar.addWidget(self.delete_button)
         toolbar.addSeparator()
         toolbar.addWidget(self.add_record_button)
         toolbar.addWidget(self.open_file_button)
@@ -156,26 +160,92 @@ class MainWindow(QMainWindow):
         self.table.setIndentation(0)
         self.table.setUniformRowHeights(True)
         self.table.setSortingEnabled(True)
-        self.table.header().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.table.header().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.header().setSectionResizeMode(11, QHeaderView.Stretch)
+        self.table.header().setSectionResizeMode(QHeaderView.Interactive)
+        self.table.header().setStretchLastSection(False)
 
         hint = QLabel("提示：双击合同所在行可编辑合同；选中合同后可添加或查看记录。")
         hint.setObjectName("hintLabel")
 
-        content = QWidget()
-        layout = QVBoxLayout(content)
+        self.contract_page = QWidget()
+        layout = QVBoxLayout(self.contract_page)
         top_row = QHBoxLayout()
         top_row.addWidget(self.summary_label)
         top_row.addStretch()
+        layout.addWidget(toolbar)
         layout.addLayout(top_row)
         layout.addWidget(self.table)
         layout.addWidget(hint)
-        self.setCentralWidget(content)
 
-        content.installEventFilter(self)
+        self.dashboard_page = DashboardPage(self.database)
+        self.settings_page = SettingsPage()
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.dashboard_page)
+        self.stack.addWidget(self.contract_page)
+        self.stack.addWidget(self.settings_page)
+        self.stack.currentChanged.connect(self.on_page_changed)
+
+        sidebar = self._create_sidebar()
+        shell = QWidget()
+        shell_layout = QHBoxLayout(shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(0)
+        shell_layout.addWidget(sidebar)
+        shell_layout.addWidget(self.stack, 1)
+        self.setCentralWidget(shell)
+
+        self.contract_page.installEventFilter(self)
         self.summary_label.installEventFilter(self)
         hint.installEventFilter(self)
+        self._resize_table_columns()
+        self.show_contract_page()
+        self.apply_permission_state()
+
+    # 创建左侧页面切换栏。
+    def _create_sidebar(self) -> QWidget:
+        sidebar = QWidget()
+        sidebar.setObjectName("sideBar")
+        sidebar.setFixedWidth(128)
+
+        self.dashboard_button = QPushButton("图表显示")
+        self.contracts_button = QPushButton("合同列表")
+        self.settings_button = QPushButton("设置选项")
+        for button in (self.dashboard_button, self.contracts_button, self.settings_button):
+            button.setCheckable(True)
+            button.setObjectName("sideButton")
+
+        self.dashboard_button.clicked.connect(self.show_dashboard_page)
+        self.contracts_button.clicked.connect(self.show_contract_page)
+        self.settings_button.clicked.connect(self.show_settings_page)
+
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(10, 14, 10, 10)
+        layout.addWidget(self.dashboard_button)
+        layout.addWidget(self.contracts_button)
+        layout.addWidget(self.settings_button)
+        layout.addStretch()
+        return sidebar
+
+    # 切换到图表总览页。
+    def show_dashboard_page(self) -> None:
+        self.stack.setCurrentWidget(self.dashboard_page)
+
+    # 切换到合同列表页。
+    def show_contract_page(self) -> None:
+        self.stack.setCurrentWidget(self.contract_page)
+
+    # 切换到设置页。
+    def show_settings_page(self) -> None:
+        self.stack.setCurrentWidget(self.settings_page)
+
+    # 页面切换时刷新对应数据并更新侧栏按钮状态。
+    def on_page_changed(self, index: int) -> None:
+        self.dashboard_button.setChecked(index == 0)
+        self.contracts_button.setChecked(index == 1)
+        self.settings_button.setChecked(index == 2)
+        if index == 0:
+            self.dashboard_page.refresh()
+        elif index == 1:
+            self.refresh_table()
 
     # 设置窗口、工具栏、按钮、树形列表等控件的整体视觉样式。
     def _apply_styles(self) -> None:
@@ -200,7 +270,25 @@ class MainWindow(QMainWindow):
             f"共 {len(self.contracts)} 份合同    总金额：¥ {self.database.total_amount():,.2f}"
         )
         self.table.setSortingEnabled(True)
+        self._resize_table_columns()
         self.clear_table_selection()
+
+    # 窗口大小变化时，按比例重新分配表格列宽，让标题随窗口自适应。
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "table"):
+            self._resize_table_columns()
+
+    # 按每列的重要程度分配宽度；总宽度来自当前表格可视区域。
+    def _resize_table_columns(self) -> None:
+        weights = [55, 165, 135, 88, 230, 90, 120, 112, 112, 112, 82, 95]
+        minimum_widths = [50, 125, 112, 78, 170, 78, 105, 95, 95, 95, 70, 80]
+        available_width = max(self.table.viewport().width() - 4, 0)
+        total_weight = sum(weights)
+
+        for column, weight in enumerate(weights):
+            width = int(available_width * weight / total_weight)
+            self.table.setColumnWidth(column, max(width, minimum_widths[column]))
 
     # 把一份合同转换为树形列表中的父行。
     def _create_contract_item(self, contract: Contract) -> QTreeWidgetItem:
@@ -311,17 +399,37 @@ class MainWindow(QMainWindow):
     # 根据当前是否选中合同，启用或禁用编辑、打开文件、添加记录和查看记录按钮。
     def update_action_buttons(self) -> None:
         has_selection = self.selected_contract_id() is not None
-        self.edit_button.setEnabled(has_selection)
+        self.edit_button.setEnabled(has_selection and not self.is_guest)
+        self.delete_button.setEnabled(has_selection and not self.is_guest)
         self.open_file_button.setEnabled(has_selection)
-        self.add_record_button.setEnabled(has_selection)
+        self.add_record_button.setEnabled(has_selection and not self.is_guest)
         self.view_records_button.setEnabled(has_selection)
+
+    # 根据当前登录身份控制可用功能；游客模式只允许查看。
+    def apply_permission_state(self) -> None:
+        self.add_button.setEnabled(not self.is_guest)
+        self.delete_button.setEnabled(False if self.is_guest else self.selected_contract_id() is not None)
+        self.update_action_buttons()
+
+    # 游客模式尝试修改数据时给出提示。
+    def ensure_can_modify(self) -> bool:
+        if not self.is_guest:
+            return True
+        QMessageBox.information(self, "游客模式", "游客模式只能查看，不能修改数据。")
+        return False
 
     # 打开新增合同弹窗，保存成功后刷新树形列表。
     def add_contract(self) -> None:
+        if not self.ensure_can_modify():
+            return
         dialog = ContractForm(self)
         if dialog.exec():
             contract = dialog.get_contract()
-            contract.file_path = archive_file(contract.file_path, contract.contract_name)
+            contract.file_path = archive_file(
+                contract.file_path,
+                contract.contract_name,
+                self.settings_page.delete_source_after_archive(),
+            )
             try:
                 self.database.add_contract(contract)
             except InvalidContractNumberError:
@@ -334,6 +442,8 @@ class MainWindow(QMainWindow):
 
     # 打开编辑合同弹窗，保存成功后更新数据库并刷新树形列表。
     def edit_selected_contract(self) -> None:
+        if not self.ensure_can_modify():
+            return
         contract_id = self.selected_contract_id()
         if contract_id is None:
             QMessageBox.information(self, "提示", "请先选择一份合同。")
@@ -351,6 +461,7 @@ class MainWindow(QMainWindow):
             updated_contract.file_path = archive_file(
                 updated_contract.file_path,
                 updated_contract.contract_name,
+                self.settings_page.delete_source_after_archive(),
             )
             try:
                 self.database.update_contract(updated_contract)
@@ -364,6 +475,8 @@ class MainWindow(QMainWindow):
 
     # 删除当前选中的合同，删除前先要求用户确认。
     def delete_selected_contract(self) -> None:
+        if not self.ensure_can_modify():
+            return
         contract_id = self.selected_contract_id()
         if contract_id is None:
             QMessageBox.information(self, "提示", "请先选择一份合同。")
@@ -401,6 +514,8 @@ class MainWindow(QMainWindow):
 
     # 为当前合同批量添加开票记录和收款记录，保存后刷新子条目。
     def add_records(self) -> None:
+        if not self.ensure_can_modify():
+            return
         contract_id = self.selected_contract_id()
         if contract_id is None:
             QMessageBox.information(self, "提示", "请先选择一份合同。")
@@ -430,7 +545,11 @@ class MainWindow(QMainWindow):
         archived_records = []
         for record in records:
             archived = dict(record)
-            archived["file_path"] = archive_file(archived.get("file_path", ""), contract_name)
+            archived["file_path"] = archive_file(
+                archived.get("file_path", ""),
+                contract_name,
+                self.settings_page.delete_source_after_archive(),
+            )
             archived_records.append(archived)
         return archived_records
 

@@ -1,3 +1,4 @@
+import hashlib
 # sqlite3 是 Python 内置的 SQLite 数据库模块。
 import sqlite3
 # contextmanager 用来把数据库连接封装成 with 语句可用的上下文管理器。
@@ -140,10 +141,24 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_payment_records_contract "
                 "ON payment_records(contract_id)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    failed_attempts INTEGER NOT NULL DEFAULT 0,
+                    locked_until TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
             self.migrate_schema(conn)
             self.ensure_invoice_column(conn)
             self.ensure_contract_type_column(conn)
             self.ensure_record_file_columns(conn)
+            self.ensure_user_security_columns(conn)
+            self.ensure_default_user(conn)
 
     # 创建数据库连接，并在操作结束后自动提交和关闭。
     @contextmanager
@@ -156,6 +171,124 @@ class Database:
             conn.commit()
         finally:
             conn.close()
+
+    # 生成密码哈希，避免在数据库中直接保存明文密码。
+    def password_hash(self, password: str) -> str:
+        return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+    # 确保旧用户表也具备登录失败次数和锁定时间字段。
+    def ensure_user_security_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if "failed_attempts" not in columns:
+            conn.execute(
+                "ALTER TABLE users "
+                "ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0"
+            )
+        if "locked_until" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN locked_until TEXT")
+
+    # 首次运行时创建默认管理员账号：admin / admin123。
+    def ensure_default_user(self, conn: sqlite3.Connection) -> None:
+        row = conn.execute("SELECT COUNT(*) FROM users").fetchone()
+        if row[0] == 0:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                ("admin", self.password_hash("admin123"), now_text()),
+            )
+
+    # 读取锁定时间；没有锁定或格式异常时返回 None。
+    def parse_locked_until(self, value: str | None) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None
+
+    # 校验账号密码，并记录失败次数；连续失败 3 次锁定 24 小时。
+    def authenticate_user(self, username: str, password: str) -> tuple[bool, str]:
+        username = username.strip()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, password_hash, failed_attempts, locked_until
+                FROM users
+                WHERE username = ?
+                """,
+                (username,),
+            ).fetchone()
+            if not row:
+                return False, "账号或密码不正确。"
+
+            locked_until = self.parse_locked_until(row["locked_until"])
+            now = datetime.now()
+            if locked_until and locked_until > now:
+                return False, f"账号已锁定，请在 {locked_until.strftime('%Y-%m-%d %H:%M:%S')} 后再试。"
+            if locked_until and locked_until <= now:
+                conn.execute(
+                    "UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = ?",
+                    (row["id"],),
+                )
+
+            if row["password_hash"] == self.password_hash(password):
+                conn.execute(
+                    "UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = ?",
+                    (row["id"],),
+                )
+                return True, "登录成功。"
+
+            failed_attempts = int(row["failed_attempts"] or 0) + 1
+            if failed_attempts >= 3:
+                locked_until = now + timedelta(hours=24)
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET failed_attempts = ?, locked_until = ?
+                    WHERE id = ?
+                    """,
+                    (failed_attempts, locked_until.strftime("%Y-%m-%d %H:%M:%S"), row["id"]),
+                )
+                return False, "密码连续错误 3 次，账号已锁定 24 小时。"
+
+            conn.execute(
+                "UPDATE users SET failed_attempts = ? WHERE id = ?",
+                (failed_attempts, row["id"]),
+            )
+            remaining = 3 - failed_attempts
+            return False, f"账号或密码不正确，还可尝试 {remaining} 次。"
+
+    # 简单校验账号密码是否正确；保留给测试和内部调用。
+    def verify_user(self, username: str, password: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT password_hash FROM users WHERE username = ?",
+                (username.strip(),),
+            ).fetchone()
+        return bool(row and row["password_hash"] == self.password_hash(password))
+
+    # 修改用户密码；需要先验证旧密码。
+    def change_password(self, username: str, old_password: str, new_password: str) -> tuple[bool, str]:
+        username = username.strip()
+        if len(new_password) < 6:
+            return False, "新密码至少需要 6 位。"
+
+        success, message = self.authenticate_user(username, old_password)
+        if not success:
+            return False, message
+
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE users
+                SET password_hash = ?, failed_attempts = 0, locked_until = NULL
+                WHERE username = ?
+                """,
+                (self.password_hash(new_password), username),
+            )
+        return True, "密码修改成功。"
 
     # 兼容早期数据库结构；已有正确结构时直接跳过。
     def migrate_schema(self, conn: sqlite3.Connection) -> None:
@@ -487,6 +620,46 @@ class Database:
         with self.connect() as conn:
             value = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM contracts").fetchone()[0]
         return float(value or 0)
+
+    # 统计全部开票记录金额总和。
+    def total_invoice_amount(self) -> float:
+        with self.connect() as conn:
+            value = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM invoice_records").fetchone()[0]
+        return float(value or 0)
+
+    # 统计全部收票/收款记录金额总和。
+    def total_payment_amount(self) -> float:
+        with self.connect() as conn:
+            value = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM payment_records").fetchone()[0]
+        return float(value or 0)
+
+    # 按日期汇总开票和收票/收款金额，用于图表折线显示。
+    def record_totals_by_date(self) -> list[dict]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT record_date,
+                       SUM(invoice_amount) AS invoice_amount,
+                       SUM(payment_amount) AS payment_amount
+                FROM (
+                    SELECT record_date, amount AS invoice_amount, 0 AS payment_amount
+                    FROM invoice_records
+                    UNION ALL
+                    SELECT record_date, 0 AS invoice_amount, amount AS payment_amount
+                    FROM payment_records
+                )
+                GROUP BY record_date
+                ORDER BY record_date ASC
+                """
+            ).fetchall()
+        return [
+            {
+                "record_date": row["record_date"],
+                "invoice_amount": float(row["invoice_amount"] or 0),
+                "payment_amount": float(row["payment_amount"] or 0),
+            }
+            for row in rows
+        ]
 
     # 按状态统计合同数量。
     def count_by_status(self) -> dict[str, int]:

@@ -47,7 +47,7 @@ def unique_target_path(folder: Path, filename: str) -> Path:
 
 
 # 把用户选择的文件复制到合同目录中，并返回复制后的文件路径。
-def archive_file(source_path: str, contract_name: str) -> str:
+def archive_file(source_path: str, contract_name: str, delete_source: bool = False) -> str:
     if not source_path:
         return ""
 
@@ -64,4 +64,9 @@ def archive_file(source_path: str, contract_name: str) -> str:
 
     target = unique_target_path(folder, source.name)
     shutil.copy2(source, target)
+    if delete_source:
+        try:
+            source.unlink()
+        except OSError:
+            pass
     return str(target)

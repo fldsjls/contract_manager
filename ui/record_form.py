@@ -37,6 +37,7 @@ class RecordForm(QDialog):
         self.invoice_status = invoice_status
 
         self.tabs = QTabWidget()
+        self.tabs.currentChanged.connect(lambda _index: self._resize_record_columns())
         self.invoice_table = self._create_record_table()
         self.payment_table = self._create_record_table()
 
@@ -58,6 +59,7 @@ class RecordForm(QDialog):
 
         self._add_record_row(self.invoice_table)
         self._add_record_row(self.payment_table)
+        self._resize_record_columns()
 
     # 创建单个页签，包含表格和新增/删除行按钮。
     def _create_tab(self, table: QTableWidget) -> QWidget:
@@ -87,11 +89,25 @@ class RecordForm(QDialog):
         table.setSelectionMode(QAbstractItemView.SingleSelection)
         table.verticalHeader().setVisible(False)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        table.setColumnWidth(0, 125)
-        table.setColumnWidth(1, 125)
-        table.setColumnWidth(2, 360)
-        table.setColumnWidth(3, 180)
+        table.horizontalHeader().setStretchLastSection(False)
         return table
+
+    # 窗口尺寸变化时，记录表格标题和列宽跟着自适应。
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._resize_record_columns()
+
+    # 按主表格同样的方式分配列宽；附件列更宽，备注列适中。
+    def _resize_record_columns(self) -> None:
+        weights = [120, 120, 430, 210]
+        minimum_widths = [118, 118, 300, 160]
+        total_weight = sum(weights)
+
+        for table in (self.invoice_table, self.payment_table):
+            available_width = max(table.viewport().width() - 4, 0)
+            for column, weight in enumerate(weights):
+                width = int(available_width * weight / total_weight)
+                table.setColumnWidth(column, max(width, minimum_widths[column]))
 
     # 给指定表格新增一行可编辑记录。
     def _add_record_row(self, table: QTableWidget) -> None:

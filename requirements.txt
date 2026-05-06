@@ -1,2 +1,1 @@
-PySide6>=6.7
-pyinstaller>=6.0
+Django>=5.0

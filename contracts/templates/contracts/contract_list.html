@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>合同列表</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+      background: #f6f7f9;
+      color: #1f2937;
+    }
+    .page {
+      padding: 24px;
+    }
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    input {
+      width: 360px;
+      padding: 9px 10px;
+      border: 1px solid #cbd3df;
+      border-radius: 4px;
+    }
+    button {
+      padding: 9px 16px;
+      border: 1px solid #b9c3d1;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+    }
+    .summary {
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border: 1px solid #d9dee7;
+    }
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #edf0f5;
+      border-right: 1px solid #edf0f5;
+      text-align: center;
+      white-space: nowrap;
+    }
+    th {
+      background: #eef1f5;
+      font-weight: 700;
+    }
+    td.name, td.party {
+      text-align: left;
+    }
+    .empty {
+      padding: 40px;
+      text-align: center;
+      color: #667085;
+      background: #fff;
+      border: 1px solid #d9dee7;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>合同列表</h1>
+
+    <form class="toolbar" method="get">
+      <input name="q" value="{{ keyword }}" placeholder="搜索合同名称、合同编号、甲方名称">
+      <button type="submit">搜索</button>
+      <a href="{% url 'contracts:contract_list' %}"><button type="button">重置</button></a>
+      <a href="/admin/contracts/contract/add/"><button type="button">新增合同</button></a>
+      <a href="/admin/"><button type="button">管理后台</button></a>
+    </form>
+
+    <div class="summary">
+      共 {{ contract_count }} 份合同，总金额：¥ {{ total_amount|floatformat:2 }}
+    </div>
+
+    {% if contracts %}
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>合同名称</th>
+            <th>合同编号</th>
+            <th>合同类型</th>
+            <th>甲方名称</th>
+            <th>金额</th>
+            <th>是否开票</th>
+            <th>签订日期</th>
+            <th>开始日期</th>
+            <th>截止日期</th>
+            <th>文件</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for contract in contracts %}
+            <tr>
+              <td>{{ contract.id }}</td>
+              <td class="name">{{ contract.contract_name }}</td>
+              <td>{{ contract.contract_number }}</td>
+              <td>{{ contract.contract_type }}</td>
+              <td class="party">{{ contract.party_name }}</td>
+              <td>¥ {{ contract.amount|floatformat:2 }}</td>
+              <td>{{ contract.invoice_status }}</td>
+              <td>{{ contract.sign_date|default:"" }}</td>
+              <td>{{ contract.start_date|default:"" }}</td>
+              <td>{{ contract.end_date|default:"" }}</td>
+              <td>
+                {% if contract.file %}
+                  <a href="{{ contract.file.url }}" target="_blank">打开</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty">暂无合同数据</div>
+    {% endif %}
+  </main>
+</body>
+</html>

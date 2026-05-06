@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.db import models
 from django.utils import timezone
 
@@ -37,3 +39,69 @@ class Contract(models.Model):
 
     def __str__(self) -> str:
         return f"{self.contract_name}（{self.contract_number}）"
+
+    @property
+    def status(self) -> str:
+        if not self.end_date:
+            return "进行中"
+
+        today = timezone.localdate()
+        if self.end_date < today:
+            return "已到期"
+        if self.end_date <= today + timedelta(days=30):
+            return "即将到期"
+        return "进行中"
+
+    @property
+    def status_class(self) -> str:
+        return {
+            "已到期": "expired",
+            "即将到期": "expiring",
+            "进行中": "active",
+        }.get(self.status, "active")
+
+
+class RecordBase(models.Model):
+    contract = models.ForeignKey(Contract, on_delete=models.CASCADE, verbose_name="所属合同")
+    record_date = models.DateField("日期")
+    amount = models.DecimalField("金额", max_digits=14, decimal_places=2, default=0)
+    file = models.FileField("附件", upload_to="records/", null=True, blank=True)
+    remark = models.CharField("备注", max_length=255, blank=True)
+    created_at = models.DateTimeField("创建时间", default=timezone.now)
+    updated_at = models.DateTimeField("更新时间", auto_now=True)
+
+    class Meta:
+        abstract = True
+        ordering = ["record_date", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.contract.contract_name} - {self.record_date} - {self.amount}"
+
+
+class InvoiceRecord(RecordBase):
+    class Meta(RecordBase.Meta):
+        verbose_name = "开票记录"
+        verbose_name_plural = "开票记录"
+
+
+class PaymentRecord(RecordBase):
+    class Meta(RecordBase.Meta):
+        verbose_name = "收票记录"
+        verbose_name_plural = "收票记录"
+
+
+class AppSetting(models.Model):
+    delete_source_file = models.BooleanField("删除被替换或删除的已上传文件", default=False)
+    updated_at = models.DateTimeField("更新时间", auto_now=True)
+
+    class Meta:
+        verbose_name = "系统设置"
+        verbose_name_plural = "系统设置"
+
+    def __str__(self) -> str:
+        return "系统设置"
+
+    @classmethod
+    def current(cls) -> "AppSetting":
+        setting, _ = cls.objects.get_or_create(pk=1)
+        return setting

@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}合同管理系统{% endblock %}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+      background: #f6f7f9;
+      color: #1f2937;
+    }
+    a { color: #1d4ed8; text-decoration: none; }
+    .app-shell {
+      display: flex;
+      min-height: 100vh;
+    }
+    .sidebar {
+      width: 156px;
+      flex: 0 0 156px;
+      background: #eef1f5;
+      border-right: 1px solid #d9dee7;
+      padding: 16px 10px;
+      display: flex;
+      flex-direction: column;
+    }
+    .brand {
+      font-weight: 700;
+      margin: 0 0 16px;
+      padding: 8px 10px;
+    }
+    .nav-link {
+      display: block;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: #1f2937;
+    }
+    .nav-link:hover,
+    .nav-link.active {
+      background: #fff;
+      border-color: #d9dee7;
+      font-weight: 700;
+    }
+    .auth-box {
+      margin-top: auto;
+      padding: 10px;
+      color: #667085;
+      font-size: 13px;
+      line-height: 1.7;
+      border-top: 1px solid #d9dee7;
+    }
+    .auth-box strong {
+      display: block;
+      color: #1f2937;
+      font-size: 14px;
+    }
+    .page {
+      flex: 1;
+      min-width: 0;
+      padding: 22px;
+    }
+    .page-title { margin: 0 0 16px; font-size: 24px; }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .summary {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 9px 10px;
+      border: 1px solid #cbd3df;
+      border-radius: 4px;
+      background: #fff;
+      font-family: inherit;
+    }
+    input[type="checkbox"] {
+      width: auto;
+      padding: 0;
+    }
+    .search-toolbar {
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .search-input { width: 100%; }
+    .action-toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: nowrap;
+    }
+    .toolbar-spacer { flex: 1; }
+    .button, button {
+      display: inline-block;
+      padding: 9px 15px;
+      border: 1px solid #b9c3d1;
+      border-radius: 4px;
+      background: #fff;
+      color: #111827;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 14px;
+    }
+    .button.primary {
+      border-color: #2563eb;
+      background: #2563eb;
+      color: #fff;
+    }
+    .button.danger {
+      border-color: #dc2626;
+      background: #dc2626;
+      color: #fff;
+    }
+    .button.muted {
+      color: #98a2b3;
+      border-color: #d9dee7;
+      background: #f3f4f6;
+      cursor: not-allowed;
+    }
+    .button[aria-disabled="true"] {
+      color: #98a2b3;
+      border-color: #d9dee7;
+      background: #f3f4f6;
+      pointer-events: none;
+      cursor: not-allowed;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      background: #fff;
+      border: 1px solid #d9dee7;
+    }
+    table {
+      width: 100%;
+      min-width: 0;
+      table-layout: fixed;
+      border-collapse: collapse;
+      background: #fff;
+    }
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #edf0f5;
+      border-right: 1px solid #edf0f5;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    th {
+      background: #eef1f5;
+      font-weight: 700;
+    }
+    tbody tr.selectable-row {
+      cursor: pointer;
+    }
+    tbody tr.selectable-row:hover td {
+      background: #f1f6ff;
+    }
+    tbody tr.selectable-row.selected td {
+      background: #b9d8ff;
+    }
+    td.name, td.party, td.remark { text-align: left; }
+    .contract-table th:nth-child(1),
+    .contract-table td:nth-child(1) { width: 4%; }
+    .contract-table th:nth-child(2),
+    .contract-table td:nth-child(2) { width: 16%; }
+    .contract-table th:nth-child(3),
+    .contract-table td:nth-child(3) { width: 11%; }
+    .contract-table th:nth-child(4),
+    .contract-table td:nth-child(4) { width: 7%; }
+    .contract-table th:nth-child(5),
+    .contract-table td:nth-child(5) { width: 15%; }
+    .contract-table th:nth-child(6),
+    .contract-table td:nth-child(6) { width: 8%; }
+    .contract-table th:nth-child(7),
+    .contract-table td:nth-child(7) { width: 7%; }
+    .contract-table th:nth-child(8),
+    .contract-table td:nth-child(8),
+    .contract-table th:nth-child(9),
+    .contract-table td:nth-child(9),
+    .contract-table th:nth-child(10),
+    .contract-table td:nth-child(10) { width: 8%; }
+    .contract-table th:nth-child(11),
+    .contract-table td:nth-child(11) { width: 5%; }
+    .contract-table th:nth-child(12),
+    .contract-table td:nth-child(12) { width: 3%; }
+    .status {
+      font-weight: 700;
+    }
+    .status.active { color: #15803d; }
+    .status.expiring { color: #a16207; }
+    .status.expired { color: #dc2626; }
+    .empty {
+      padding: 40px;
+      text-align: center;
+      color: #667085;
+      background: #fff;
+      border: 1px solid #d9dee7;
+    }
+    .panel {
+      background: #fff;
+      border: 1px solid #d9dee7;
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px 18px;
+      max-width: 900px;
+    }
+    .form-row.full { grid-column: 1 / -1; }
+    .field-label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .errorlist {
+      margin: 6px 0 0;
+      padding-left: 18px;
+      color: #dc2626;
+    }
+    .expiring-list {
+      margin: 0 0 14px;
+      padding: 12px 16px;
+      background: #fff8e1;
+      border: 1px solid #f4d06f;
+    }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .metric-card {
+      background: #fff;
+      border: 1px solid #d9dee7;
+      padding: 16px;
+      min-height: 96px;
+    }
+    .metric-title {
+      color: #667085;
+      margin-bottom: 10px;
+    }
+    .metric-value {
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .chart-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+      align-items: stretch;
+    }
+    .chart-area {
+      background: #fff;
+      border: 1px solid #d9dee7;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+    .chart-area h2 { margin-top: 0; }
+    .recent-panel {
+      min-height: 300px;
+    }
+    .recent-panel table {
+      flex: 1;
+    }
+    .record-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+    .record-table {
+      min-width: 0;
+      table-layout: fixed;
+    }
+    .record-table th:nth-child(1),
+    .record-table td:nth-child(1) { width: 28%; }
+    .record-table th:nth-child(2),
+    .record-table td:nth-child(2) { width: 24%; }
+    .record-table th:nth-child(3),
+    .record-table td:nth-child(3) { width: 18%; }
+    .record-table th:nth-child(4),
+    .record-table td:nth-child(4) { width: 30%; }
+    .record-table td {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mini-chart {
+      width: 100%;
+      height: 240px;
+    }
+    .mini-chart.compact {
+      height: 220px;
+    }
+    @media (max-width: 900px) {
+      .app-shell { display: block; }
+      .sidebar {
+        width: auto;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .brand { margin: 0; }
+      .auth-box { margin-top: 0; margin-left: auto; border-top: 0; }
+      .metric-grid,
+      .chart-grid,
+      .record-grid {
+        grid-template-columns: 1fr;
+      }
+      .search-toolbar {
+        grid-template-columns: 1fr;
+      }
+      .action-toolbar {
+        flex-wrap: wrap;
+      }
+      .toolbar-spacer {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">合同系统</div>
+      <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'contracts:dashboard' %}">统计总览</a>
+      <a class="nav-link {% if active_nav == 'contracts' %}active{% endif %}" href="{% url 'contracts:contract_list' %}">合同列表</a>
+      <a class="nav-link {% if active_nav == 'settings' %}active{% endif %}" href="{% url 'contracts:settings' %}">设置</a>
+      <div class="auth-box">
+        {% if is_admin_mode %}
+          <strong>管理员模式</strong>
+          <a href="{% url 'contracts:logout' %}">退出登录</a>
+        {% elif is_guest_mode %}
+          <strong>游客模式</strong>
+          <a href="{% url 'contracts:logout' %}">退出游客</a>
+        {% else %}
+          <strong>未登录</strong>
+          <a href="{% url 'contracts:login' %}">登录 / 游客进入</a>
+        {% endif %}
+      </div>
+    </aside>
+    <main class="page">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script>
+    function clearInteractiveSelection() {
+      document.querySelectorAll(".selectable-row.selected").forEach((row) => {
+        row.classList.remove("selected");
+      });
+      document.querySelectorAll(".row-action").forEach((button) => {
+        button.href = "#";
+        button.setAttribute("aria-disabled", "true");
+      });
+    }
+
+    document.addEventListener("click", (event) => {
+      const keepSelection = event.target.closest(
+        "a, button, input, select, textarea, label, .selectable-row, [data-keep-selection]"
+      );
+      if (!keepSelection) {
+        if (typeof window.clearPageSelection === "function") {
+          window.clearPageSelection();
+        } else {
+          clearInteractiveSelection();
+        }
+      }
+    });
+  </script>
+</body>
+</html>

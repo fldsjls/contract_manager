@@ -1,89 +1,51 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>合同列表</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: "Microsoft YaHei", Arial, sans-serif;
-      background: #f6f7f9;
-      color: #1f2937;
-    }
-    .page {
-      padding: 24px;
-    }
-    .toolbar {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-    input {
-      width: 360px;
-      padding: 9px 10px;
-      border: 1px solid #cbd3df;
-      border-radius: 4px;
-    }
-    button {
-      padding: 9px 16px;
-      border: 1px solid #b9c3d1;
-      border-radius: 4px;
-      background: #fff;
-      cursor: pointer;
-    }
-    .summary {
-      margin-bottom: 12px;
-      font-weight: 600;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: #fff;
-      border: 1px solid #d9dee7;
-    }
-    th, td {
-      padding: 10px;
-      border-bottom: 1px solid #edf0f5;
-      border-right: 1px solid #edf0f5;
-      text-align: center;
-      white-space: nowrap;
-    }
-    th {
-      background: #eef1f5;
-      font-weight: 700;
-    }
-    td.name, td.party {
-      text-align: left;
-    }
-    .empty {
-      padding: 40px;
-      text-align: center;
-      color: #667085;
-      background: #fff;
-      border: 1px solid #d9dee7;
-    }
-  </style>
-</head>
-<body>
-  <main class="page">
-    <h1>合同列表</h1>
+{% extends "contracts/base.html" %}
 
-    <form class="toolbar" method="get">
-      <input name="q" value="{{ keyword }}" placeholder="搜索合同名称、合同编号、甲方名称">
-      <button type="submit">搜索</button>
-      <a href="{% url 'contracts:contract_list' %}"><button type="button">重置</button></a>
-      <a href="/admin/contracts/contract/add/"><button type="button">新增合同</button></a>
-      <a href="/admin/"><button type="button">管理后台</button></a>
-    </form>
+{% block title %}合同列表{% endblock %}
 
-    <div class="summary">
-      共 {{ contract_count }} 份合同，总金额：¥ {{ total_amount|floatformat:2 }}
+{% block content %}
+  <h1 class="page-title">合同列表</h1>
+
+  <form class="search-toolbar" method="get">
+    <input class="search-input" name="q" value="{{ keyword }}" placeholder="搜索合同名称、合同编号、甲方名称">
+    <button type="submit">搜索</button>
+    <a class="button" href="{% url 'contracts:contract_list' %}">重置</a>
+  </form>
+
+  <div class="action-toolbar" aria-label="合同操作" data-keep-selection>
+    {% if is_admin_mode %}
+      <a class="button primary" href="{% url 'contracts:contract_create' %}">新增合同</a>
+      <a class="button row-action" id="recordButton" href="#" data-url-template="{% url 'contracts:record_add' 0 %}" aria-disabled="true">记录添加</a>
+    {% else %}
+      <a class="button muted" href="{% url 'contracts:login' %}">登录后新增</a>
+    {% endif %}
+    <a class="button row-action" id="detailButton" href="#" data-url-template="{% url 'contracts:contract_detail' 0 %}" aria-disabled="true">查看详情</a>
+    {% if is_admin_mode %}
+      <a class="button row-action" id="editButton" href="#" data-url-template="{% url 'contracts:contract_update' 0 %}" aria-disabled="true">编辑合同</a>
+    {% endif %}
+    <a class="button row-action" id="fileButton" href="#" target="_blank" aria-disabled="true">打开文件</a>
+    <span class="toolbar-spacer"></span>
+    {% if is_admin_mode %}
+      <a class="button danger row-action" id="deleteButton" href="#" data-url-template="{% url 'contracts:contract_delete' 0 %}" aria-disabled="true">删除合同</a>
+    {% endif %}
+  </div>
+
+  <div class="summary">
+    <span>共 {{ contract_count }} 份合同</span>
+    <span>总金额：¥ {{ total_amount|floatformat:2 }}</span>
+  </div>
+
+  {% if expiring_contracts %}
+    <div class="expiring-list">
+      <strong>到期提醒：</strong>
+      {% for contract in expiring_contracts|slice:":6" %}
+        {{ contract.contract_name }}（{{ contract.end_date }}）{% if not forloop.last %}；{% endif %}
+      {% endfor %}
     </div>
+  {% endif %}
 
-    {% if contracts %}
-      <table>
+  {% if contracts %}
+    <div class="table-wrap">
+      <table class="contract-table" id="contractTable">
         <thead>
           <tr>
             <th>ID</th>
@@ -96,12 +58,17 @@
             <th>签订日期</th>
             <th>开始日期</th>
             <th>截止日期</th>
+            <th>状态</th>
             <th>文件</th>
           </tr>
         </thead>
         <tbody>
           {% for contract in contracts %}
-            <tr>
+            <tr
+              class="selectable-row"
+              data-contract-id="{{ contract.id }}"
+              data-file-url="{% if contract.file %}{{ contract.file.url }}{% endif %}"
+            >
               <td>{{ contract.id }}</td>
               <td class="name">{{ contract.contract_name }}</td>
               <td>{{ contract.contract_number }}</td>
@@ -112,18 +79,72 @@
               <td>{{ contract.sign_date|default:"" }}</td>
               <td>{{ contract.start_date|default:"" }}</td>
               <td>{{ contract.end_date|default:"" }}</td>
-              <td>
-                {% if contract.file %}
-                  <a href="{{ contract.file.url }}" target="_blank">打开</a>
-                {% endif %}
-              </td>
+              <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
+              <td>{% if contract.file %}已上传{% else %}未上传{% endif %}</td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
-    {% else %}
-      <div class="empty">暂无合同数据</div>
-    {% endif %}
-  </main>
-</body>
-</html>
+    </div>
+  {% else %}
+    <div class="empty">暂无合同数据</div>
+  {% endif %}
+
+  <script>
+    const table = document.querySelector("#contractTable");
+    const rowButtons = document.querySelectorAll(".row-action");
+    const fileButton = document.querySelector("#fileButton");
+
+    function setDisabled(button, disabled) {
+      button.setAttribute("aria-disabled", disabled ? "true" : "false");
+    }
+
+    function urlFor(button, id) {
+      return button.dataset.urlTemplate.replace("/0/", `/${id}/`);
+    }
+
+    function clearSelection() {
+      document.querySelectorAll(".selectable-row.selected").forEach((row) => {
+        row.classList.remove("selected");
+      });
+      rowButtons.forEach((button) => {
+        button.href = "#";
+        setDisabled(button, true);
+      });
+      if (fileButton) {
+        fileButton.removeAttribute("href");
+      }
+    }
+
+    window.clearPageSelection = clearSelection;
+
+    if (table) {
+      table.addEventListener("click", (event) => {
+        const row = event.target.closest(".selectable-row");
+        if (!row) {
+          clearSelection();
+          return;
+        }
+
+        clearSelection();
+        row.classList.add("selected");
+
+        const id = row.dataset.contractId;
+        rowButtons.forEach((button) => {
+          if (button.dataset.urlTemplate) {
+            button.href = urlFor(button, id);
+          }
+          setDisabled(button, false);
+        });
+
+        if (fileButton && row.dataset.fileUrl) {
+          fileButton.href = row.dataset.fileUrl;
+          setDisabled(fileButton, false);
+        } else if (fileButton) {
+          fileButton.removeAttribute("href");
+          setDisabled(fileButton, true);
+        }
+      });
+    }
+  </script>
+{% endblock %}

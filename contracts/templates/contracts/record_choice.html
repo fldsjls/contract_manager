@@ -1,0 +1,20 @@
+{% extends "contracts/base.html" %}
+
+{% block title %}记录添加{% endblock %}
+
+{% block content %}
+  <h1 class="page-title">记录添加</h1>
+
+  <section class="panel">
+    <div class="summary">
+      <span>所属合同：{{ contract.contract_name }}</span>
+      <span>合同编号：{{ contract.contract_number }}</span>
+    </div>
+
+    <div class="toolbar">
+      <a class="button primary" href="{% url 'contracts:invoice_record_create' contract.id %}">添加开票记录</a>
+      <a class="button" href="{% url 'contracts:payment_record_create' contract.id %}">添加收票记录</a>
+      <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
+    </div>
+  </section>
+{% endblock %}

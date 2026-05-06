@@ -1,0 +1,27 @@
+{% extends "contracts/base.html" %}
+
+{% block title %}系统设置{% endblock %}
+
+{% block content %}
+  <h1 class="page-title">系统设置</h1>
+
+  <section class="panel">
+    <form method="post">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <label style="display: flex; gap: 10px; align-items: center;">
+        {{ form.delete_source_file }}
+        <span>删除被替换或删除的已上传文件</span>
+      </label>
+      <p style="color: #667085;">
+        说明：浏览器上传文件时，系统只能管理服务器 media 目录中的已上传副本，不能删除用户电脑上的原始文件。
+      </p>
+      <div class="toolbar">
+        <button class="button primary" type="submit">保存设置</button>
+        {% if is_admin_mode %}
+          <a class="button" href="/admin/">管理后台</a>
+        {% endif %}
+      </div>
+    </form>
+  </section>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "contracts/base.html" %}
+
+{% block title %}删除合同{% endblock %}
+
+{% block content %}
+  <h1 class="page-title">删除合同</h1>
+
+  <form class="panel" method="post">
+    {% csrf_token %}
+    <p>确定要删除以下合同吗？此操作不可撤销。</p>
+    <p><strong>{{ contract.contract_name }}</strong>（{{ contract.contract_number }}）</p>
+
+    <div class="toolbar">
+      <button class="button danger" type="submit">确认删除</button>
+      <a class="button" href="{% url 'contracts:contract_list' %}">取消</a>
+    </div>
+  </form>
+{% endblock %}

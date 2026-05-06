@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 - 合同管理系统</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f6f7f9;
+      color: #1f2937;
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+    }
+    .login-card {
+      width: min(420px, calc(100vw - 32px));
+      padding: 26px;
+      background: #fff;
+      border: 1px solid #d9dee7;
+    }
+    h1 { margin: 0 0 18px; font-size: 24px; }
+    label { display: block; margin: 12px 0 6px; font-weight: 600; }
+    input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #cbd3df;
+      border-radius: 4px;
+      font-family: inherit;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    button, a {
+      display: inline-block;
+      padding: 9px 15px;
+      border: 1px solid #b9c3d1;
+      border-radius: 4px;
+      background: #fff;
+      color: #111827;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 14px;
+      text-decoration: none;
+    }
+    .primary {
+      border-color: #2563eb;
+      background: #2563eb;
+      color: #fff;
+    }
+    .errorlist {
+      margin: 8px 0;
+      padding-left: 18px;
+      color: #dc2626;
+    }
+  </style>
+</head>
+<body>
+  <main class="login-card">
+    <h1>合同管理系统</h1>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <label for="{{ form.username.id_for_label }}">{{ form.username.label }}</label>
+      {{ form.username }}
+      {{ form.username.errors }}
+      <label for="{{ form.password.id_for_label }}">{{ form.password.label }}</label>
+      {{ form.password }}
+      {{ form.password.errors }}
+      <div class="actions">
+        <button class="primary" type="submit">管理员登录</button>
+        <button type="submit" name="guest" value="1">游客进入</button>
+        <a href="{% url 'contracts:dashboard' %}">返回总览</a>
+      </div>
+    </form>
+  </main>
+</body>
+</html>

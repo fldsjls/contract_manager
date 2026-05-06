@@ -1,0 +1,32 @@
+{% extends "contracts/base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+  <h1 class="page-title">{{ title }}</h1>
+
+  <section class="panel">
+    <div class="summary">
+      <span>所属合同：{{ contract.contract_name }}</span>
+      <span>合同编号：{{ contract.contract_number }}</span>
+    </div>
+
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <div class="form-grid">
+        {% for field in form %}
+          <div class="form-row {% if field.name == 'remark' %}full{% endif %}">
+            <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {{ field.errors }}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="toolbar" style="margin-top: 18px;">
+        <button class="button primary" type="submit">保存</button>
+        <a class="button" href="{% url 'contracts:contract_list' %}">取消</a>
+      </div>
+    </form>
+  </section>
+{% endblock %}

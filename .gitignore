@@ -1,0 +1,33 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local database and uploaded contract files
+data/*.db
+data/*.db-journal
+data/*.sqlite
+data/*.sqlite3
+contracts/*
+!contracts/.gitkeep
+
+# PyInstaller build output
+build/
+dist/
+*.spec
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

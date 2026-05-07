@@ -41,19 +41,21 @@
         </div>
         {% if contract_files %}
           {% for item in contract_files %}
-            <div class="file-item">
+            <div class="file-item sortable-file" data-file-id="{{ item.id }}" draggable="true">
               <input type="checkbox" name="delete_files" value="{{ item.id }}">
-              <span>{{ item.original_name|default:item.file.name }}</span>
+              <span class="file-name" title="{{ item.original_name|default:item.file.name }}">{{ item.original_name|default:item.file.name }}</span>
               <div class="file-actions">
-                <a class="button" href="{{ item.file.url }}" target="_blank">打开</a>
+                <a class="button" href="{% url 'contracts:contract_file_preview' item.id %}">预览</a>
+                <a class="button" href="{{ item.file.url }}" download>下载</a>
               </div>
             </div>
           {% endfor %}
         {% elif contract and contract.file %}
           <div class="file-item legacy-file-item">
-            <span>{{ contract.file.name }}</span>
+            <span class="file-name" title="{{ contract.file.name }}">{{ contract.file.name }}</span>
             <div class="file-actions">
-              <a class="button" href="{{ contract.file.url }}" target="_blank">打开</a>
+              <a class="button" href="{% url 'contracts:legacy_contract_file_preview' contract.id %}">预览</a>
+              <a class="button" href="{{ contract.file.url }}" download>下载</a>
             </div>
           </div>
         {% endif %}
@@ -75,6 +77,7 @@
     const fileList = document.querySelector("#fileList");
     const contractTypeInput = document.querySelector("#id_contract_type");
     const endDateInput = document.querySelector("#id_end_date");
+    const reorderUrl = "{% if contract %}{% url 'contracts:contract_file_reorder' contract.id %}{% endif %}";
 
     function syncEndDateRequired() {
       if (!contractTypeInput || !endDateInput) {
@@ -92,21 +95,71 @@
       const row = document.createElement("div");
       row.className = "file-item";
       if (fileData.id) {
+        row.classList.add("sortable-file");
+        row.draggable = true;
+        row.dataset.fileId = fileData.id;
         row.innerHTML = `
           <input type="checkbox" name="delete_files" value="${fileData.id}">
-          <span>${fileData.name}</span>
-          <div class="file-actions"><a class="button" href="${fileData.url}" target="_blank">打开</a></div>
+          <span class="file-name" title="${fileData.name}">${fileData.name}</span>
+          <div class="file-actions">
+            <a class="button" href="${fileData.preview_url}">预览</a>
+            <a class="button" href="${fileData.url}" download>下载</a>
+          </div>
         `;
       } else {
         row.classList.add("pending-file");
         row.innerHTML = `
           <span class="pending-marker">待上传</span>
-          <span>${fileData.name}</span>
+          <span class="file-name" title="${fileData.name}">${fileData.name}</span>
           <div class="file-actions"><span class="button muted">${pendingText}</span></div>
         `;
       }
       fileList.appendChild(row);
+      bindSortableFile(row);
     }
+
+    function sortableRows() {
+      return Array.from(fileList.querySelectorAll(".sortable-file"));
+    }
+
+    async function saveFileOrder() {
+      if (!reorderUrl) {
+        return;
+      }
+      await fetch(reorderUrl, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value,
+        },
+        body: JSON.stringify({ file_ids: sortableRows().map((row) => row.dataset.fileId) }),
+      });
+    }
+
+    function bindSortableFile(row) {
+      row.addEventListener("dragstart", () => {
+        row.classList.add("dragging");
+      });
+      row.addEventListener("dragend", () => {
+        row.classList.remove("dragging");
+        saveFileOrder();
+      });
+    }
+
+    fileList.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      const dragging = fileList.querySelector(".dragging");
+      const target = event.target.closest(".sortable-file");
+      if (!dragging || !target || dragging === target) {
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      const afterTarget = event.clientY > rect.top + rect.height / 2;
+      fileList.insertBefore(dragging, afterTarget ? target.nextSibling : target);
+    });
+
+    sortableRows().forEach(bindSortableFile);
 
     contractFilesInput.addEventListener("change", async () => {
       const files = Array.from(contractFilesInput.files);

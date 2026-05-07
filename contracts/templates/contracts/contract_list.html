@@ -26,7 +26,7 @@
       {% if is_admin_mode %}
         <a class="button row-action" id="editButton" href="#" data-url-template="{% url 'contracts:contract_update' 0 %}" aria-disabled="true">编辑合同</a>
       {% endif %}
-      <a class="button row-action" id="fileButton" href="#" target="_blank" aria-disabled="true">打开文件</a>
+      <a class="button row-action" id="fileButton" href="#" aria-disabled="true">预览文件</a>
       <button class="button row-action" id="statsButton" type="button" aria-disabled="true">统计</button>
       <span class="toolbar-spacer"></span>
       {% if is_admin_mode %}
@@ -84,7 +84,7 @@
                 data-invoice-total="¥ {{ contract.invoice_total|floatformat:2 }}"
                 data-payment-total="¥ {{ contract.payment_total|floatformat:2 }}"
                 data-payment-rate="{{ contract.payment_rate|floatformat:1 }}%"
-                data-file-url="{% if contract.latest_file %}{{ contract.latest_file.file.url }}{% elif contract.file %}{{ contract.file.url }}{% endif %}"
+                data-file-url="{% if contract.latest_file %}{% url 'contracts:contract_file_preview' contract.latest_file.id %}{% elif contract.file %}{% url 'contracts:legacy_contract_file_preview' contract.id %}{% endif %}"
               >
                 <td>{{ forloop.counter }}</td>
                 <td class="name">{{ contract.contract_name }}</td>

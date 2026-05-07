@@ -36,13 +36,17 @@
               <th>是否开票</th>
               <td>{{ contract.invoice_status }}</td>
               <th>文件</th>
-              <td>
-                {% if contract_files %}
-                  {% for item in contract_files %}
-                    <a class="button" href="{{ item.file.url }}" target="_blank">{{ item.original_name|default:"打开文件" }}</a>
-                  {% endfor %}
+              <td class="file-cell">
+                {% if primary_file %}
+                  <a class="button file-preview-button" href="{% url 'contracts:contract_file_preview' primary_file.id %}">
+                    <span class="file-preview-name" title="{{ primary_file.original_name|default:primary_file.file.name }}">
+                      {{ primary_file.original_name|default:primary_file.file.name }}
+                    </span>
+                  </a>
                 {% elif contract.file %}
-                  <a class="button" href="{{ contract.file.url }}" target="_blank">打开合同文件</a>
+                  <a class="button file-preview-button" href="{% url 'contracts:legacy_contract_file_preview' contract.id %}">
+                    <span class="file-preview-name" title="{{ contract.file.name }}">{{ contract.file.name }}</span>
+                  </a>
                 {% else %}
                   未上传
                 {% endif %}

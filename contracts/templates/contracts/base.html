@@ -431,10 +431,46 @@
       border: 1px solid #d9dee7;
       background: #fff;
     }
+    .file-item[draggable="true"] {
+      cursor: move;
+    }
+    .file-item.dragging {
+      opacity: 0.55;
+      border-color: #2563eb;
+      background: #f1f6ff;
+    }
     .file-item span {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .file-name {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-preview-name {
+      display: inline-block;
+      max-width: 100%;
+      vertical-align: middle;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-preview-button {
+      display: inline-flex;
+      max-width: 100%;
+      min-width: 0;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    td.file-cell {
+      min-width: 0;
+      max-width: 0;
+      overflow: hidden;
     }
     .legacy-file-item {
       grid-template-columns: minmax(0, 1fr) auto;

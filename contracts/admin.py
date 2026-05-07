@@ -28,7 +28,7 @@ class ContractAdmin(admin.ModelAdmin):
 @admin.register(ContractFile)
 class ContractFileAdmin(admin.ModelAdmin):
     # 后台附件列表显示所属合同、原文件名和上传时间。
-    list_display = ("contract", "original_name", "created_at")
+    list_display = ("contract", "original_name", "sort_order", "created_at")
     # 后台附件搜索支持合同信息和文件名。
     search_fields = ("contract__contract_name", "contract__contract_number", "original_name")
 

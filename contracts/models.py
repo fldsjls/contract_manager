@@ -94,8 +94,8 @@ class Contract(models.Model):
 
     @property
     def latest_file(self):
-        # 取最近上传的一份合同文件供列表页快速打开。
-        return self.files.order_by("-created_at", "-id").first()
+        # 取排序最靠前的一份合同文件供列表和详情页预览。
+        return self.files.order_by("sort_order", "id").first()
 
     @property
     def invoice_total(self) -> Decimal:
@@ -130,11 +130,12 @@ class ContractFile(models.Model):
     contract = models.ForeignKey(Contract, related_name="files", on_delete=models.CASCADE, verbose_name="所属合同")
     file = models.FileField("合同文件", upload_to=project_file_upload_path)
     original_name = models.CharField("原文件名", max_length=255, blank=True)
+    sort_order = models.PositiveIntegerField("排序", default=0)
     created_at = models.DateTimeField("上传时间", default=timezone.now)
 
     class Meta:
-        # 新上传的文件显示在前面。
-        ordering = ["-created_at", "-id"]
+        # 文件按用户调整的顺序显示。
+        ordering = ["sort_order", "id"]
         verbose_name = "合同文件"
         verbose_name_plural = "合同文件"
 

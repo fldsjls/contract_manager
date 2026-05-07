@@ -1,6 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 from functools import wraps
+import json
 from pathlib import Path
 import socket
 
@@ -9,6 +10,7 @@ from django.contrib.auth.forms import PasswordChangeForm
 from django.db.models import Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 
 from .forms import (
@@ -69,8 +71,14 @@ def save_contract_files(contract: Contract, uploaded_files) -> None:
             delete_file_from_storage(contract.file)
             contract.file = None
             contract.save(update_fields=["file"])
-    for item in uploaded_files:
-        ContractFile.objects.create(contract=contract, file=item, original_name=item.name)
+    next_order = contract.files.count()
+    for index, item in enumerate(uploaded_files):
+        ContractFile.objects.create(
+            contract=contract,
+            file=item,
+            original_name=item.name,
+            sort_order=next_order + index,
+        )
 
 
 # 保存合同附件并返回新建的文件对象，供即时上传接口使用。
@@ -82,9 +90,15 @@ def save_contract_files_and_return(contract: Contract, uploaded_files) -> list[C
             delete_file_from_storage(contract.file)
             contract.file = None
             contract.save(update_fields=["file"])
+    next_order = contract.files.count()
     return [
-        ContractFile.objects.create(contract=contract, file=item, original_name=item.name)
-        for item in uploaded_files
+        ContractFile.objects.create(
+            contract=contract,
+            file=item,
+            original_name=item.name,
+            sort_order=next_order + index,
+        )
+        for index, item in enumerate(uploaded_files)
     ]
 
 
@@ -205,6 +219,85 @@ def local_ip_address() -> str:
         return "127.0.0.1"
 
 
+# 渲染合同文件预览页，避免局域网用户直接触发浏览器下载。
+def contract_file_preview(request, pk: int):
+    item = get_object_or_404(ContractFile, pk=pk, contract__is_deleted=False)
+    suffix = Path(item.file.name).suffix.lower()
+    if suffix == ".pdf":
+        preview_type = "pdf"
+    elif suffix in {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}:
+        preview_type = "image"
+    else:
+        preview_type = "unsupported"
+    return render(
+        request,
+        "contracts/file_preview.html",
+        context_with_auth(
+            request,
+            {
+                "contract": item.contract,
+                "file_item": item,
+                "file_name": item.original_name or Path(item.file.name).name,
+                "file_url": item.file.url,
+                "preview_type": preview_type,
+                "delete_url": reverse("contracts:contract_file_delete", args=[item.id]),
+                "active_nav": "contracts",
+            },
+        ),
+    )
+
+
+@admin_required
+# 从预览页删除当前合同附件。
+def contract_file_delete(request, pk: int):
+    item = get_object_or_404(ContractFile, pk=pk, contract__is_deleted=False)
+    contract_id = item.contract_id
+    if request.method == "POST":
+        delete_file_from_storage(item.file)
+        item.delete()
+    return redirect("contracts:contract_detail", pk=contract_id)
+
+
+# 渲染早期单文件字段的预览页，兼容旧数据。
+def legacy_contract_file_preview(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    if not contract.file:
+        return redirect("contracts:contract_detail", pk=contract.pk)
+    suffix = Path(contract.file.name).suffix.lower()
+    if suffix == ".pdf":
+        preview_type = "pdf"
+    elif suffix in {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}:
+        preview_type = "image"
+    else:
+        preview_type = "unsupported"
+    return render(
+        request,
+        "contracts/file_preview.html",
+        context_with_auth(
+            request,
+            {
+                "contract": contract,
+                "file_name": Path(contract.file.name).name,
+                "file_url": contract.file.url,
+                "preview_type": preview_type,
+                "delete_url": reverse("contracts:legacy_contract_file_delete", args=[contract.id]),
+                "active_nav": "contracts",
+            },
+        ),
+    )
+
+
+@admin_required
+# 从预览页删除早期单文件字段中的合同文件。
+def legacy_contract_file_delete(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    if request.method == "POST" and contract.file:
+        delete_file_from_storage(contract.file)
+        contract.file = None
+        contract.save(update_fields=["file", "updated_at"])
+    return redirect("contracts:contract_detail", pk=contract.pk)
+
+
 # 渲染统计总览页面。
 def dashboard(request):
     purge_expired_trash()
@@ -321,11 +414,13 @@ def contract_list(request):
 # 渲染单个合同详情页面。
 def contract_detail(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    primary_file = contract.latest_file
     context = context_with_auth(
         request,
         {
             "contract": contract,
             "contract_files": contract.files.all(),
+            "primary_file": primary_file,
             "invoice_records": contract.invoicerecord_set.all(),
             "payment_records": contract.paymentrecord_set.all(),
             "active_nav": "contracts",
@@ -381,11 +476,30 @@ def contract_file_upload(request, pk: int):
                     "id": item.id,
                     "name": item.original_name or item.file.name,
                     "url": item.file.url,
+                    "preview_url": reverse("contracts:contract_file_preview", args=[item.id]),
                 }
                 for item in saved_files
             ]
         }
     )
+
+
+@admin_required
+# 保存编辑页拖拽后的合同文件顺序。
+def contract_file_reorder(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    if request.method != "POST":
+        return JsonResponse({"error": "只允许保存排序。"}, status=405)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "排序数据格式不正确。"}, status=400)
+    file_ids = payload.get("file_ids", [])
+    valid_ids = set(contract.files.values_list("id", flat=True))
+    ordered_ids = [int(item) for item in file_ids if str(item).isdigit() and int(item) in valid_ids]
+    for index, file_id in enumerate(ordered_ids):
+        ContractFile.objects.filter(id=file_id, contract=contract).update(sort_order=index)
+    return JsonResponse({"ok": True})
 
 
 @admin_required

@@ -8,6 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-contract-manager-lan-dev-key"
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
+X_FRAME_OPTIONS = "SAMEORIGIN"
 
 # 当前 Django 项目启用的内置应用和合同应用。
 INSTALLED_APPS = [

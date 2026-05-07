@@ -1,5 +1,7 @@
 ﻿{% extends "contracts/base.html" %}
 
+{% load static %}
+
 {% block title %}合同列表{% endblock %}
 
 {% block content %}
@@ -84,6 +86,7 @@
                 data-invoice-total="¥ {{ contract.invoice_total|floatformat:2 }}"
                 data-payment-total="¥ {{ contract.payment_total|floatformat:2 }}"
                 data-payment-rate="{{ contract.payment_rate|floatformat:1 }}%"
+                data-stats-url="{% url 'contracts:contract_stats_data' contract.id %}"
                 data-file-url="{% if contract.latest_file %}{% url 'contracts:contract_file_preview' contract.latest_file.id %}{% elif contract.file %}{% url 'contracts:legacy_contract_file_preview' contract.id %}{% endif %}"
               >
                 <td>{{ forloop.counter }}</td>
@@ -110,7 +113,7 @@
 
   <!-- 居中弹窗用于显示统计信息和删除确认。 -->
   <div class="modal-backdrop" id="centerModal" hidden>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="centerModalTitle">
+    <div class="modal-card" id="centerModalCard" role="dialog" aria-modal="true" aria-labelledby="centerModalTitle">
       <div class="modal-header" id="centerModalTitle"></div>
       <div class="modal-body" id="centerModalBody"></div>
       <div class="modal-actions">
@@ -120,7 +123,41 @@
     </div>
   </div>
 
+  <!-- 项目统计范围弹窗，样式和统计总览中的范围选择一致。 -->
+  <div class="modal-backdrop" id="projectRangeModal" hidden>
+    <div class="modal-card range-modal-card" role="dialog" aria-modal="true" aria-labelledby="projectRangeModalTitle">
+      <div class="modal-header" id="projectRangeModalTitle">选择统计范围</div>
+      <div class="modal-body">
+        <div class="range-section">
+          <label class="field-label">统计方式</label>
+          <div class="toolbar range-options" data-keep-selection>
+            <button class="button project-period-option primary" type="button" data-period="all">全部</button>
+            <button class="button project-period-option" type="button" data-period="year">按年统计</button>
+            <button class="button project-period-option" type="button" data-period="month">按月统计</button>
+          </div>
+        </div>
+        <div class="range-section range-control-space">
+          <div id="projectYearControl" class="field-control-row">
+            <button class="button icon-button" id="projectYearPrev" type="button">←</button>
+            <div class="button" id="projectYearLabel" style="flex: 1; text-align: center;"></div>
+            <button class="button icon-button" id="projectYearNext" type="button">→</button>
+          </div>
+          <div id="projectMonthControl" class="field-control-row">
+            <button class="button icon-button" id="projectMonthPrev" type="button">←</button>
+            <div class="button" id="projectMonthLabel" style="flex: 1; text-align: center;"></div>
+            <button class="button icon-button" id="projectMonthNext" type="button">→</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="button" id="projectRangeCancel" type="button">取消</button>
+        <button class="button primary" id="projectRangeApply" type="button">应用</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 表格行选择、按钮启用、文件打开和单项目统计弹窗逻辑。 -->
+  <script src="{% static 'contracts/vendor/echarts.min.js' %}"></script>
   <script>
     const table = document.querySelector("#contractTable");
     const rowButtons = document.querySelectorAll(".row-action");
@@ -129,11 +166,26 @@
     const deleteButton = document.querySelector("#deleteButton");
     const deleteForm = document.querySelector("#deleteForm");
     const centerModal = document.querySelector("#centerModal");
+    const centerModalCard = document.querySelector("#centerModalCard");
     const centerModalTitle = document.querySelector("#centerModalTitle");
     const centerModalBody = document.querySelector("#centerModalBody");
     const centerModalCancel = document.querySelector("#centerModalCancel");
     const centerModalConfirm = document.querySelector("#centerModalConfirm");
+    const projectRangeModal = document.querySelector("#projectRangeModal");
+    const projectRangeCancel = document.querySelector("#projectRangeCancel");
+    const projectRangeApply = document.querySelector("#projectRangeApply");
+    const projectPeriodOptions = document.querySelectorAll(".project-period-option");
+    const projectYearControl = document.querySelector("#projectYearControl");
+    const projectMonthControl = document.querySelector("#projectMonthControl");
+    const projectYearLabel = document.querySelector("#projectYearLabel");
+    const projectMonthLabel = document.querySelector("#projectMonthLabel");
     let modalConfirmHandler = null;
+    let projectStatsState = {
+      url: "",
+      period: "all",
+      year: new Date().getFullYear(),
+      month: new Date().getMonth() + 1,
+    };
 
     function setDisabled(button, disabled) {
       button.setAttribute("aria-disabled", disabled ? "true" : "false");
@@ -145,6 +197,7 @@
 
     function closeCenterModal() {
       centerModal.hidden = true;
+      centerModalCard.classList.remove("wide");
       modalConfirmHandler = null;
       centerModalConfirm.classList.remove("danger");
       centerModalConfirm.classList.add("primary");
@@ -154,6 +207,7 @@
     function openCenterModal({ title, body, confirmText = "确定", cancelText = "取消", danger = false, onConfirm = null }) {
       centerModalTitle.textContent = title;
       centerModalBody.textContent = body;
+      centerModalCard.classList.remove("wide");
       centerModalConfirm.textContent = confirmText;
       centerModalCancel.textContent = cancelText;
       centerModalCancel.hidden = !onConfirm;
@@ -181,6 +235,7 @@
         statsButton.dataset.invoiceTotal = "";
         statsButton.dataset.paymentTotal = "";
         statsButton.dataset.paymentRate = "";
+        statsButton.dataset.statsUrl = "";
       }
     }
 
@@ -221,6 +276,7 @@
           statsButton.dataset.invoiceTotal = row.dataset.invoiceTotal;
           statsButton.dataset.paymentTotal = row.dataset.paymentTotal;
           statsButton.dataset.paymentRate = row.dataset.paymentRate;
+          statsButton.dataset.statsUrl = row.dataset.statsUrl;
         }
       });
     }
@@ -244,20 +300,218 @@
     }
 
     if (statsButton) {
-      statsButton.addEventListener("click", () => {
+      statsButton.addEventListener("click", async () => {
         if (statsButton.getAttribute("aria-disabled") === "true") {
           return;
         }
-        openCenterModal({
-          title: "项目统计",
-          body:
-            `${statsButton.dataset.contractName}\n\n` +
-            `总开票金额：${statsButton.dataset.invoiceTotal}\n` +
-            `总收票金额：${statsButton.dataset.paymentTotal}\n` +
-            `收款率：${statsButton.dataset.paymentRate}`,
-          confirmText: "关闭",
-        });
+        centerModalCard.classList.add("wide");
+        centerModalTitle.textContent = "项目统计";
+        centerModalBody.textContent = "正在加载统计数据...";
+        centerModalConfirm.textContent = "关闭";
+        centerModalCancel.hidden = true;
+        modalConfirmHandler = null;
+        centerModalConfirm.classList.remove("danger");
+        centerModalConfirm.classList.add("primary");
+        centerModal.hidden = false;
+        centerModalConfirm.focus();
+        projectStatsState.url = statsButton.dataset.statsUrl;
+        projectStatsState.period = "all";
+        projectStatsState.year = new Date().getFullYear();
+        projectStatsState.month = new Date().getMonth() + 1;
+        await loadProjectStats();
       });
+    }
+
+    function formatMoney(value) {
+      return `¥ ${Number(value || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    async function loadProjectStats() {
+      const params = new URLSearchParams({
+        period: projectStatsState.period,
+        year: projectStatsState.year,
+        month: projectStatsState.month,
+      });
+      centerModalBody.textContent = "正在加载统计数据...";
+      try {
+        const response = await fetch(`${projectStatsState.url}?${params.toString()}`, {
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        if (!response.ok) {
+          throw new Error("统计数据加载失败");
+        }
+        renderProjectStats(await response.json());
+      } catch (error) {
+        centerModalBody.textContent = "统计数据加载失败，请稍后重试。";
+      }
+    }
+
+    function updateProjectRangeLabels() {
+      projectYearLabel.textContent = `${projectStatsState.year - 11} - ${projectStatsState.year} 年`;
+      projectMonthLabel.textContent = `${projectStatsState.year} 年`;
+      projectYearControl.style.display = projectStatsState.period === "year" ? "flex" : "none";
+      projectMonthControl.style.display = projectStatsState.period === "month" ? "flex" : "none";
+      projectPeriodOptions.forEach((button) => {
+        button.classList.toggle("primary", button.dataset.period === projectStatsState.period);
+      });
+    }
+
+    function openProjectRangeModal() {
+      updateProjectRangeLabels();
+      projectRangeModal.hidden = false;
+    }
+
+    function renderProjectStats(data) {
+      projectStatsState.period = data.period;
+      projectStatsState.year = data.year;
+      projectStatsState.month = data.month;
+      centerModalBody.textContent = "";
+      const wrapper = document.createElement("div");
+      wrapper.className = "project-stats";
+      wrapper.innerHTML = `
+        <div class="file-list-header">
+          <div class="project-stats-name"></div>
+          <button class="button" id="projectStatsRangeButton" type="button">${data.range_label}</button>
+        </div>
+        <section class="metric-grid">
+          <div class="metric-card">
+            <div class="metric-title">项目金额</div>
+            <div class="metric-value">${formatMoney(data.amount)}</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-title">项目开票</div>
+            <div class="metric-value">${formatMoney(data.invoice_total)}</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-title">项目收票</div>
+            <div class="metric-value">${formatMoney(data.payment_total)}</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-title">收款率</div>
+            <div class="metric-value">${Number(data.payment_rate || 0).toFixed(1)}%</div>
+          </div>
+        </section>
+        <div class="project-stats-chart" id="projectStatsChart"></div>
+      `;
+      wrapper.querySelector(".project-stats-name").textContent = data.contract_name;
+      centerModalBody.appendChild(wrapper);
+      wrapper.querySelector("#projectStatsRangeButton").addEventListener("click", openProjectRangeModal);
+      const chartElement = wrapper.querySelector("#projectStatsChart");
+      const chart = echarts.init(chartElement);
+      chart.setOption({
+        color: ["#2563eb", "#14b8a6"],
+        tooltip: {
+          trigger: "axis",
+          valueFormatter: (value) => `¥ ${Math.round(Number(value || 0)).toLocaleString("zh-CN")}`,
+        },
+        legend: {
+          top: 8,
+          left: 18,
+          itemWidth: 18,
+          itemHeight: 8,
+          data: ["开票", "收票"],
+        },
+        grid: {
+          left: 34,
+          right: 38,
+          top: 48,
+          bottom: 42,
+          containLabel: false,
+        },
+        xAxis: {
+          type: "category",
+          boundaryGap: false,
+          data: data.chart.labels,
+          axisLine: {
+            symbol: ["none", "arrow"],
+            lineStyle: { color: "#98a2b3" },
+          },
+          axisTick: { alignWithLabel: true },
+          axisLabel: {
+            color: "#475467",
+            fontSize: 12,
+            hideOverlap: true,
+          },
+        },
+        yAxis: {
+          type: "value",
+          scale: true,
+          axisLine: {
+            show: true,
+            symbol: ["none", "arrow"],
+            lineStyle: { color: "#98a2b3" },
+          },
+          axisLabel: { show: false },
+          splitLine: { lineStyle: { color: "#edf0f5" } },
+        },
+        dataZoom: [
+          {
+            type: "inside",
+            filterMode: "filter",
+            start: 0,
+            end: 100,
+            zoomOnMouseWheel: true,
+            moveOnMouseMove: true,
+            moveOnMouseWheel: false,
+          },
+          {
+            type: "slider",
+            filterMode: "filter",
+            left: 34,
+            right: 38,
+            height: 14,
+            bottom: 4,
+            start: 0,
+            end: 100,
+            brushSelect: false,
+          },
+        ],
+        series: [
+          {
+            name: "开票",
+            type: "line",
+            data: data.chart.invoice,
+            symbol: "circle",
+            symbolSize: 7,
+            lineStyle: { width: 2.4 },
+            label: {
+              show: true,
+              formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
+              color: "#2563eb",
+              fontSize: 11,
+            },
+            areaStyle: {
+              opacity: 0.18,
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: "#2563eb" },
+                { offset: 1, color: "rgba(37, 99, 235, 0)" },
+              ]),
+            },
+          },
+          {
+            name: "收票",
+            type: "line",
+            data: data.chart.payment,
+            symbol: "circle",
+            symbolSize: 7,
+            lineStyle: { width: 2.4 },
+            label: {
+              show: true,
+              formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
+              color: "#0f9f8f",
+              fontSize: 11,
+            },
+            areaStyle: {
+              opacity: 0.16,
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: "#14b8a6" },
+                { offset: 1, color: "rgba(20, 184, 166, 0)" },
+              ]),
+            },
+          },
+        ],
+      });
+      setTimeout(() => chart.resize(), 0);
     }
 
     centerModalCancel.addEventListener("click", closeCenterModal);
@@ -271,6 +525,40 @@
     centerModal.addEventListener("click", (event) => {
       if (event.target === centerModal) {
         closeCenterModal();
+      }
+    });
+    projectPeriodOptions.forEach((button) => {
+      button.addEventListener("click", () => {
+        projectStatsState.period = button.dataset.period;
+        updateProjectRangeLabels();
+      });
+    });
+    document.querySelector("#projectYearPrev").addEventListener("click", () => {
+      projectStatsState.year -= 1;
+      updateProjectRangeLabels();
+    });
+    document.querySelector("#projectYearNext").addEventListener("click", () => {
+      projectStatsState.year += 1;
+      updateProjectRangeLabels();
+    });
+    document.querySelector("#projectMonthPrev").addEventListener("click", () => {
+      projectStatsState.year -= 1;
+      updateProjectRangeLabels();
+    });
+    document.querySelector("#projectMonthNext").addEventListener("click", () => {
+      projectStatsState.year += 1;
+      updateProjectRangeLabels();
+    });
+    projectRangeCancel.addEventListener("click", () => {
+      projectRangeModal.hidden = true;
+    });
+    projectRangeApply.addEventListener("click", async () => {
+      projectRangeModal.hidden = true;
+      await loadProjectStats();
+    });
+    projectRangeModal.addEventListener("click", (event) => {
+      if (event.target === projectRangeModal) {
+        projectRangeModal.hidden = true;
       }
     });
   </script>

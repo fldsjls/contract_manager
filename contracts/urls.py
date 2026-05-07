@@ -19,6 +19,7 @@ urlpatterns = [
     path("contracts/", views.contract_list, name="contract_list"),
     path("contracts/new/", views.contract_create, name="contract_create"),
     path("contracts/<int:pk>/", views.contract_detail, name="contract_detail"),
+    path("contracts/<int:pk>/stats-data/", views.contract_stats_data, name="contract_stats_data"),
     path("files/<int:pk>/preview/", views.contract_file_preview, name="contract_file_preview"),
     path("files/<int:pk>/delete/", views.contract_file_delete, name="contract_file_delete"),
     path("contracts/<int:pk>/legacy-file/preview/", views.legacy_contract_file_preview, name="legacy_contract_file_preview"),

@@ -328,6 +328,98 @@ def scoped_querysets(period: str, year: int, month: int):
     return contracts, invoice_records, payment_records
 
 
+# 按统计范围生成单个合同的开票/收票趋势数据。
+def build_contract_chart_rows(contract: Contract, period: str, year: int, month: int) -> list[dict]:
+    invoice_queryset = contract.invoicerecord_set.all()
+    payment_queryset = contract.paymentrecord_set.all()
+    if period == "all":
+        today = timezone.localdate()
+        units = [today - timedelta(days=offset) for offset in range(11, -1, -1)]
+        invoice_by_day = {}
+        for record in invoice_queryset.filter(record_date__gte=units[0], record_date__lte=today):
+            invoice_by_day[record.record_date] = invoice_by_day.get(record.record_date, Decimal("0")) + record.amount
+        payment_by_day = {}
+        for record in payment_queryset.filter(record_date__gte=units[0], record_date__lte=today):
+            payment_by_day[record.record_date] = payment_by_day.get(record.record_date, Decimal("0")) + record.amount
+        return [
+            {
+                "label": unit.strftime("%m-%d"),
+                "invoice": invoice_by_day.get(unit, Decimal("0")),
+                "payment": payment_by_day.get(unit, Decimal("0")),
+            }
+            for unit in units
+        ]
+
+    if period == "year":
+        start_year = year - 11
+        invoice_by_unit = {}
+        for record in invoice_queryset.filter(record_date__year__gte=start_year, record_date__year__lte=year):
+            invoice_by_unit[record.record_date.year] = invoice_by_unit.get(record.record_date.year, Decimal("0")) + record.amount
+        payment_by_unit = {}
+        for record in payment_queryset.filter(record_date__year__gte=start_year, record_date__year__lte=year):
+            payment_by_unit[record.record_date.year] = payment_by_unit.get(record.record_date.year, Decimal("0")) + record.amount
+        return [
+            {
+                "label": f"{unit}年",
+                "invoice": invoice_by_unit.get(unit, Decimal("0")),
+                "payment": payment_by_unit.get(unit, Decimal("0")),
+            }
+            for unit in range(start_year, year + 1)
+        ]
+
+    invoice_by_unit = {}
+    for record in invoice_queryset.filter(record_date__year=year):
+        invoice_by_unit[record.record_date.month] = invoice_by_unit.get(record.record_date.month, Decimal("0")) + record.amount
+    payment_by_unit = {}
+    for record in payment_queryset.filter(record_date__year=year):
+        payment_by_unit[record.record_date.month] = payment_by_unit.get(record.record_date.month, Decimal("0")) + record.amount
+    return [
+        {
+            "label": f"{unit:02d}月",
+            "invoice": invoice_by_unit.get(unit, Decimal("0")),
+            "payment": payment_by_unit.get(unit, Decimal("0")),
+        }
+        for unit in range(1, 13)
+    ]
+
+
+# 返回单个合同的统计弹窗数据。
+def contract_stats_data(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    period, year, month, _, _, range_label = chart_range_from_request(request)
+    chart_rows = build_contract_chart_rows(contract, period, year, month)
+    invoice_records = contract.invoicerecord_set.all()
+    payment_records = contract.paymentrecord_set.all()
+    if period == "year":
+        start_year = year - 11
+        invoice_records = invoice_records.filter(record_date__year__gte=start_year, record_date__year__lte=year)
+        payment_records = payment_records.filter(record_date__year__gte=start_year, record_date__year__lte=year)
+    elif period == "month":
+        invoice_records = invoice_records.filter(record_date__year=year)
+        payment_records = payment_records.filter(record_date__year=year)
+    invoice_total = invoice_records.aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    payment_total = payment_records.aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    payment_rate = (payment_total / contract.amount * Decimal("100")) if contract.amount else Decimal("0")
+    return JsonResponse(
+        {
+            "contract_name": contract.contract_name,
+            "amount": float(contract.amount),
+            "invoice_total": float(invoice_total),
+            "payment_total": float(payment_total),
+            "payment_rate": float(payment_rate),
+            "period": period,
+            "year": year,
+            "month": month,
+            "range_label": range_label,
+            "chart": {
+                "labels": [row["label"] for row in chart_rows],
+                "invoice": [float(row["invoice"]) for row in chart_rows],
+                "payment": [float(row["payment"]) for row in chart_rows],
+            },
+        }
+    )
+
+
 # 渲染合同文件预览页，避免局域网用户直接触发浏览器下载。
 def contract_file_preview(request, pk: int):
     item = get_object_or_404(ContractFile, pk=pk, contract__is_deleted=False)

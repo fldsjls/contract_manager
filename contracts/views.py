@@ -209,6 +209,98 @@ def enrich_chart_rows(rows: list[dict], max_amount: Decimal) -> list[dict]:
     return rows
 
 
+# 根据请求参数确定统计趋势图的时间范围。
+def chart_range_from_request(request):
+    today = timezone.localdate()
+    period = request.GET.get("period", "all")
+    if period not in ("all", "year", "month"):
+        period = "all"
+    try:
+        year = int(request.GET.get("year", today.year))
+    except (TypeError, ValueError):
+        year = today.year
+    try:
+        month = int(request.GET.get("month", today.month))
+    except (TypeError, ValueError):
+        month = today.month
+    month = min(max(month, 1), 12)
+
+    if period == "all":
+        prev_params = "period=all"
+        next_params = "period=all"
+        return period, year, month, prev_params, next_params, "全部"
+
+    if period == "year":
+        prev_params = f"period=year&year={year - 1}&month={month}"
+        next_params = f"period=year&year={year + 1}&month={month}"
+        return period, year, month, prev_params, next_params, f"{year - 11} - {year} 年"
+
+    prev_params = f"period=month&year={year - 1}&month={month}"
+    next_params = f"period=month&year={year + 1}&month={month}"
+    return period, year, month, prev_params, next_params, f"{year} 年"
+
+
+# 按统计范围汇总开票/收票记录，生成趋势图行数据。
+def build_chart_rows(period: str, year: int, month: int) -> list[dict]:
+    invoice_queryset = InvoiceRecord.objects.filter(contract__is_deleted=False)
+    payment_queryset = PaymentRecord.objects.filter(contract__is_deleted=False)
+    if period == "all":
+        today = timezone.localdate()
+        units = [today - timedelta(days=offset) for offset in range(11, -1, -1)]
+        invoice_by_day = {}
+        for record in invoice_queryset.filter(record_date__gte=units[0], record_date__lte=today):
+            invoice_by_day[record.record_date] = invoice_by_day.get(record.record_date, Decimal("0")) + record.amount
+        payment_by_day = {}
+        for record in payment_queryset.filter(record_date__gte=units[0], record_date__lte=today):
+            payment_by_day[record.record_date] = payment_by_day.get(record.record_date, Decimal("0")) + record.amount
+        return [
+            {
+                "label": unit.strftime("%m-%d"),
+                "invoice": invoice_by_day.get(unit, Decimal("0")),
+                "payment": payment_by_day.get(unit, Decimal("0")),
+            }
+            for unit in units
+        ]
+
+    if period == "year":
+        start_year = year - 11
+        invoice_by_unit = {}
+        for record in invoice_queryset.filter(record_date__year__gte=start_year, record_date__year__lte=year):
+            unit = record.record_date.year
+            invoice_by_unit[unit] = invoice_by_unit.get(unit, Decimal("0")) + record.amount
+        payment_by_unit = {}
+        for record in payment_queryset.filter(record_date__year__gte=start_year, record_date__year__lte=year):
+            unit = record.record_date.year
+            payment_by_unit[unit] = payment_by_unit.get(unit, Decimal("0")) + record.amount
+        units = list(range(start_year, year + 1))
+        return [
+            {
+                "label": f"{unit}年",
+                "invoice": invoice_by_unit.get(unit, Decimal("0")),
+                "payment": payment_by_unit.get(unit, Decimal("0")),
+            }
+            for unit in units
+        ]
+
+    invoice_by_unit = {}
+    for record in invoice_queryset.filter(record_date__year=year):
+        unit = record.record_date.month
+        invoice_by_unit[unit] = invoice_by_unit.get(unit, Decimal("0")) + record.amount
+    payment_by_unit = {}
+    for record in payment_queryset.filter(record_date__year=year):
+        unit = record.record_date.month
+        payment_by_unit[unit] = payment_by_unit.get(unit, Decimal("0")) + record.amount
+    units = list(range(1, 13))
+    return [
+        {
+            "label": f"{unit:02d}月",
+            "invoice": invoice_by_unit.get(unit, Decimal("0")),
+            "payment": payment_by_unit.get(unit, Decimal("0")),
+        }
+        for unit in units
+    ]
+
+
 # 获取当前主机的局域网 IP，用于设置页提示其他用户访问地址。
 def local_ip_address() -> str:
     try:
@@ -217,6 +309,23 @@ def local_ip_address() -> str:
             return sock.getsockname()[0]
     except OSError:
         return "127.0.0.1"
+
+
+# 根据当前统计范围过滤合同和记录查询。
+def scoped_querysets(period: str, year: int, month: int):
+    contracts = Contract.objects.filter(is_deleted=False)
+    invoice_records = InvoiceRecord.objects.filter(contract__is_deleted=False)
+    payment_records = PaymentRecord.objects.filter(contract__is_deleted=False)
+    if period == "year":
+        start_year = year - 11
+        contracts = contracts.filter(created_at__year__gte=start_year, created_at__year__lte=year)
+        invoice_records = invoice_records.filter(record_date__year__gte=start_year, record_date__year__lte=year)
+        payment_records = payment_records.filter(record_date__year__gte=start_year, record_date__year__lte=year)
+    elif period == "month":
+        contracts = contracts.filter(created_at__year=year)
+        invoice_records = invoice_records.filter(record_date__year=year)
+        payment_records = payment_records.filter(record_date__year=year)
+    return contracts, invoice_records, payment_records
 
 
 # 渲染合同文件预览页，避免局域网用户直接触发浏览器下载。
@@ -301,36 +410,19 @@ def legacy_contract_file_delete(request, pk: int):
 # 渲染统计总览页面。
 def dashboard(request):
     purge_expired_trash()
-    active_contracts = Contract.objects.filter(is_deleted=False)
+    chart_period, chart_year, chart_month, prev_range_params, next_range_params, chart_range_label = chart_range_from_request(request)
+    active_contracts, scoped_invoice_records, scoped_payment_records = scoped_querysets(chart_period, chart_year, chart_month)
     total_amount = active_contracts.aggregate(total=Sum("amount"))["total"] or Decimal("0")
-    total_invoice = InvoiceRecord.objects.filter(contract__is_deleted=False).aggregate(total=Sum("amount"))["total"] or Decimal("0")
-    total_payment = PaymentRecord.objects.filter(contract__is_deleted=False).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    total_invoice = scoped_invoice_records.aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    total_payment = scoped_payment_records.aggregate(total=Sum("amount"))["total"] or Decimal("0")
     payment_rate = (total_payment / total_amount * Decimal("100")) if total_amount else Decimal("0")
 
-    today = timezone.localdate()
-    recent_cutoff = today - timedelta(days=14)
-    dates = sorted(
-        set(InvoiceRecord.objects.filter(contract__is_deleted=False).values_list("record_date", flat=True))
-        | set(PaymentRecord.objects.filter(contract__is_deleted=False).values_list("record_date", flat=True))
-    )
-    dates = [item for item in dates if item >= recent_cutoff][-15:]
-    invoice_by_date = {
-        row["record_date"]: row["total"] or Decimal("0")
-        for row in InvoiceRecord.objects.filter(contract__is_deleted=False).values("record_date").annotate(total=Sum("amount"))
+    chart_rows = build_chart_rows(chart_period, chart_year, chart_month)
+    chart_data = {
+        "labels": [row["label"] for row in chart_rows],
+        "invoice": [float(row["invoice"]) for row in chart_rows],
+        "payment": [float(row["payment"]) for row in chart_rows],
     }
-    payment_by_date = {
-        row["record_date"]: row["total"] or Decimal("0")
-        for row in PaymentRecord.objects.filter(contract__is_deleted=False).values("record_date").annotate(total=Sum("amount"))
-    }
-    chart_rows = [
-        {
-            "date": item,
-            "label": item.strftime("%m-%d"),
-            "invoice": invoice_by_date.get(item, Decimal("0")),
-            "payment": payment_by_date.get(item, Decimal("0")),
-        }
-        for item in dates
-    ]
     max_amount = max(
         [row["invoice"] for row in chart_rows] + [row["payment"] for row in chart_rows],
         default=Decimal("0"),
@@ -346,9 +438,16 @@ def dashboard(request):
             "total_payment": total_payment,
             "payment_rate": payment_rate,
             "chart_rows": chart_rows,
+            "chart_data": chart_data,
             "chart_has_lines": len(chart_rows) > 1,
             "invoice_points": chart_points(chart_rows, "invoice", max_amount),
             "payment_points": chart_points(chart_rows, "payment", max_amount),
+            "chart_period": chart_period,
+            "chart_year": chart_year,
+            "chart_month": chart_month,
+            "chart_range_label": chart_range_label,
+            "prev_range_params": prev_range_params,
+            "next_range_params": next_range_params,
             "expiring_contracts": expiring_contract_queryset(),
             "recent_contracts": recent_contracts,
             "recent_blank_rows": range(max(0, 5 - len(recent_contracts))),
@@ -453,7 +552,13 @@ def contract_create(request):
         "contracts/contract_form.html",
         context_with_auth(
             request,
-            {"form": form, "title": "新增合同", "contract_files": [], "active_nav": "contracts"},
+            {
+                "form": form,
+                "title": "新增合同",
+                "contract_files": [],
+                "default_contract_number": default_contract_number(),
+                "active_nav": "contracts",
+            },
         ),
     )
 
@@ -531,6 +636,7 @@ def contract_update(request, pk: int):
                 "title": "编辑合同",
                 "contract": contract,
                 "contract_files": contract.files.all(),
+                "default_contract_number": default_contract_number(),
                 "active_nav": "contracts",
             },
         ),

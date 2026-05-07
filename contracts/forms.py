@@ -22,7 +22,7 @@ class ContractForm(forms.ModelForm):
             "remark",
         ]
         widgets = {
-            "amount": forms.NumberInput(attrs={"step": "1000", "min": "0"}),
+            "amount": forms.TextInput(attrs={"inputmode": "decimal", "data-step": "1000"}),
             "sign_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "start_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "end_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),

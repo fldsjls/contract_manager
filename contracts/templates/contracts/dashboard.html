@@ -1,4 +1,5 @@
 {% extends "contracts/base.html" %}
+{% load static %}
 
 {% block title %}统计总览{% endblock %}
 
@@ -12,15 +13,15 @@
       <!-- 顶部四个统计卡片。 -->
       <section class="metric-grid">
         <div class="metric-card">
-          <div class="metric-title">总项目金额</div>
+          <div class="metric-title">项目金额</div>
           <div class="metric-value">¥ {{ total_amount|floatformat:2 }}</div>
         </div>
         <div class="metric-card">
-          <div class="metric-title">总项目开票</div>
+          <div class="metric-title">项目开票</div>
           <div class="metric-value">¥ {{ total_invoice|floatformat:2 }}</div>
         </div>
         <div class="metric-card">
-          <div class="metric-title">总项目收票</div>
+          <div class="metric-title">项目收票</div>
           <div class="metric-value">¥ {{ total_payment|floatformat:2 }}</div>
         </div>
         <div class="metric-card">
@@ -32,42 +33,17 @@
       <!-- 中部展示开票收票趋势和即将到期项目。 -->
       <section class="chart-grid">
         <div class="chart-area">
-          <h2>开票 / 收票趋势</h2>
+          <div class="file-list-header" style="margin-bottom: 8px;">
+            <h2>开票 / 收票趋势</h2>
+            <div class="file-actions">
+              {% if chart_period != "all" %}<a class="button" href="?{{ prev_range_params }}">←</a>{% endif %}
+              <button class="button" id="rangeModalButton" type="button">{{ chart_range_label }}</button>
+              {% if chart_period != "all" %}<a class="button" href="?{{ next_range_params }}">→</a>{% endif %}
+            </div>
+          </div>
           {% if chart_rows %}
-            <svg class="mini-chart compact" viewBox="0 0 900 300" role="img">
-              <defs>
-                <linearGradient id="invoiceGradient" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stop-color="#2563eb" stop-opacity="0.22" />
-                  <stop offset="100%" stop-color="#2563eb" stop-opacity="0" />
-                </linearGradient>
-                <linearGradient id="paymentGradient" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.2" />
-                  <stop offset="100%" stop-color="#14b8a6" stop-opacity="0" />
-                </linearGradient>
-                <marker id="axisArrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                  <path d="M0,0 L6,3 L0,6 Z" fill="#98a2b3" />
-                </marker>
-              </defs>
-              <line x1="70" y1="230" x2="854" y2="230" stroke="#d9dee7" marker-end="url(#axisArrow)" />
-              <line x1="70" y1="230" x2="70" y2="48" stroke="#d9dee7" marker-end="url(#axisArrow)" />
-              <text x="34" y="58" fill="#667085">金额</text>
-              <text x="878" y="230" fill="#667085" text-anchor="middle" dominant-baseline="middle" >日期</text>
-              {% if chart_has_lines %}
-                <polygon fill="url(#invoiceGradient)" points="{{ invoice_points }} 840,230 70,230" />
-                <polygon fill="url(#paymentGradient)" points="{{ payment_points }} 840,230 70,230" />
-                <polyline fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="{{ invoice_points }}" />
-                <polyline fill="none" stroke="#14b8a6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="{{ payment_points }}" />
-              {% endif %}
-              {% for row in chart_rows %}
-                <text x="{{ row.invoice_label_x }}" y="{{ row.invoice_label_y }}" fill="#2563eb" text-anchor="end" font-size="12">¥ {{ row.invoice|floatformat:0 }}</text>
-                <text x="{{ row.payment_label_x }}" y="{{ row.payment_label_y }}" fill="#0f9f8f" text-anchor="end" font-size="12">¥ {{ row.payment|floatformat:0 }}</text>
-                <circle cx="{{ row.invoice_x }}" cy="{{ row.invoice_y }}" r="5" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
-                <circle cx="{{ row.payment_x }}" cy="{{ row.payment_y }}" r="5" fill="#14b8a6" stroke="#ffffff" stroke-width="2" />
-                <text x="{{ row.date_label_x }}" y="260" fill="#667085" text-anchor="middle" font-size="12">{{ row.label }}</text>
-              {% endfor %}
-              <text x="64" y="24" fill="#2563eb">开票</text>
-              <text x="124" y="24" fill="#14b8a6">收票</text>
-            </svg>
+            <div class="echarts-trend" id="trendChart" role="img" aria-label="开票和收票趋势图"></div>
+            {{ chart_data|json_script:"trendChartData" }}
           {% else %}
             <div class="empty" style="flex: 1;">暂无开票/收票记录</div>
           {% endif %}
@@ -138,4 +114,239 @@
       </section>
     </div>
   </div>
+
+  <!-- 时间范围弹窗用于切换按年或按月统计。 -->
+  <div class="modal-backdrop" id="rangeModal" hidden>
+    <div class="modal-card range-modal-card" role="dialog" aria-modal="true" aria-labelledby="rangeModalTitle">
+      <div class="modal-header" id="rangeModalTitle">选择统计范围</div>
+      <form method="get">
+        <input id="periodInput" name="period" type="hidden" value="{{ chart_period }}">
+        <input id="yearInput" name="year" type="hidden" value="{{ chart_year }}">
+        <input id="monthInput" name="month" type="hidden" value="{{ chart_month }}">
+        <div class="modal-body">
+          <div class="range-section">
+            <label class="field-label">统计方式</label>
+            <div class="toolbar range-options" data-keep-selection>
+              <button class="button period-option {% if chart_period == 'all' %}primary{% endif %}" type="button" data-period="all">全部</button>
+              <button class="button period-option {% if chart_period == 'year' %}primary{% endif %}" type="button" data-period="year">按年统计</button>
+              <button class="button period-option {% if chart_period == 'month' %}primary{% endif %}" type="button" data-period="month">按月统计</button>
+            </div>
+          </div>
+          <div class="range-section range-control-space">
+            <div id="yearControl" class="field-control-row">
+                <button class="button icon-button" id="yearPrev" type="button">←</button>
+                <div class="button" id="yearLabel" style="flex: 1; text-align: center;">{{ chart_year }} 年</div>
+                <button class="button icon-button" id="yearNext" type="button">→</button>
+            </div>
+            <div id="monthControl" class="field-control-row">
+                <button class="button icon-button" id="monthPrev" type="button">←</button>
+                <div class="button" id="monthLabel" style="flex: 1; text-align: center;">{{ chart_year }} 年</div>
+                <button class="button icon-button" id="monthNext" type="button">→</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" id="rangeModalCancel" type="button">取消</button>
+          <button class="button primary" type="submit">应用</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="{% static 'contracts/vendor/echarts.min.js' %}"></script>
+  <!-- 控制时间范围弹窗显隐，并初始化 ECharts 趋势图。 -->
+  <script>
+    const rangeModal = document.querySelector("#rangeModal");
+    const rangeModalButton = document.querySelector("#rangeModalButton");
+    const rangeModalCancel = document.querySelector("#rangeModalCancel");
+    const periodInput = document.querySelector("#periodInput");
+    const yearInput = document.querySelector("#yearInput");
+    const monthInput = document.querySelector("#monthInput");
+    const yearControl = document.querySelector("#yearControl");
+    const monthControl = document.querySelector("#monthControl");
+    const yearLabel = document.querySelector("#yearLabel");
+    const monthLabel = document.querySelector("#monthLabel");
+    const periodOptions = document.querySelectorAll(".period-option");
+
+    function updateRangeLabels() {
+      const year = Number.parseInt(yearInput.value, 10);
+      const month = Number.parseInt(monthInput.value, 10);
+      yearLabel.textContent = `${year - 11} - ${year} 年`;
+      monthLabel.textContent = `${year} 年`;
+      yearControl.style.display = periodInput.value === "year" ? "flex" : "none";
+      monthControl.style.display = periodInput.value === "month" ? "flex" : "none";
+      periodOptions.forEach((button) => {
+        const active = button.dataset.period === periodInput.value;
+        button.classList.toggle("primary", active);
+      });
+    }
+
+    rangeModalButton.addEventListener("click", () => {
+      rangeModal.hidden = false;
+      updateRangeLabels();
+      rangeModal.querySelector(".period-option.primary").focus();
+    });
+    rangeModalCancel.addEventListener("click", () => {
+      rangeModal.hidden = true;
+    });
+    rangeModal.addEventListener("click", (event) => {
+      if (event.target === rangeModal) {
+        rangeModal.hidden = true;
+      }
+    });
+    periodOptions.forEach((button) => {
+      button.addEventListener("click", () => {
+        periodInput.value = button.dataset.period;
+        updateRangeLabels();
+      });
+    });
+    document.querySelector("#yearPrev").addEventListener("click", () => {
+      yearInput.value = Number.parseInt(yearInput.value, 10) - 1;
+      updateRangeLabels();
+    });
+    document.querySelector("#yearNext").addEventListener("click", () => {
+      yearInput.value = Number.parseInt(yearInput.value, 10) + 1;
+      updateRangeLabels();
+    });
+    document.querySelector("#monthPrev").addEventListener("click", () => {
+      yearInput.value = Number.parseInt(yearInput.value, 10) - 1;
+      updateRangeLabels();
+    });
+    document.querySelector("#monthNext").addEventListener("click", () => {
+      yearInput.value = Number.parseInt(yearInput.value, 10) + 1;
+      updateRangeLabels();
+    });
+
+    const trendChartElement = document.querySelector("#trendChart");
+    const trendChartDataElement = document.querySelector("#trendChartData");
+    if (trendChartElement && trendChartDataElement && window.echarts) {
+      const trendData = JSON.parse(trendChartDataElement.textContent);
+      const trendChart = echarts.init(trendChartElement);
+      const visiblePointLimit = 12;
+      const visibleEnd = 100;
+      const visibleStart = trendData.labels.length > visiblePointLimit
+        ? Math.max(0, 100 - (visiblePointLimit / trendData.labels.length) * 100)
+        : 0;
+
+      trendChart.setOption({
+        color: ["#2563eb", "#14b8a6"],
+        tooltip: {
+          trigger: "axis",
+          valueFormatter: (value) => `¥ ${Math.round(Number(value || 0)).toLocaleString("zh-CN")}`,
+        },
+        legend: {
+          top: 0,
+          left: 18,
+          itemWidth: 18,
+          itemHeight: 8,
+          data: ["开票", "收票"],
+        },
+        grid: {
+          left: 32,
+          right: 38,
+          top: 42,
+          bottom: 36,
+          containLabel: false,
+        },
+        xAxis: {
+          type: "category",
+          boundaryGap: false,
+          data: trendData.labels,
+          axisLine: {
+            symbol: ["none", "arrow"],
+            lineStyle: { color: "#98a2b3" },
+          },
+          axisTick: { alignWithLabel: true },
+          axisLabel: {
+            color: "#475467",
+            fontSize: 12,
+            hideOverlap: true,
+          },
+        },
+        yAxis: {
+          type: "value",
+          scale: true,
+          axisLine: {
+            show: true,
+            symbol: ["none", "arrow"],
+            lineStyle: { color: "#98a2b3" },
+          },
+          axisLabel: {
+            show: false,
+          },
+          splitLine: { lineStyle: { color: "#edf0f5" } },
+        },
+        dataZoom: [
+          {
+            type: "inside",
+            filterMode: "filter",
+            start: visibleStart,
+            end: visibleEnd,
+            zoomOnMouseWheel: true,
+            moveOnMouseMove: true,
+            moveOnMouseWheel: false,
+          },
+          {
+            type: "slider",
+            filterMode: "filter",
+            left: 32,
+            right: 38,
+            height: 14,
+            bottom: 0,
+            start: visibleStart,
+            end: visibleEnd,
+            brushSelect: false,
+          },
+        ],
+        series: [
+          {
+            name: "开票",
+            type: "line",
+            data: trendData.invoice,
+            symbol: "circle",
+            symbolSize: 7,
+            lineStyle: { width: 2.4 },
+            label: {
+              show: true,
+              formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
+              color: "#2563eb",
+              fontSize: 11,
+            },
+            areaStyle: {
+              opacity: 0.18,
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: "#2563eb" },
+                { offset: 1, color: "rgba(37, 99, 235, 0)" },
+              ]),
+            },
+          },
+          {
+            name: "收票",
+            type: "line",
+            data: trendData.payment,
+            symbol: "circle",
+            symbolSize: 7,
+            lineStyle: { width: 2.4 },
+            label: {
+              show: true,
+              formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
+              color: "#0f9f8f",
+              fontSize: 11,
+            },
+            areaStyle: {
+              opacity: 0.16,
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: "#14b8a6" },
+                { offset: 1, color: "rgba(20, 184, 166, 0)" },
+              ]),
+            },
+          },
+        ],
+      });
+
+      window.addEventListener("resize", () => {
+        trendChart.resize();
+      });
+    }
+  </script>
 {% endblock %}

@@ -3,30 +3,81 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
+  <!-- 开票或收票记录批量新增页面。 -->
   <h1 class="page-title">{{ title }}</h1>
 
+  <!-- 表格表单支持一次新增多条记录。 -->
   <section class="panel">
     <div class="summary">
       <span>所属合同：{{ contract.contract_name }}</span>
       <span>合同编号：{{ contract.contract_number }}</span>
     </div>
 
+    <!-- 上传附件时必须使用 multipart 表单。 -->
     <form method="post" enctype="multipart/form-data">
       {% csrf_token %}
-      {{ form.non_field_errors }}
-      <div class="form-grid">
-        {% for field in form %}
-          <div class="form-row {% if field.name == 'remark' %}full{% endif %}">
-            <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
-            {{ field }}
-            {{ field.errors }}
-          </div>
-        {% endfor %}
+      <div class="table-wrap">
+        <table class="batch-record-table" id="recordTable">
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>金额</th>
+              <th>附件</th>
+              <th>备注</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-row-index="0">
+              <td><input name="record_date" type="date" value="{{ today|date:'Y-m-d' }}" required></td>
+              <td><input name="amount" type="number" step="0.01" min="0" value="0" required></td>
+              <td><input name="file_0" type="file"></td>
+              <td><input name="remark" type="text"></td>
+              <td><button class="button" type="button" data-remove-row>删除</button></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
+
       <div class="toolbar" style="margin-top: 18px;">
+        <button class="button" type="button" id="addRecordRow">新增一行</button>
         <button class="button primary" type="submit">保存</button>
         <a class="button" href="{% url 'contracts:contract_list' %}">取消</a>
       </div>
     </form>
   </section>
+
+  <!-- 新增行和删除行的前端交互逻辑。 -->
+  <script>
+    const recordTableBody = document.querySelector("#recordTable tbody");
+    const addRecordRowButton = document.querySelector("#addRecordRow");
+    let nextRecordIndex = 1;
+
+    function bindRemoveButtons() {
+      document.querySelectorAll("[data-remove-row]").forEach((button) => {
+        button.onclick = () => {
+          if (recordTableBody.rows.length > 1) {
+            button.closest("tr").remove();
+          }
+        };
+      });
+    }
+
+    addRecordRowButton.addEventListener("click", () => {
+      const index = nextRecordIndex++;
+      const row = document.createElement("tr");
+      row.dataset.rowIndex = index;
+      row.innerHTML = `
+        <td><input name="record_date" type="date" value="{{ today|date:'Y-m-d' }}" required></td>
+        <td><input name="amount" type="number" step="0.01" min="0" value="0" required></td>
+        <td><input name="file_${index}" type="file"></td>
+        <td><input name="remark" type="text"></td>
+        <td><button class="button" type="button" data-remove-row>删除</button></td>
+      `;
+      recordTableBody.appendChild(row);
+      bindRemoveButtons();
+    });
+
+    bindRemoveButtons();
+  </script>
 {% endblock %}

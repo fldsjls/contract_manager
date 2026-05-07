@@ -3,14 +3,17 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
+  <!-- 合同新增和编辑表单。 -->
   <h1 class="page-title">{{ title }}</h1>
 
+  <!-- multipart 表单用于同时提交合同字段和上传文件。 -->
   <form class="panel" method="post" enctype="multipart/form-data">
     {% csrf_token %}
     {% if form.non_field_errors %}
       {{ form.non_field_errors }}
     {% endif %}
 
+    <!-- 合同基础字段由 Django 表单自动渲染。 -->
     <div class="form-grid">
       {% for field in form %}
         <div class="form-row {% if field.name == 'remark' %}full{% endif %}">
@@ -19,14 +22,127 @@
           {{ field.errors }}
         </div>
       {% endfor %}
+      <!-- 合同文件区域支持多文件上传和选中后批量删除。 -->
+      <div class="form-row full file-list" id="fileList">
+        <div class="file-list-header">
+          <span class="field-label">合同文件</span>
+          <label class="button" for="contractFiles">添加文件</label>
+          <input
+            class="hidden-file-input"
+            id="contractFiles"
+            {% if contract %}
+              data-upload-url="{% url 'contracts:contract_file_upload' contract.id %}"
+            {% else %}
+              name="files"
+            {% endif %}
+            type="file"
+            multiple
+          >
+        </div>
+        {% if contract_files %}
+          {% for item in contract_files %}
+            <div class="file-item">
+              <input type="checkbox" name="delete_files" value="{{ item.id }}">
+              <span>{{ item.original_name|default:item.file.name }}</span>
+              <div class="file-actions">
+                <a class="button" href="{{ item.file.url }}" target="_blank">打开</a>
+              </div>
+            </div>
+          {% endfor %}
+        {% elif contract and contract.file %}
+          <div class="file-item legacy-file-item">
+            <span>{{ contract.file.name }}</span>
+            <div class="file-actions">
+              <a class="button" href="{{ contract.file.url }}" target="_blank">打开</a>
+            </div>
+          </div>
+        {% endif %}
+      </div>
     </div>
 
     <div class="toolbar" style="margin-top: 18px;">
       <button class="button primary" type="submit">保存</button>
-      <a class="button" href="{% url 'contracts:contract_list' %}">取消</a>
-      {% if contract and contract.file %}
-        <a class="button" href="{{ contract.file.url }}" target="_blank">打开当前文件</a>
+      {% if contract %}
+        <button class="button danger" type="submit" name="action" value="delete_files">删除</button>
       {% endif %}
+      <a class="button" href="{% url 'contracts:contract_list' %}">取消</a>
     </div>
   </form>
+
+  <!-- 编辑已有合同时选择文件会立即上传，新建合同时随合同保存。 -->
+  <script>
+    const contractFilesInput = document.querySelector("#contractFiles");
+    const fileList = document.querySelector("#fileList");
+    const contractTypeInput = document.querySelector("#id_contract_type");
+    const endDateInput = document.querySelector("#id_end_date");
+
+    function syncEndDateRequired() {
+      if (!contractTypeInput || !endDateInput) {
+        return;
+      }
+      endDateInput.required = contractTypeInput.value === "维保";
+    }
+
+    if (contractTypeInput) {
+      contractTypeInput.addEventListener("change", syncEndDateRequired);
+      syncEndDateRequired();
+    }
+
+    function appendFileRow(fileData, pendingText = "") {
+      const row = document.createElement("div");
+      row.className = "file-item";
+      if (fileData.id) {
+        row.innerHTML = `
+          <input type="checkbox" name="delete_files" value="${fileData.id}">
+          <span>${fileData.name}</span>
+          <div class="file-actions"><a class="button" href="${fileData.url}" target="_blank">打开</a></div>
+        `;
+      } else {
+        row.classList.add("pending-file");
+        row.innerHTML = `
+          <span class="pending-marker">待上传</span>
+          <span>${fileData.name}</span>
+          <div class="file-actions"><span class="button muted">${pendingText}</span></div>
+        `;
+      }
+      fileList.appendChild(row);
+    }
+
+    contractFilesInput.addEventListener("change", async () => {
+      const files = Array.from(contractFilesInput.files);
+      if (!files.length) {
+        return;
+      }
+
+      const uploadUrl = contractFilesInput.dataset.uploadUrl;
+      if (!uploadUrl) {
+        fileList.querySelectorAll(".pending-file").forEach((item) => item.remove());
+        files.forEach((file) => appendFileRow({ name: file.name }, "创建合同时保存"));
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("csrfmiddlewaretoken", document.querySelector("[name=csrfmiddlewaretoken]").value);
+      files.forEach((file) => formData.append("files", file));
+
+      const response = await fetch(uploadUrl, {
+        method: "POST",
+        body: formData,
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        alert("文件上传失败，请重试。");
+        return;
+      }
+
+      const data = await response.json();
+      if (data.replace) {
+        fileList.querySelectorAll(".file-item").forEach((item) => item.remove());
+      }
+      if (data.files) {
+        data.files.forEach((file) => appendFileRow(file));
+      }
+      contractFilesInput.value = "";
+    });
+  </script>
 {% endblock %}

@@ -1,3 +1,4 @@
+# 添加开票记录和收票记录表。
 import django.db.models.deletion
 import django.utils.timezone
 from django.db import migrations, models

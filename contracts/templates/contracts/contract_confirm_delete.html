@@ -3,8 +3,10 @@
 {% block title %}删除合同{% endblock %}
 
 {% block content %}
+  <!-- 删除确认页，防止误删合同。 -->
   <h1 class="page-title">删除合同</h1>
 
+  <!-- 提交 POST 后才真正删除合同。 -->
   <form class="panel" method="post">
     {% csrf_token %}
     <p>确定要删除以下合同吗？此操作不可撤销。</p>

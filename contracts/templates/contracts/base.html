@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- 全站基础模板，提供统一布局、样式和侧边栏。 -->
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -6,6 +7,11 @@
   <title>{% block title %}合同管理系统{% endblock %}</title>
   <style>
     * { box-sizing: border-box; }
+    html,
+    body {
+      height: 100%;
+      overflow: hidden;
+    }
     body {
       margin: 0;
       font-family: "Microsoft YaHei", Arial, sans-serif;
@@ -15,7 +21,8 @@
     a { color: #1d4ed8; text-decoration: none; }
     .app-shell {
       display: flex;
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
     }
     .sidebar {
       width: 156px;
@@ -62,6 +69,13 @@
       flex: 1;
       min-width: 0;
       padding: 22px;
+      overflow: auto;
+    }
+    .page-content {
+      height: 100%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
     }
     .page-title { margin: 0 0 16px; font-size: 24px; }
     .toolbar {
@@ -140,11 +154,47 @@
       pointer-events: none;
       cursor: not-allowed;
     }
-    .table-wrap {
-      overflow-x: auto;
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(17, 24, 39, 0.36);
+    }
+    .modal-backdrop[hidden] {
+      display: none;
+    }
+    .modal-card {
+      width: min(420px, calc(100vw - 48px));
       background: #fff;
       border: 1px solid #d9dee7;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
     }
+    .modal-header {
+      padding: 16px 18px 8px;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .modal-body {
+      padding: 8px 18px 14px;
+      line-height: 1.8;
+      white-space: pre-line;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 0 18px 18px;
+    }
+    .table-wrap {
+      overflow: auto;
+      background: #fff;
+      border: 1px solid #d9dee7;
+      min-height: 0;
+    }
+    .table-wrap.fill { flex: 1; }
     table {
       width: 100%;
       min-width: 0;
@@ -158,12 +208,34 @@
       border-right: 1px solid #edf0f5;
       text-align: center;
       white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
+    td { overflow: visible; text-overflow: clip; }
     th {
       background: #eef1f5;
       font-weight: 700;
+      overflow: visible;
+      text-overflow: clip;
+    }
+    .table-wrap thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    .sort-link {
+      display: block;
+      color: #111827;
+      white-space: nowrap;
+    }
+    .sort-link.active {
+      color: #1d4ed8;
+    }
+    .sort-link.active.asc::after {
+      content: " ▲";
+      font-size: 11px;
+    }
+    .sort-link.active.desc::after {
+      content: " ▼";
+      font-size: 11px;
     }
     tbody tr.selectable-row {
       cursor: pointer;
@@ -174,31 +246,50 @@
     tbody tr.selectable-row.selected td {
       background: #b9d8ff;
     }
-    td.name, td.party, td.remark { text-align: left; }
+    td.name, td.party {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    td.remark { overflow: visible; text-overflow: clip; }
+    .contract-list-page .table-wrap {
+      overflow-x: hidden;
+    }
+    .contract-table th,
+    .contract-table td {
+      padding: 7px 5px;
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .contract-table .sort-link {
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: clip;
+    }
     .contract-table th:nth-child(1),
-    .contract-table td:nth-child(1) { width: 4%; }
+    .contract-table td:nth-child(1) { width: 3.5%; }
     .contract-table th:nth-child(2),
     .contract-table td:nth-child(2) { width: 16%; }
     .contract-table th:nth-child(3),
-    .contract-table td:nth-child(3) { width: 11%; }
+    .contract-table td:nth-child(3) { width: 10%; }
     .contract-table th:nth-child(4),
     .contract-table td:nth-child(4) { width: 7%; }
     .contract-table th:nth-child(5),
     .contract-table td:nth-child(5) { width: 15%; }
     .contract-table th:nth-child(6),
-    .contract-table td:nth-child(6) { width: 8%; }
+    .contract-table td:nth-child(6) { width: 8.5%; }
     .contract-table th:nth-child(7),
     .contract-table td:nth-child(7) { width: 7%; }
     .contract-table th:nth-child(8),
-    .contract-table td:nth-child(8),
+    .contract-table td:nth-child(8) { width: 8.5%; }
     .contract-table th:nth-child(9),
-    .contract-table td:nth-child(9),
+    .contract-table td:nth-child(9) { width: 8.5%; }
     .contract-table th:nth-child(10),
-    .contract-table td:nth-child(10) { width: 8%; }
+    .contract-table td:nth-child(10) { width: 6%; }
     .contract-table th:nth-child(11),
-    .contract-table td:nth-child(11) { width: 5%; }
+    .contract-table td:nth-child(11) { width: 5.5%; }
     .contract-table th:nth-child(12),
-    .contract-table td:nth-child(12) { width: 3%; }
+    .contract-table td:nth-child(12) { width: 4.5%; }
     .status {
       font-weight: 700;
     }
@@ -217,6 +308,7 @@
       border: 1px solid #d9dee7;
       padding: 18px;
       margin-bottom: 16px;
+      overflow: auto;
     }
     .form-grid {
       display: grid;
@@ -276,16 +368,20 @@
     }
     .chart-area h2 { margin-top: 0; }
     .recent-panel {
-      min-height: 300px;
+      min-height: 190px;
     }
     .recent-panel table {
       flex: 1;
     }
     .record-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 16px;
-      align-items: start;
+      align-items: stretch;
+      width: 100%;
+    }
+    .record-grid .chart-area {
+      min-width: 0;
     }
     .record-table {
       min-width: 0;
@@ -309,6 +405,160 @@
     }
     .mini-chart.compact {
       height: 220px;
+    }
+    .file-list {
+      display: grid;
+      gap: 8px;
+    }
+    .file-list-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    .file-list-header .field-label {
+      margin-bottom: 0;
+    }
+    .hidden-file-input {
+      display: none;
+    }
+    .file-item {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 10px;
+      border: 1px solid #d9dee7;
+      background: #fff;
+    }
+    .file-item span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .legacy-file-item {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .file-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .pending-marker {
+      color: #667085;
+      font-weight: 600;
+    }
+    .batch-record-table th:nth-child(1),
+    .batch-record-table td:nth-child(1) { width: 18%; }
+    .batch-record-table th:nth-child(2),
+    .batch-record-table td:nth-child(2) { width: 18%; }
+    .batch-record-table th:nth-child(3),
+    .batch-record-table td:nth-child(3) { width: 28%; }
+    .batch-record-table th:nth-child(4),
+    .batch-record-table td:nth-child(4) { width: 28%; }
+    .batch-record-table th:nth-child(5),
+    .batch-record-table td:nth-child(5) { width: 8%; }
+    .dashboard-page {
+      font-size: 14px;
+      overflow: hidden;
+    }
+    .dashboard-page .page-title {
+      margin-bottom: 10px;
+      font-size: 22px;
+      line-height: 1.2;
+    }
+    .dashboard-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1.15fr) minmax(220px, 0.85fr);
+      gap: 10px;
+    }
+    .dashboard-page .metric-grid {
+      gap: 10px;
+      margin-bottom: 0;
+    }
+    .dashboard-page .metric-card {
+      min-height: 76px;
+      padding: 12px 14px;
+    }
+    .dashboard-page .metric-title {
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    .dashboard-page .metric-value {
+      font-size: 20px;
+    }
+    .dashboard-page .chart-grid {
+      min-height: 0;
+      gap: 10px;
+    }
+    .dashboard-page .chart-area {
+      min-height: 0;
+      padding: 12px;
+    }
+    .dashboard-page .chart-area h2 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+    .dashboard-page .mini-chart.compact {
+      flex: 1;
+      min-height: 0;
+      height: 170px;
+    }
+    .dashboard-page .empty {
+      padding: 24px;
+      font-size: 14px;
+    }
+    .dashboard-page th,
+    .dashboard-page td {
+      padding: 7px 8px;
+      font-size: 13px;
+    }
+    .dashboard-page .recent-panel {
+      min-height: 0;
+    }
+    .dashboard-page .recent-panel .table-wrap {
+      flex: 1;
+      min-height: 0;
+    }
+    .contract-list-page {
+      overflow: hidden;
+    }
+    .content-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+    .detail-page {
+      overflow: hidden;
+    }
+    .detail-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .detail-page .panel {
+      margin-bottom: 0;
+      flex: 0 0 auto;
+    }
+    .detail-page .record-grid {
+      flex: 1;
+      min-height: 240px;
+    }
+    .detail-page .record-grid .chart-area {
+      min-height: 0;
+    }
+    .detail-page .record-grid .table-wrap,
+    .detail-page .record-grid .empty {
+      flex: 1;
+      min-height: 0;
     }
     @media (max-width: 900px) {
       .app-shell { display: block; }
@@ -338,7 +588,9 @@
   </style>
 </head>
 <body>
+  <!-- 页面主体由左侧导航和右侧内容区组成。 -->
   <div class="app-shell">
+    <!-- 左侧导航栏显示模块入口和当前登录模式。 -->
     <aside class="sidebar">
       <div class="brand">合同系统</div>
       <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'contracts:dashboard' %}">统计总览</a>
@@ -357,10 +609,12 @@
         {% endif %}
       </div>
     </aside>
+    <!-- 子模板内容会渲染到右侧主内容区。 -->
     <main class="page">
       {% block content %}{% endblock %}
     </main>
   </div>
+  <!-- 全局点击空白区域时清除表格选中状态。 -->
   <script>
     function clearInteractiveSelection() {
       document.querySelectorAll(".selectable-row.selected").forEach((row) => {

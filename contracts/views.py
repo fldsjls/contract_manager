@@ -2,27 +2,30 @@ from datetime import timedelta
 from decimal import Decimal
 from functools import wraps
 from pathlib import Path
+import socket
 
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
+from django.contrib.auth.forms import PasswordChangeForm
 from django.db.models import Q, Sum
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from .forms import (
     AppSettingForm,
     ContractForm,
-    InvoiceRecordForm,
     LoginForm,
-    PaymentRecordForm,
     default_contract_number,
 )
-from .models import AppSetting, Contract, InvoiceRecord, PaymentRecord
+from .models import AppSetting, Contract, ContractFile, InvoiceRecord, PaymentRecord
 
 
+# 判断当前请求是否处于管理员模式。
 def is_admin_mode(request) -> bool:
     return bool(request.user.is_authenticated and not request.session.get("guest_mode", False))
 
 
+# 限制只有管理员模式才能访问写入类页面。
 def admin_required(view_func):
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
@@ -33,6 +36,7 @@ def admin_required(view_func):
     return wrapper
 
 
+# 给模板上下文统一补充登录模式信息。
 def context_with_auth(request, context: dict | None = None) -> dict:
     data = context or {}
     data["is_admin_mode"] = is_admin_mode(request)
@@ -40,8 +44,9 @@ def context_with_auth(request, context: dict | None = None) -> dict:
     return data
 
 
-def delete_file_if_enabled(file_field) -> None:
-    if not file_field or not AppSetting.current().delete_source_file:
+# 从磁盘上删除上传文件。
+def delete_file_from_storage(file_field) -> None:
+    if not file_field:
         return
     try:
         path = Path(file_field.path)
@@ -51,6 +56,64 @@ def delete_file_if_enabled(file_field) -> None:
         path.unlink()
 
 
+# 保存合同附件，必要时按系统设置替换旧文件。
+def save_contract_files(contract: Contract, uploaded_files) -> None:
+    uploaded_files = list(uploaded_files)
+    if uploaded_files and AppSetting.current().delete_source_file:
+        delete_contract_files(contract.files.values_list("id", flat=True))
+        if contract.file:
+            delete_file_from_storage(contract.file)
+            contract.file = None
+            contract.save(update_fields=["file"])
+    for item in uploaded_files:
+        ContractFile.objects.create(contract=contract, file=item, original_name=item.name)
+
+
+# 保存合同附件并返回新建的文件对象，供即时上传接口使用。
+def save_contract_files_and_return(contract: Contract, uploaded_files) -> list[ContractFile]:
+    uploaded_files = list(uploaded_files)
+    if uploaded_files and AppSetting.current().delete_source_file:
+        delete_contract_files(contract.files.values_list("id", flat=True))
+        if contract.file:
+            delete_file_from_storage(contract.file)
+            contract.file = None
+            contract.save(update_fields=["file"])
+    return [
+        ContractFile.objects.create(contract=contract, file=item, original_name=item.name)
+        for item in uploaded_files
+    ]
+
+
+# 删除选中的合同附件记录和磁盘文件。
+def delete_contract_files(file_ids) -> None:
+    for item in ContractFile.objects.filter(id__in=file_ids):
+        delete_file_from_storage(item.file)
+        item.delete()
+
+
+# 从批量记录表单中读取多行开票或收票数据。
+def save_records_from_request(request, contract: Contract, record_model) -> int:
+    dates = request.POST.getlist("record_date")
+    amounts = request.POST.getlist("amount")
+    remarks = request.POST.getlist("remark")
+    saved_count = 0
+    for index, record_date in enumerate(dates):
+        amount = amounts[index] if index < len(amounts) else ""
+        remark = remarks[index] if index < len(remarks) else ""
+        if not record_date or amount == "":
+            continue
+        record_model.objects.create(
+            contract=contract,
+            record_date=record_date,
+            amount=amount,
+            file=request.FILES.get(f"file_{index}"),
+            remark=remark,
+        )
+        saved_count += 1
+    return saved_count
+
+
+# 查询 30 天内即将到期的合同。
 def expiring_contract_queryset():
     today = timezone.localdate()
     expiring_limit = today + timedelta(days=30)
@@ -61,14 +124,15 @@ def expiring_contract_queryset():
     ).order_by("end_date")
 
 
+# 把按日期汇总的数据转换成 SVG 折线图坐标。
 def chart_points(rows: list[dict], key: str, max_amount: Decimal) -> str:
     if not rows:
         return ""
 
-    left = Decimal("50")
-    top = Decimal("40")
-    width = Decimal("810")
-    height = Decimal("200")
+    left = Decimal("70")
+    top = Decimal("70")
+    width = Decimal("770")
+    height = Decimal("160")
     count = len(rows)
     points = []
     for index, row in enumerate(rows):
@@ -79,16 +143,63 @@ def chart_points(rows: list[dict], key: str, max_amount: Decimal) -> str:
     return " ".join(points)
 
 
+# 给每个图表日期补充坐标，供 SVG 绘制圆点使用。
+def enrich_chart_rows(rows: list[dict], max_amount: Decimal) -> list[dict]:
+    if not rows:
+        return rows
+
+    left = Decimal("70")
+    top = Decimal("70")
+    width = Decimal("770")
+    height = Decimal("160")
+    count = len(rows)
+    for index, row in enumerate(rows):
+        x = left + (width * Decimal(index) / Decimal(max(count - 1, 1)))
+        if index == 0:
+            amount_label_x = x + Decimal("44")
+        elif index == count - 1:
+            amount_label_x = x - Decimal("10")
+        else:
+            amount_label_x = x + Decimal("28")
+        for key in ("invoice", "payment"):
+            ratio = Decimal(row[key]) / max_amount
+            y = top + height - height * ratio
+            row[f"{key}_x"] = f"{float(x):.1f}"
+            row[f"{key}_y"] = f"{float(y):.1f}"
+            if key == "invoice":
+                label_y = max(top - Decimal("18"), y - Decimal("16"))
+            else:
+                label_y = min(top + height + Decimal("18"), y + Decimal("24"))
+            row[f"{key}_label_x"] = f"{float(amount_label_x):.1f}"
+            row[f"{key}_label_y"] = f"{float(label_y):.1f}"
+        row["date_label_x"] = f"{float(x):.1f}"
+    return rows
+
+
+# 获取当前主机的局域网 IP，用于设置页提示其他用户访问地址。
+def local_ip_address() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
+# 渲染统计总览页面。
 def dashboard(request):
     total_amount = Contract.objects.aggregate(total=Sum("amount"))["total"] or Decimal("0")
     total_invoice = InvoiceRecord.objects.aggregate(total=Sum("amount"))["total"] or Decimal("0")
     total_payment = PaymentRecord.objects.aggregate(total=Sum("amount"))["total"] or Decimal("0")
     payment_rate = (total_payment / total_amount * Decimal("100")) if total_amount else Decimal("0")
 
+    today = timezone.localdate()
+    recent_cutoff = today - timedelta(days=14)
     dates = sorted(
         set(InvoiceRecord.objects.values_list("record_date", flat=True))
         | set(PaymentRecord.objects.values_list("record_date", flat=True))
     )
+    dates = [item for item in dates if item >= recent_cutoff][-15:]
     invoice_by_date = {
         row["record_date"]: row["total"] or Decimal("0")
         for row in InvoiceRecord.objects.values("record_date").annotate(total=Sum("amount"))
@@ -110,8 +221,9 @@ def dashboard(request):
         [row["invoice"] for row in chart_rows] + [row["payment"] for row in chart_rows],
         default=Decimal("0"),
     ) or Decimal("1")
+    chart_rows = enrich_chart_rows(chart_rows, max_amount)
 
-    recent_contracts = list(Contract.objects.order_by("-created_at")[:8])
+    recent_contracts = list(Contract.objects.order_by("-created_at")[:5])
     context = context_with_auth(
         request,
         {
@@ -120,19 +232,38 @@ def dashboard(request):
             "total_payment": total_payment,
             "payment_rate": payment_rate,
             "chart_rows": chart_rows,
+            "chart_has_lines": len(chart_rows) > 1,
             "invoice_points": chart_points(chart_rows, "invoice", max_amount),
             "payment_points": chart_points(chart_rows, "payment", max_amount),
             "expiring_contracts": expiring_contract_queryset(),
             "recent_contracts": recent_contracts,
-            "recent_blank_rows": range(max(0, 6 - len(recent_contracts))),
+            "recent_blank_rows": range(max(0, 5 - len(recent_contracts))),
             "active_nav": "dashboard",
         },
     )
     return render(request, "contracts/dashboard.html", context)
 
 
+# 渲染合同列表页面，并处理搜索和表头排序。
 def contract_list(request):
     keyword = request.GET.get("q", "").strip()
+    sort = request.GET.get("sort", "id").strip()
+    direction = request.GET.get("direction", "asc").strip()
+    if direction not in ("asc", "desc"):
+        direction = "asc"
+    sort_fields = {
+        "id": "id",
+        "contract_name": "contract_name",
+        "contract_number": "contract_number",
+        "contract_type": "contract_type",
+        "party_name": "party_name",
+        "amount": "amount",
+        "invoice_status": "invoice_status",
+        "start_date": "start_date",
+        "end_date": "end_date",
+        "status": "end_date",
+        "payment_rate": "id",
+    }
     contracts = Contract.objects.all()
     if keyword:
         contracts = contracts.filter(
@@ -140,15 +271,24 @@ def contract_list(request):
             | Q(contract_number__icontains=keyword)
             | Q(party_name__icontains=keyword)
         )
+    if sort in sort_fields:
+        prefix = "-" if direction == "desc" else ""
+        contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
 
     total_amount = contracts.aggregate(total=Sum("amount"))["total"] or 0
+    contract_count = contracts.count()
+    contracts = list(contracts)
+    if sort == "payment_rate":
+        contracts.sort(key=lambda item: item.payment_rate, reverse=direction == "desc")
     context = context_with_auth(
         request,
         {
             "contracts": contracts,
             "keyword": keyword,
+            "sort": sort,
+            "direction": direction,
             "total_amount": total_amount,
-            "contract_count": contracts.count(),
+            "contract_count": contract_count,
             "expiring_contracts": expiring_contract_queryset(),
             "active_nav": "contracts",
         },
@@ -156,12 +296,14 @@ def contract_list(request):
     return render(request, "contracts/contract_list.html", context)
 
 
+# 渲染单个合同详情页面。
 def contract_detail(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk)
     context = context_with_auth(
         request,
         {
             "contract": contract,
+            "contract_files": contract.files.all(),
             "invoice_records": contract.invoicerecord_set.all(),
             "payment_records": contract.paymentrecord_set.all(),
             "active_nav": "contracts",
@@ -171,31 +313,75 @@ def contract_detail(request, pk: int):
 
 
 @admin_required
+# 新增合同并保存随表单上传的合同文件。
 def contract_create(request):
     if request.method == "POST":
         form = ContractForm(request.POST, request.FILES)
         if form.is_valid():
-            form.save()
+            contract = form.save()
+            save_contract_files(contract, request.FILES.getlist("files"))
             return redirect("contracts:contract_list")
     else:
-        form = ContractForm(initial={"contract_number": default_contract_number()})
+        today = timezone.localdate()
+        form = ContractForm(
+            initial={
+                "contract_number": default_contract_number(),
+                "contract_type": "维保",
+                "sign_date": today,
+                "start_date": today,
+            }
+        )
     return render(
         request,
         "contracts/contract_form.html",
-        context_with_auth(request, {"form": form, "title": "新增合同", "active_nav": "contracts"}),
+        context_with_auth(
+            request,
+            {"form": form, "title": "新增合同", "contract_files": [], "active_nav": "contracts"},
+        ),
     )
 
 
 @admin_required
+# 处理合同编辑页中的即时文件上传请求。
+def contract_file_upload(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk)
+    if request.method != "POST":
+        return JsonResponse({"error": "只允许上传文件。"}, status=405)
+
+    uploaded_files = request.FILES.getlist("files")
+    replace_existing = bool(uploaded_files and AppSetting.current().delete_source_file)
+    saved_files = save_contract_files_and_return(contract, uploaded_files)
+    return JsonResponse(
+        {
+            "replace": replace_existing,
+            "files": [
+                {
+                    "id": item.id,
+                    "name": item.original_name or item.file.name,
+                    "url": item.file.url,
+                }
+                for item in saved_files
+            ]
+        }
+    )
+
+
+@admin_required
+# 编辑合同基础信息，并处理批量删除合同文件。
 def contract_update(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk)
     old_file = contract.file
     if request.method == "POST":
+        if request.POST.get("action") == "delete_files":
+            delete_contract_files(request.POST.getlist("delete_files"))
+            return redirect("contracts:contract_update", pk=contract.pk)
+
         form = ContractForm(request.POST, request.FILES, instance=contract)
         if form.is_valid():
             updated = form.save()
             if "file" in request.FILES and old_file and old_file != updated.file:
-                delete_file_if_enabled(old_file)
+                delete_file_from_storage(old_file)
+            save_contract_files(updated, request.FILES.getlist("files"))
             return redirect("contracts:contract_list")
     else:
         form = ContractForm(instance=contract)
@@ -204,16 +390,24 @@ def contract_update(request, pk: int):
         "contracts/contract_form.html",
         context_with_auth(
             request,
-            {"form": form, "title": "编辑合同", "contract": contract, "active_nav": "contracts"},
+            {
+                "form": form,
+                "title": "编辑合同",
+                "contract": contract,
+                "contract_files": contract.files.all(),
+                "active_nav": "contracts",
+            },
         ),
     )
 
 
 @admin_required
+# 删除合同及其关联文件。
 def contract_delete(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk)
     if request.method == "POST":
-        delete_file_if_enabled(contract.file)
+        delete_file_from_storage(contract.file)
+        delete_contract_files(contract.files.values_list("id", flat=True))
         contract.delete()
         return redirect("contracts:contract_list")
     return render(
@@ -224,6 +418,7 @@ def contract_delete(request, pk: int):
 
 
 @admin_required
+# 根据合同是否开票，进入开票或收票记录新增入口。
 def record_add(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk)
     if contract.invoice_status == "不开票":
@@ -240,55 +435,57 @@ def record_add(request, pk: int):
 
 
 @admin_required
+# 新增一批开票记录。
 def invoice_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk)
     if contract.invoice_status == "不开票":
         return redirect("contracts:contract_list")
 
     if request.method == "POST":
-        form = InvoiceRecordForm(request.POST, request.FILES)
-        if form.is_valid():
-            record = form.save(commit=False)
-            record.contract = contract
-            record.save()
+        if save_records_from_request(request, contract, InvoiceRecord):
             return redirect("contracts:contract_list")
-    else:
-        form = InvoiceRecordForm(initial={"record_date": timezone.localdate()})
     return render(
         request,
         "contracts/record_form.html",
         context_with_auth(
             request,
-            {"form": form, "contract": contract, "title": "新增开票记录", "active_nav": "contracts"},
+            {
+                "contract": contract,
+                "title": "新增开票记录",
+                "today": timezone.localdate(),
+                "active_nav": "contracts",
+            },
         ),
     )
 
 
 @admin_required
+# 新增一批收票记录。
 def payment_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk)
     if request.method == "POST":
-        form = PaymentRecordForm(request.POST, request.FILES)
-        if form.is_valid():
-            record = form.save(commit=False)
-            record.contract = contract
-            record.save()
+        if save_records_from_request(request, contract, PaymentRecord):
             return redirect("contracts:contract_list")
-    else:
-        form = PaymentRecordForm(initial={"record_date": timezone.localdate()})
     return render(
         request,
         "contracts/record_form.html",
         context_with_auth(
             request,
-            {"form": form, "contract": contract, "title": "新增收票记录", "active_nav": "contracts"},
+            {
+                "contract": contract,
+                "title": "新增收票记录",
+                "today": timezone.localdate(),
+                "active_nav": "contracts",
+            },
         ),
     )
 
 
 @admin_required
+# 显示和保存系统设置。
 def settings_view(request):
     setting = AppSetting.current()
+    host_ip = local_ip_address()
     if request.method == "POST":
         form = AppSettingForm(request.POST, instance=setting)
         if form.is_valid():
@@ -299,10 +496,37 @@ def settings_view(request):
     return render(
         request,
         "contracts/settings.html",
+        context_with_auth(
+            request,
+            {
+                "form": form,
+                "host_ip": host_ip,
+                "lan_url": f"http://{host_ip}:8000",
+                "active_nav": "settings",
+            },
+        ),
+    )
+
+
+@admin_required
+# 修改当前管理员账号的登录密码。
+def password_change(request):
+    if request.method == "POST":
+        form = PasswordChangeForm(request.user, request.POST)
+        if form.is_valid():
+            user = form.save()
+            update_session_auth_hash(request, user)
+            return redirect("contracts:settings")
+    else:
+        form = PasswordChangeForm(request.user)
+    return render(
+        request,
+        "contracts/password_change.html",
         context_with_auth(request, {"form": form, "active_nav": "settings"}),
     )
 
 
+# 处理管理员登录和游客模式进入。
 def login_view(request):
     if request.method == "POST":
         if "guest" in request.POST:
@@ -326,6 +550,7 @@ def login_view(request):
     return render(request, "contracts/login.html", {"form": form})
 
 
+# 退出当前登录或游客会话。
 def logout_view(request):
     logout(request)
     request.session.flush()

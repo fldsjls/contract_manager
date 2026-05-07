@@ -1,3 +1,4 @@
+# 添加系统设置表。
 from django.db import migrations, models
 
 

@@ -3,123 +3,139 @@
 {% block title %}统计总览{% endblock %}
 
 {% block content %}
-  <h1 class="page-title">统计总览</h1>
+  <!-- 统计总览页面，展示整体金额、趋势、到期项目和最近项目。 -->
+  <div class="page-content dashboard-page">
+    <h1 class="page-title">统计总览</h1>
 
-  <section class="metric-grid">
-    <div class="metric-card">
-      <div class="metric-title">总项目金额</div>
-      <div class="metric-value">¥ {{ total_amount|floatformat:2 }}</div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-title">总项目开票</div>
-      <div class="metric-value">¥ {{ total_invoice|floatformat:2 }}</div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-title">总项目收票</div>
-      <div class="metric-value">¥ {{ total_payment|floatformat:2 }}</div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-title">收款率</div>
-      <div class="metric-value">{{ payment_rate|floatformat:1 }}%</div>
-    </div>
-  </section>
+    <!-- 一屏内滚动容器，避免浏览器主体出现下拉滚动。 -->
+    <div class="dashboard-scroll">
+      <!-- 顶部四个统计卡片。 -->
+      <section class="metric-grid">
+        <div class="metric-card">
+          <div class="metric-title">总项目金额</div>
+          <div class="metric-value">¥ {{ total_amount|floatformat:2 }}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">总项目开票</div>
+          <div class="metric-value">¥ {{ total_invoice|floatformat:2 }}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">总项目收票</div>
+          <div class="metric-value">¥ {{ total_payment|floatformat:2 }}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">收款率</div>
+          <div class="metric-value">{{ payment_rate|floatformat:1 }}%</div>
+        </div>
+      </section>
 
-  <section class="chart-grid">
-    <div class="chart-area">
-      <h2>开票 / 收票趋势</h2>
-      {% if chart_rows %}
-        <svg class="mini-chart compact" viewBox="0 0 900 300" role="img">
-          <line x1="50" y1="240" x2="860" y2="240" stroke="#d9dee7" />
-          <line x1="50" y1="40" x2="50" y2="240" stroke="#d9dee7" />
-          <polyline
-            fill="none"
-            stroke="#2563eb"
-            stroke-width="3"
-            points="{{ invoice_points }}"
-          />
-          <polyline
-            fill="none"
-            stroke="#14b8a6"
-            stroke-width="3"
-            points="{{ payment_points }}"
-          />
-          {% for row in chart_rows %}
-            {% if forloop.first or forloop.last %}
-              <text x="{% if forloop.first %}50{% else %}820{% endif %}" y="268" fill="#667085">{{ row.label }}</text>
-            {% endif %}
-          {% endfor %}
-          <text x="64" y="24" fill="#2563eb">开票</text>
-          <text x="124" y="24" fill="#14b8a6">收票</text>
-        </svg>
-      {% else %}
-        <div class="empty" style="flex: 1;">暂无开票/收票记录</div>
-      {% endif %}
-    </div>
+      <!-- 中部展示开票收票趋势和即将到期项目。 -->
+      <section class="chart-grid">
+        <div class="chart-area">
+          <h2>开票 / 收票趋势</h2>
+          {% if chart_rows %}
+            <svg class="mini-chart compact" viewBox="0 0 900 300" role="img">
+              <defs>
+                <linearGradient id="invoiceGradient" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stop-color="#2563eb" stop-opacity="0.22" />
+                  <stop offset="100%" stop-color="#2563eb" stop-opacity="0" />
+                </linearGradient>
+                <linearGradient id="paymentGradient" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.2" />
+                  <stop offset="100%" stop-color="#14b8a6" stop-opacity="0" />
+                </linearGradient>
+                <marker id="axisArrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                  <path d="M0,0 L6,3 L0,6 Z" fill="#98a2b3" />
+                </marker>
+              </defs>
+              <line x1="70" y1="230" x2="854" y2="230" stroke="#d9dee7" marker-end="url(#axisArrow)" />
+              <line x1="70" y1="230" x2="70" y2="48" stroke="#d9dee7" marker-end="url(#axisArrow)" />
+              <text x="34" y="58" fill="#667085">金额</text>
+              <text x="878" y="230" fill="#667085" text-anchor="middle" dominant-baseline="middle" >日期</text>
+              {% if chart_has_lines %}
+                <polygon fill="url(#invoiceGradient)" points="{{ invoice_points }} 840,230 70,230" />
+                <polygon fill="url(#paymentGradient)" points="{{ payment_points }} 840,230 70,230" />
+                <polyline fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="{{ invoice_points }}" />
+                <polyline fill="none" stroke="#14b8a6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="{{ payment_points }}" />
+              {% endif %}
+              {% for row in chart_rows %}
+                <text x="{{ row.invoice_label_x }}" y="{{ row.invoice_label_y }}" fill="#2563eb" text-anchor="end" font-size="12">¥ {{ row.invoice|floatformat:0 }}</text>
+                <text x="{{ row.payment_label_x }}" y="{{ row.payment_label_y }}" fill="#0f9f8f" text-anchor="end" font-size="12">¥ {{ row.payment|floatformat:0 }}</text>
+                <circle cx="{{ row.invoice_x }}" cy="{{ row.invoice_y }}" r="5" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
+                <circle cx="{{ row.payment_x }}" cy="{{ row.payment_y }}" r="5" fill="#14b8a6" stroke="#ffffff" stroke-width="2" />
+                <text x="{{ row.date_label_x }}" y="260" fill="#667085" text-anchor="middle" font-size="12">{{ row.label }}</text>
+              {% endfor %}
+              <text x="64" y="24" fill="#2563eb">开票</text>
+              <text x="124" y="24" fill="#14b8a6">收票</text>
+            </svg>
+          {% else %}
+            <div class="empty" style="flex: 1;">暂无开票/收票记录</div>
+          {% endif %}
+        </div>
 
-    <div class="chart-area">
-      <h2>即将到期项目</h2>
-      {% if expiring_contracts %}
-        <table style="min-width: 0;">
-          <thead>
-            <tr>
-              <th>合同</th>
-              <th>截止日期</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for contract in expiring_contracts %}
-              <tr>
-                <td class="name">{{ contract.contract_name }}</td>
-                <td>{{ contract.end_date }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <div class="empty" style="flex: 1;">30 天内暂无即将到期项目</div>
-      {% endif %}
-    </div>
-  </section>
+        <div class="chart-area">
+          <h2>即将到期项目</h2>
+          {% if expiring_contracts %}
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>合同</th>
+                    <th>截止日期</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for contract in expiring_contracts %}
+                    <tr>
+                      <td class="name">{{ contract.contract_name }}</td>
+                      <td>{{ contract.end_date }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty" style="flex: 1;">30 天内暂无即将到期项目</div>
+          {% endif %}
+        </div>
+      </section>
 
-  <section class="chart-area recent-panel" style="margin-top: 16px;">
-    <h2>最近项目</h2>
-    {% if recent_contracts %}
-      <table style="min-width: 0;">
-        <thead>
-          <tr>
-            <th>合同名称</th>
-            <th>合同编号</th>
-            <th>甲方名称</th>
-            <th>金额</th>
-            <th>状态</th>
-            <th>创建时间</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for contract in recent_contracts %}
-            <tr>
-              <td class="name"><a href="{% url 'contracts:contract_detail' contract.id %}">{{ contract.contract_name }}</a></td>
-              <td>{{ contract.contract_number }}</td>
-              <td class="party">{{ contract.party_name }}</td>
-              <td>¥ {{ contract.amount|floatformat:2 }}</td>
-              <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
-              <td>{{ contract.created_at|date:"Y-m-d H:i" }}</td>
-            </tr>
-          {% endfor %}
-          {% for item in recent_blank_rows %}
-            <tr>
-              <td>&nbsp;</td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <div class="empty">暂无最近项目</div>
-    {% endif %}
-  </section>
+      <!-- 底部展示最近创建的 5 个项目。 -->
+      <section class="chart-area recent-panel">
+        <h2>最近项目</h2>
+        {% if recent_contracts %}
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>合同名称</th>
+                  <th>合同编号</th>
+                  <th>甲方名称</th>
+                  <th>金额</th>
+                  <th>状态</th>
+                  <th>创建时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for contract in recent_contracts %}
+                  <tr>
+                    <td class="name">
+                      <a href="{% url 'contracts:contract_detail' contract.id %}">{{ contract.contract_name }}</a>
+                    </td>
+                    <td>{{ contract.contract_number }}</td>
+                    <td class="party">{{ contract.party_name }}</td>
+                    <td>¥ {{ contract.amount|floatformat:2 }}</td>
+                    <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
+                    <td>{{ contract.created_at|date:"Y-m-d H:i" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty">暂无最近项目</div>
+        {% endif %}
+      </section>
+    </div>
+  </div>
 {% endblock %}

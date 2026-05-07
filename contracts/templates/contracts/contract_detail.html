@@ -3,114 +3,131 @@
 {% block title %}合同详情{% endblock %}
 
 {% block content %}
-  <h1 class="page-title">{{ contract.contract_name }}</h1>
+  <!-- 合同详情页面，展示合同基础信息和关联记录。 -->
+  <div class="page-content detail-page">
+    <h1 class="page-title">{{ contract.contract_name }}</h1>
 
-  <div class="toolbar">
-    <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
-    {% if is_admin_mode %}
-      <a class="button primary" href="{% url 'contracts:contract_update' contract.id %}">编辑合同</a>
-    {% endif %}
+    <!-- 顶部操作栏用于返回列表或进入编辑。 -->
+    <div class="toolbar">
+      <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
+      {% if is_admin_mode %}
+        <a class="button primary" href="{% url 'contracts:contract_update' contract.id %}">编辑合同</a>
+      {% endif %}
+    </div>
+
+    <!-- 详情内容区包含合同信息表和记录表。 -->
+    <div class="detail-scroll">
+      <!-- 合同基础信息面板。 -->
+      <section class="panel">
+        <div class="summary">
+          <span>合同编号：{{ contract.contract_number }}</span>
+          <span>合同类型：{{ contract.contract_type }}</span>
+          <span>状态：<span class="status {{ contract.status_class }}">{{ contract.status }}</span></span>
+        </div>
+        <table>
+          <tbody>
+            <tr>
+              <th>甲方名称</th>
+              <td class="party">{{ contract.party_name }}</td>
+              <th>金额</th>
+              <td>¥ {{ contract.amount|floatformat:2 }}</td>
+            </tr>
+            <tr>
+              <th>是否开票</th>
+              <td>{{ contract.invoice_status }}</td>
+              <th>文件</th>
+              <td>
+                {% if contract_files %}
+                  {% for item in contract_files %}
+                    <a class="button" href="{{ item.file.url }}" target="_blank">{{ item.original_name|default:"打开文件" }}</a>
+                  {% endfor %}
+                {% elif contract.file %}
+                  <a class="button" href="{{ contract.file.url }}" target="_blank">打开合同文件</a>
+                {% else %}
+                  未上传
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <th>签订日期</th>
+              <td>{{ contract.sign_date|default:"" }}</td>
+              <th>开始日期</th>
+              <td>{{ contract.start_date|default:"" }}</td>
+            </tr>
+            <tr>
+              <th>截止日期</th>
+              <td>{{ contract.end_date|default:"" }}</td>
+              <th>备注</th>
+              <td class="remark">{{ contract.remark|default:"" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- 开票记录和收票记录并排展示。 -->
+      <section class="record-grid">
+        <div class="chart-area">
+          <h2>开票记录</h2>
+          {% if contract.invoice_status == "不开票" %}
+            <div class="empty">该合同设置为不开票，开票记录不可用。</div>
+          {% elif invoice_records %}
+            <div class="table-wrap">
+              <table class="record-table">
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th>金额</th>
+                    <th>附件</th>
+                    <th>备注</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for record in invoice_records %}
+                    <tr>
+                      <td>{{ record.record_date }}</td>
+                      <td>¥ {{ record.amount|floatformat:2 }}</td>
+                      <td>{% if record.file %}已上传{% else %}未上传{% endif %}</td>
+                      <td class="remark">{{ record.remark }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty">暂无开票记录</div>
+          {% endif %}
+        </div>
+
+        <div class="chart-area">
+          <h2>收票记录</h2>
+          {% if payment_records %}
+            <div class="table-wrap">
+              <table class="record-table">
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th>金额</th>
+                    <th>附件</th>
+                    <th>备注</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for record in payment_records %}
+                    <tr>
+                      <td>{{ record.record_date }}</td>
+                      <td>¥ {{ record.amount|floatformat:2 }}</td>
+                      <td>{% if record.file %}已上传{% else %}未上传{% endif %}</td>
+                      <td class="remark">{{ record.remark }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty">暂无收票记录</div>
+          {% endif %}
+        </div>
+      </section>
+    </div>
   </div>
-
-  <section class="panel">
-    <div class="summary">
-      <span>合同编号：{{ contract.contract_number }}</span>
-      <span>合同类型：{{ contract.contract_type }}</span>
-      <span>状态：<span class="status {{ contract.status_class }}">{{ contract.status }}</span></span>
-    </div>
-    <table style="min-width: 0;">
-      <tbody>
-        <tr>
-          <th>甲方名称</th>
-          <td class="party">{{ contract.party_name }}</td>
-          <th>金额</th>
-          <td>¥ {{ contract.amount|floatformat:2 }}</td>
-        </tr>
-        <tr>
-          <th>是否开票</th>
-          <td>{{ contract.invoice_status }}</td>
-          <th>文件</th>
-          <td>
-            {% if contract.file %}
-              <a class="button" href="{{ contract.file.url }}" target="_blank">打开合同文件</a>
-            {% else %}
-              未上传
-            {% endif %}
-          </td>
-        </tr>
-        <tr>
-          <th>签订日期</th>
-          <td>{{ contract.sign_date|default:"" }}</td>
-          <th>开始日期</th>
-          <td>{{ contract.start_date|default:"" }}</td>
-        </tr>
-        <tr>
-          <th>截止日期</th>
-          <td>{{ contract.end_date|default:"" }}</td>
-          <th>备注</th>
-          <td class="remark">{{ contract.remark|default:"" }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
-
-  <section class="record-grid">
-    <div class="chart-area">
-      <h2>开票记录</h2>
-      {% if contract.invoice_status == "不开票" %}
-        <div class="empty">该合同设置为不开票，开票记录不可用。</div>
-      {% elif invoice_records %}
-        <table class="record-table">
-          <thead>
-            <tr>
-              <th>日期</th>
-              <th>金额</th>
-              <th>附件</th>
-              <th>备注</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for record in invoice_records %}
-              <tr>
-                <td>{{ record.record_date }}</td>
-                <td>¥ {{ record.amount|floatformat:2 }}</td>
-                <td>{% if record.file %}已上传{% else %}未上传{% endif %}</td>
-                <td class="remark">{{ record.remark }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <div class="empty">暂无开票记录</div>
-      {% endif %}
-    </div>
-
-    <div class="chart-area">
-      <h2>收票记录</h2>
-      {% if payment_records %}
-        <table class="record-table">
-          <thead>
-            <tr>
-              <th>日期</th>
-              <th>金额</th>
-              <th>附件</th>
-              <th>备注</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for record in payment_records %}
-              <tr>
-                <td>{{ record.record_date }}</td>
-                <td>¥ {{ record.amount|floatformat:2 }}</td>
-                <td>{% if record.file %}已上传{% else %}未上传{% endif %}</td>
-                <td class="remark">{{ record.remark }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <div class="empty">暂无收票记录</div>
-      {% endif %}
-    </div>
-  </section>
 {% endblock %}

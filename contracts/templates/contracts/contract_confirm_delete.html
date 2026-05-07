@@ -6,14 +6,14 @@
   <!-- 删除确认页，防止误删合同。 -->
   <h1 class="page-title">删除合同</h1>
 
-  <!-- 提交 POST 后才真正删除合同。 -->
+  <!-- 提交 POST 后将合同移入回收站。 -->
   <form class="panel" method="post">
     {% csrf_token %}
-    <p>确定要删除以下合同吗？此操作不可撤销。</p>
+    <p>确定要将以下合同移入回收站吗？一周内可恢复，超过后自动清理。</p>
     <p><strong>{{ contract.contract_name }}</strong>（{{ contract.contract_number }}）</p>
 
     <div class="toolbar">
-      <button class="button danger" type="submit">确认删除</button>
+      <button class="button danger" type="submit">移入回收站</button>
       <a class="button" href="{% url 'contracts:contract_list' %}">取消</a>
     </div>
   </form>

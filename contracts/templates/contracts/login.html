@@ -75,7 +75,7 @@
       {{ form.password.errors }}
       <div class="actions">
         <button class="primary" type="submit">管理员登录</button>
-        <button type="submit" name="guest" value="1">游客进入</button>
+        <a href="{% url 'contracts:guest_login' %}">游客进入</a>
         <a href="{% url 'contracts:dashboard' %}">返回总览</a>
       </div>
     </form>

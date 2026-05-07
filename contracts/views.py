@@ -20,6 +20,10 @@ from .forms import (
 from .models import AppSetting, Contract, ContractFile, InvoiceRecord, PaymentRecord
 
 
+# 回收站内合同默认保留 7 天。
+TRASH_RETENTION_DAYS = 7
+
+
 # 判断当前请求是否处于管理员模式。
 def is_admin_mode(request) -> bool:
     return bool(request.user.is_authenticated and not request.session.get("guest_mode", False))
@@ -91,6 +95,20 @@ def delete_contract_files(file_ids) -> None:
         item.delete()
 
 
+# 永久清理超过保留期的回收站合同和关联文件。
+def purge_expired_trash() -> None:
+    cutoff = timezone.now() - timedelta(days=TRASH_RETENTION_DAYS)
+    expired_contracts = Contract.objects.filter(is_deleted=True, deleted_at__lt=cutoff)
+    for contract in expired_contracts:
+        delete_file_from_storage(contract.file)
+        delete_contract_files(contract.files.values_list("id", flat=True))
+        for record in contract.invoicerecord_set.all():
+            delete_file_from_storage(record.file)
+        for record in contract.paymentrecord_set.all():
+            delete_file_from_storage(record.file)
+        contract.delete()
+
+
 # 从批量记录表单中读取多行开票或收票数据。
 def save_records_from_request(request, contract: Contract, record_model) -> int:
     dates = request.POST.getlist("record_date")
@@ -118,6 +136,7 @@ def expiring_contract_queryset():
     today = timezone.localdate()
     expiring_limit = today + timedelta(days=30)
     return Contract.objects.filter(
+        is_deleted=False,
         end_date__isnull=False,
         end_date__gte=today,
         end_date__lte=expiring_limit,
@@ -188,25 +207,27 @@ def local_ip_address() -> str:
 
 # 渲染统计总览页面。
 def dashboard(request):
-    total_amount = Contract.objects.aggregate(total=Sum("amount"))["total"] or Decimal("0")
-    total_invoice = InvoiceRecord.objects.aggregate(total=Sum("amount"))["total"] or Decimal("0")
-    total_payment = PaymentRecord.objects.aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    purge_expired_trash()
+    active_contracts = Contract.objects.filter(is_deleted=False)
+    total_amount = active_contracts.aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    total_invoice = InvoiceRecord.objects.filter(contract__is_deleted=False).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    total_payment = PaymentRecord.objects.filter(contract__is_deleted=False).aggregate(total=Sum("amount"))["total"] or Decimal("0")
     payment_rate = (total_payment / total_amount * Decimal("100")) if total_amount else Decimal("0")
 
     today = timezone.localdate()
     recent_cutoff = today - timedelta(days=14)
     dates = sorted(
-        set(InvoiceRecord.objects.values_list("record_date", flat=True))
-        | set(PaymentRecord.objects.values_list("record_date", flat=True))
+        set(InvoiceRecord.objects.filter(contract__is_deleted=False).values_list("record_date", flat=True))
+        | set(PaymentRecord.objects.filter(contract__is_deleted=False).values_list("record_date", flat=True))
     )
     dates = [item for item in dates if item >= recent_cutoff][-15:]
     invoice_by_date = {
         row["record_date"]: row["total"] or Decimal("0")
-        for row in InvoiceRecord.objects.values("record_date").annotate(total=Sum("amount"))
+        for row in InvoiceRecord.objects.filter(contract__is_deleted=False).values("record_date").annotate(total=Sum("amount"))
     }
     payment_by_date = {
         row["record_date"]: row["total"] or Decimal("0")
-        for row in PaymentRecord.objects.values("record_date").annotate(total=Sum("amount"))
+        for row in PaymentRecord.objects.filter(contract__is_deleted=False).values("record_date").annotate(total=Sum("amount"))
     }
     chart_rows = [
         {
@@ -223,7 +244,7 @@ def dashboard(request):
     ) or Decimal("1")
     chart_rows = enrich_chart_rows(chart_rows, max_amount)
 
-    recent_contracts = list(Contract.objects.order_by("-created_at")[:5])
+    recent_contracts = list(active_contracts.order_by("-created_at")[:5])
     context = context_with_auth(
         request,
         {
@@ -246,6 +267,7 @@ def dashboard(request):
 
 # 渲染合同列表页面，并处理搜索和表头排序。
 def contract_list(request):
+    purge_expired_trash()
     keyword = request.GET.get("q", "").strip()
     sort = request.GET.get("sort", "id").strip()
     direction = request.GET.get("direction", "asc").strip()
@@ -264,7 +286,7 @@ def contract_list(request):
         "status": "end_date",
         "payment_rate": "id",
     }
-    contracts = Contract.objects.all()
+    contracts = Contract.objects.filter(is_deleted=False)
     if keyword:
         contracts = contracts.filter(
             Q(contract_name__icontains=keyword)
@@ -298,7 +320,7 @@ def contract_list(request):
 
 # 渲染单个合同详情页面。
 def contract_detail(request, pk: int):
-    contract = get_object_or_404(Contract, pk=pk)
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     context = context_with_auth(
         request,
         {
@@ -344,7 +366,7 @@ def contract_create(request):
 @admin_required
 # 处理合同编辑页中的即时文件上传请求。
 def contract_file_upload(request, pk: int):
-    contract = get_object_or_404(Contract, pk=pk)
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if request.method != "POST":
         return JsonResponse({"error": "只允许上传文件。"}, status=405)
 
@@ -369,7 +391,7 @@ def contract_file_upload(request, pk: int):
 @admin_required
 # 编辑合同基础信息，并处理批量删除合同文件。
 def contract_update(request, pk: int):
-    contract = get_object_or_404(Contract, pk=pk)
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     old_file = contract.file
     if request.method == "POST":
         if request.POST.get("action") == "delete_files":
@@ -402,13 +424,11 @@ def contract_update(request, pk: int):
 
 
 @admin_required
-# 删除合同及其关联文件。
+# 将合同移入回收站，一周内可从回收站恢复。
 def contract_delete(request, pk: int):
-    contract = get_object_or_404(Contract, pk=pk)
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if request.method == "POST":
-        delete_file_from_storage(contract.file)
-        delete_contract_files(contract.files.values_list("id", flat=True))
-        contract.delete()
+        contract.move_to_trash()
         return redirect("contracts:contract_list")
     return render(
         request,
@@ -420,7 +440,7 @@ def contract_delete(request, pk: int):
 @admin_required
 # 根据合同是否开票，进入开票或收票记录新增入口。
 def record_add(request, pk: int):
-    contract = get_object_or_404(Contract, pk=pk)
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if contract.invoice_status == "不开票":
         return redirect("contracts:payment_record_create", pk=pk)
 
@@ -437,7 +457,7 @@ def record_add(request, pk: int):
 @admin_required
 # 新增一批开票记录。
 def invoice_record_create(request, pk: int):
-    contract = get_object_or_404(Contract, pk=pk)
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if contract.invoice_status == "不开票":
         return redirect("contracts:contract_list")
 
@@ -462,7 +482,7 @@ def invoice_record_create(request, pk: int):
 @admin_required
 # 新增一批收票记录。
 def payment_record_create(request, pk: int):
-    contract = get_object_or_404(Contract, pk=pk)
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if request.method == "POST":
         if save_records_from_request(request, contract, PaymentRecord):
             return redirect("contracts:contract_list")
@@ -479,6 +499,33 @@ def payment_record_create(request, pk: int):
             },
         ),
     )
+
+
+# 显示回收站合同，超过一周的删除项会先自动清理。
+def trash_list(request):
+    purge_expired_trash()
+    trashed_contracts = Contract.objects.filter(is_deleted=True).order_by("-deleted_at", "-id")
+    return render(
+        request,
+        "contracts/trash.html",
+        context_with_auth(
+            request,
+            {
+                "contracts": trashed_contracts,
+                "retention_days": TRASH_RETENTION_DAYS,
+                "active_nav": "trash",
+            },
+        ),
+    )
+
+
+@admin_required
+# 从回收站恢复合同。
+def contract_restore(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=True)
+    if request.method == "POST":
+        contract.restore_from_trash()
+    return redirect("contracts:trash")
 
 
 @admin_required
@@ -529,10 +576,6 @@ def password_change(request):
 # 处理管理员登录和游客模式进入。
 def login_view(request):
     if request.method == "POST":
-        if "guest" in request.POST:
-            request.session["guest_mode"] = True
-            return redirect("contracts:dashboard")
-
         form = LoginForm(request.POST)
         if form.is_valid():
             user = authenticate(
@@ -548,6 +591,13 @@ def login_view(request):
     else:
         form = LoginForm()
     return render(request, "contracts/login.html", {"form": form})
+
+
+# 直接进入游客模式，不需要填写账号和密码。
+def guest_login_view(request):
+    logout(request)
+    request.session["guest_mode"] = True
+    return redirect("contracts:dashboard")
 
 
 # 退出当前登录或游客会话。

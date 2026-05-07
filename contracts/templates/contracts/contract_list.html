@@ -61,7 +61,7 @@
         <table class="contract-table" id="contractTable">
           <thead>
             <tr>
-              <th><a class="sort-link {% if sort == 'id' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=id&direction={% if sort == 'id' and direction == 'asc' %}desc{% else %}asc{% endif %}">ID</a></th>
+              <th>序号</th>
               <th><a class="sort-link {% if sort == 'contract_name' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=contract_name&direction={% if sort == 'contract_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同名称</a></th>
               <th><a class="sort-link {% if sort == 'contract_number' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=contract_number&direction={% if sort == 'contract_number' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同编号</a></th>
               <th><a class="sort-link {% if sort == 'contract_type' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=contract_type&direction={% if sort == 'contract_type' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同类型</a></th>
@@ -86,7 +86,7 @@
                 data-payment-rate="{{ contract.payment_rate|floatformat:1 }}%"
                 data-file-url="{% if contract.latest_file %}{{ contract.latest_file.file.url }}{% elif contract.file %}{{ contract.file.url }}{% endif %}"
               >
-                <td>{{ contract.id }}</td>
+                <td>{{ forloop.counter }}</td>
                 <td class="name">{{ contract.contract_name }}</td>
                 <td>{{ contract.contract_number }}</td>
                 <td>{{ contract.contract_type }}</td>
@@ -232,8 +232,8 @@
         }
         openCenterModal({
           title: "确认删除",
-          body: "确定要删除选中的合同吗？此操作不可撤销。",
-          confirmText: "确认删除",
+          body: "确定要将选中的合同移入回收站吗？一周内可恢复，超过后自动清理。",
+          confirmText: "移入回收站",
           danger: true,
           onConfirm: () => {
             deleteForm.action = deleteButton.dataset.currentUrl;

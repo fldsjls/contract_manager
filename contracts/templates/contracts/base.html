@@ -595,7 +595,11 @@
       <div class="brand">合同系统</div>
       <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'contracts:dashboard' %}">统计总览</a>
       <a class="nav-link {% if active_nav == 'contracts' %}active{% endif %}" href="{% url 'contracts:contract_list' %}">合同列表</a>
-      <a class="nav-link {% if active_nav == 'settings' %}active{% endif %}" href="{% url 'contracts:settings' %}">设置</a>
+      <a class="nav-link {% if active_nav == 'trash' %}active{% endif %}" href="{% url 'contracts:trash' %}">回收站</a>
+      <a
+        class="nav-link {% if active_nav == 'settings' %}active{% endif %} {% if is_guest_mode %}requires-admin-login{% endif %}"
+        href="{% if is_guest_mode %}{% url 'contracts:login' %}{% else %}{% url 'contracts:settings' %}{% endif %}"
+      >设置</a>
       <div class="auth-box">
         {% if is_admin_mode %}
           <strong>管理员模式</strong>
@@ -614,8 +618,46 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  <!-- 游客访问管理员功能时显示登录提示。 -->
+  <div class="modal-backdrop" id="adminLoginModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="adminLoginModalTitle">
+      <div class="modal-header" id="adminLoginModalTitle">需要管理员登录</div>
+      <div class="modal-body">设置功能需要管理员权限。是否前往登录？</div>
+      <div class="modal-actions">
+        <button class="button" id="adminLoginCancel" type="button">取消</button>
+        <button class="button primary" id="adminLoginConfirm" type="button">登录</button>
+      </div>
+    </div>
+  </div>
   <!-- 全局点击空白区域时清除表格选中状态。 -->
   <script>
+    const adminLoginModal = document.querySelector("#adminLoginModal");
+    const adminLoginCancel = document.querySelector("#adminLoginCancel");
+    const adminLoginConfirm = document.querySelector("#adminLoginConfirm");
+    const adminOnlyLinks = document.querySelectorAll(".requires-admin-login");
+
+    function closeAdminLoginModal() {
+      adminLoginModal.hidden = true;
+    }
+
+    adminOnlyLinks.forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        adminLoginModal.hidden = false;
+        adminLoginConfirm.focus();
+      });
+    });
+
+    adminLoginCancel.addEventListener("click", closeAdminLoginModal);
+    adminLoginConfirm.addEventListener("click", () => {
+      window.location.href = "{% url 'contracts:login' %}";
+    });
+    adminLoginModal.addEventListener("click", (event) => {
+      if (event.target === adminLoginModal) {
+        closeAdminLoginModal();
+      }
+    });
+
     function clearInteractiveSelection() {
       document.querySelectorAll(".selectable-row.selected").forEach((row) => {
         row.classList.remove("selected");

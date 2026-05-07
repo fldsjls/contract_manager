@@ -1,8 +1,29 @@
 from datetime import timedelta
 from decimal import Decimal
+from pathlib import PurePath
+import re
 
 from django.db import models
 from django.utils import timezone
+
+
+# 清理项目文件夹名称，避免 Windows 和 URL 路径中的非法字符。
+def safe_project_folder_name(contract: "Contract") -> str:
+    raw_name = contract.contract_name or contract.contract_number or "未命名项目"
+    safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_name).strip(" ._")
+    return safe_name or "未命名项目"
+
+
+# 获取上传对象所属合同。
+def upload_contract_for(instance):
+    return getattr(instance, "contract", instance)
+
+
+# 所有项目文件统一保存到 media/contracts/项目名称/文件名。
+def project_file_upload_path(instance, filename: str) -> str:
+    contract = upload_contract_for(instance)
+    safe_filename = PurePath(filename).name
+    return f"contracts/{safe_project_folder_name(contract)}/{safe_filename}"
 
 
 # 定义合同主表、附件表、开票记录表、收票记录表和系统设置表。
@@ -32,8 +53,10 @@ class Contract(models.Model):
     sign_date = models.DateField("签订日期", null=True, blank=True)
     start_date = models.DateField("开始日期", null=True, blank=True)
     end_date = models.DateField("截止日期", null=True, blank=True)
-    file = models.FileField("合同文件", upload_to="contracts/", null=True, blank=True)
+    file = models.FileField("合同文件", upload_to=project_file_upload_path, null=True, blank=True)
     remark = models.TextField("备注", blank=True)
+    is_deleted = models.BooleanField("是否删除", default=False)
+    deleted_at = models.DateTimeField("删除时间", null=True, blank=True)
     created_at = models.DateTimeField("创建时间", default=timezone.now)
     updated_at = models.DateTimeField("更新时间", auto_now=True)
 
@@ -89,11 +112,23 @@ class Contract(models.Model):
         # 用收票金额除以合同金额，得到单个项目的收款率。
         return (self.payment_total / self.amount * Decimal("100")) if self.amount else Decimal("0")
 
+    def move_to_trash(self) -> None:
+        # 将合同移入回收站，保留一周内可恢复。
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
+
+    def restore_from_trash(self) -> None:
+        # 从回收站恢复合同，恢复后重新出现在合同列表和统计中。
+        self.is_deleted = False
+        self.deleted_at = None
+        self.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
+
 
 # 保存合同可重复上传的附件文件。
 class ContractFile(models.Model):
     contract = models.ForeignKey(Contract, related_name="files", on_delete=models.CASCADE, verbose_name="所属合同")
-    file = models.FileField("合同文件", upload_to="contract_files/")
+    file = models.FileField("合同文件", upload_to=project_file_upload_path)
     original_name = models.CharField("原文件名", max_length=255, blank=True)
     created_at = models.DateTimeField("上传时间", default=timezone.now)
 
@@ -113,7 +148,7 @@ class RecordBase(models.Model):
     contract = models.ForeignKey(Contract, on_delete=models.CASCADE, verbose_name="所属合同")
     record_date = models.DateField("日期")
     amount = models.DecimalField("金额", max_digits=14, decimal_places=2, default=0)
-    file = models.FileField("附件", upload_to="records/", null=True, blank=True)
+    file = models.FileField("附件", upload_to=project_file_upload_path, null=True, blank=True)
     remark = models.CharField("备注", max_length=255, blank=True)
     created_at = models.DateTimeField("创建时间", default=timezone.now)
     updated_at = models.DateTimeField("更新时间", auto_now=True)

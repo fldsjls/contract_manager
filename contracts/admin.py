@@ -15,11 +15,13 @@ class ContractAdmin(admin.ModelAdmin):
         "amount",
         "invoice_status",
         "end_date",
+        "is_deleted",
+        "deleted_at",
     )
     # 后台搜索支持合同名称、编号和甲方名称。
     search_fields = ("contract_name", "contract_number", "party_name")
     # 后台右侧筛选项。
-    list_filter = ("contract_type", "invoice_status", "end_date")
+    list_filter = ("contract_type", "invoice_status", "is_deleted", "end_date")
 
 
 # 注册合同附件模型到后台。

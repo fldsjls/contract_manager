@@ -50,10 +50,15 @@
     <!-- 到期提醒只展示近期需要关注的合同。 -->
     {% if expiring_contracts %}
       <div class="expiring-list">
-        <strong>到期提醒：</strong>
-        {% for contract in expiring_contracts|slice:":6" %}
-          {{ contract.contract_name }}（{{ contract.end_date }}）{% if not forloop.last %}；{% endif %}
-        {% endfor %}
+        <strong class="expiring-list-title">到期提醒：</strong>
+        <div class="expiring-list-items">
+          {% for contract in expiring_contracts %}
+            <a class="expiring-item" href="{% url 'contracts:contract_detail' contract.id %}">
+              <span class="expiring-name">{{ contract.contract_name }}</span>
+              <span class="expiring-date">{{ contract.end_date }}</span>
+            </a>
+          {% endfor %}
+        </div>
       </div>
     {% endif %}
 
@@ -326,7 +331,7 @@
         centerModalCancel.hidden = true;
         modalConfirmHandler = null;
         centerModalConfirm.classList.remove("danger");
-        centerModalConfirm.classList.add("primary");
+        centerModalConfirm.classList.remove("primary");
         centerModal.hidden = false;
         centerModalConfirm.focus();
         projectStatsState.url = statsButton.dataset.statsUrl;

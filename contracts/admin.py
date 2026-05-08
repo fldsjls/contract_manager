@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AppSetting, Contract, ContractFile, InvoiceRecord, MaintenanceRecord, PaymentRecord
+from .models import AppSetting, Contract, ContractFile, InvoiceRecord, MaintenanceRecord, PaymentRecord, SettlementFile
 
 
 # 注册合同模型到 Django 管理后台。
@@ -33,11 +33,18 @@ class ContractFileAdmin(admin.ModelAdmin):
     search_fields = ("contract__contract_name", "contract__contract_number", "original_name")
 
 
+@admin.register(SettlementFile)
+class SettlementFileAdmin(admin.ModelAdmin):
+    list_display = ("contract", "original_name", "created_at")
+    search_fields = ("contract__contract_name", "contract__contract_number", "original_name")
+    list_filter = ("created_at",)
+
+
 # 注册开票记录模型到后台。
 @admin.register(InvoiceRecord)
 class InvoiceRecordAdmin(admin.ModelAdmin):
     # 后台开票记录列表显示的字段。
-    list_display = ("contract", "record_date", "amount", "remark")
+    list_display = ("contract", "record_date", "record_type", "amount", "remark")
     # 后台开票记录搜索字段。
     search_fields = ("contract__contract_name", "contract__contract_number", "remark")
     # 后台按日期筛选开票记录。
@@ -48,7 +55,7 @@ class InvoiceRecordAdmin(admin.ModelAdmin):
 @admin.register(PaymentRecord)
 class PaymentRecordAdmin(admin.ModelAdmin):
     # 后台收票记录列表显示的字段。
-    list_display = ("contract", "record_date", "amount", "remark")
+    list_display = ("contract", "record_date", "record_type", "amount", "remark")
     # 后台收票记录搜索字段。
     search_fields = ("contract__contract_name", "contract__contract_number", "remark")
     # 后台按日期筛选收票记录。

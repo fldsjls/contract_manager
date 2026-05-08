@@ -57,7 +57,7 @@
               <input type="checkbox" name="delete_files" value="{{ item.id }}">
               <span class="file-name" title="{{ item.original_name|default:item.file.name }}">{{ item.original_name|default:item.file.name }}</span>
               <div class="file-actions">
-                <a class="button" href="{% url 'contracts:contract_file_preview' item.id %}">预览</a>
+                <a class="button" href="{% url 'contracts:contract_file_preview' item.id %}?from=edit">预览</a>
                 <a class="button" href="{{ item.file.url }}" download>下载</a>
               </div>
             </div>
@@ -66,7 +66,7 @@
           <div class="file-item legacy-file-item">
             <span class="file-name" title="{{ contract.file.name }}">{{ contract.file.name }}</span>
             <div class="file-actions">
-              <a class="button" href="{% url 'contracts:legacy_contract_file_preview' contract.id %}">预览</a>
+              <a class="button" href="{% url 'contracts:legacy_contract_file_preview' contract.id %}?from=edit">预览</a>
               <a class="button" href="{{ contract.file.url }}" download>下载</a>
             </div>
           </div>

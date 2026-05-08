@@ -17,12 +17,12 @@
           <div class="metric-value">¥ {{ total_amount|floatformat:2 }}</div>
         </div>
         <div class="metric-card">
-          <div class="metric-title">项目开票</div>
-          <div class="metric-value">¥ {{ total_invoice|floatformat:2 }}</div>
+          <div class="metric-title">项目收入</div>
+          <div class="metric-value">¥ {{ total_income|floatformat:2 }}</div>
         </div>
         <div class="metric-card">
-          <div class="metric-title">项目收票</div>
-          <div class="metric-value">¥ {{ total_payment|floatformat:2 }}</div>
+          <div class="metric-title">项目支出</div>
+          <div class="metric-value">¥ {{ total_expense|floatformat:2 }}</div>
         </div>
         <div class="metric-card">
           <div class="metric-title">收款率</div>
@@ -34,7 +34,7 @@
       <section class="chart-grid">
         <div class="chart-area">
           <div class="file-list-header" style="margin-bottom: 8px;">
-            <h2>开票 / 收票趋势</h2>
+            <h2>收入 / 支出趋势</h2>
             <div class="file-actions">
               {% if chart_period != "all" %}<a class="button" href="?{{ prev_range_params }}">←</a>{% endif %}
               <button class="button" id="rangeModalButton" type="button">{{ chart_range_label }}</button>
@@ -42,10 +42,10 @@
             </div>
           </div>
           {% if chart_rows %}
-            <div class="echarts-trend" id="trendChart" role="img" aria-label="开票和收票趋势图"></div>
+            <div class="echarts-trend" id="trendChart" role="img" aria-label="收入和支出趋势图"></div>
             {{ chart_data|json_script:"trendChartData" }}
           {% else %}
-            <div class="empty" style="flex: 1;">暂无开票/收票记录</div>
+            <div class="empty" style="flex: 1;">暂无收入/支出记录</div>
           {% endif %}
         </div>
 
@@ -239,7 +239,7 @@
           left: 18,
           itemWidth: 18,
           itemHeight: 8,
-          data: ["开票", "收票"],
+          data: ["收入", "支出"],
         },
         grid: {
           left: 32,
@@ -300,9 +300,9 @@
         ],
         series: [
           {
-            name: "开票",
+            name: "收入",
             type: "line",
-            data: trendData.invoice,
+            data: trendData.income,
             symbol: "circle",
             symbolSize: 7,
             lineStyle: { width: 2.4 },
@@ -321,9 +321,9 @@
             },
           },
           {
-            name: "收票",
+            name: "支出",
             type: "line",
-            data: trendData.payment,
+            data: trendData.expense,
             symbol: "circle",
             symbolSize: 7,
             lineStyle: { width: 2.4 },

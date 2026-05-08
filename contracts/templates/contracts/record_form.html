@@ -21,8 +21,9 @@
           <thead>
             <tr>
               <th>日期</th>
+              {% if record_type_options %}<th>类型</th>{% endif %}
               <th>{% if month_field %}月份{% else %}金额{% endif %}</th>
-              <th>附件</th>
+              <th>{{ file_label|default:"附件" }}</th>
               <th>备注</th>
               <th>操作</th>
             </tr>
@@ -30,6 +31,15 @@
           <tbody>
             <tr data-row-index="0">
               <td><input name="record_date" type="date" value="{{ today|date:'Y-m-d' }}" required></td>
+              {% if record_type_options %}
+                <td>
+                  <select name="record_type" required>
+                    {% for option in record_type_options %}
+                      <option value="{{ option }}">{{ option }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+              {% endif %}
               <td>
                 {% if month_field %}
                   <input name="month" type="month" value="{{ current_month }}" required>
@@ -75,6 +85,15 @@
       row.dataset.rowIndex = index;
       row.innerHTML = `
         <td><input name="record_date" type="date" value="{{ today|date:'Y-m-d' }}" required></td>
+        {% if record_type_options %}
+          <td>
+            <select name="record_type" required>
+              {% for option in record_type_options %}
+                <option value="{{ option }}">{{ option }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        {% endif %}
         <td>
           {% if month_field %}
             <input name="month" type="month" value="{{ current_month }}" required>

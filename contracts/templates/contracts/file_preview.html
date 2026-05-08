@@ -7,7 +7,7 @@
     <!-- 预览页标题和返回入口。 -->
     <h1 class="page-title">文件预览</h1>
     <div class="toolbar" style="align-items: center;">
-      <a class="button" href="{% url 'contracts:contract_detail' contract.id %}">返回详情</a>
+      <a class="button" href="{{ return_url }}">返回</a>
       <a class="button" href="{{ file_url }}" download>下载文件</a>
       <span class="file-preview-name" title="{{ file_name }}">{{ file_name }}</span>
       <span class="toolbar-spacer"></span>

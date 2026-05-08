@@ -19,11 +19,23 @@ def upload_contract_for(instance):
     return getattr(instance, "contract", instance)
 
 
-# 所有项目文件统一保存到 media/contracts/项目名称/文件名。
+# 按功能把项目文件保存到 media/contracts/项目名称/功能文件夹/文件名。
 def project_file_upload_path(instance, filename: str) -> str:
     contract = upload_contract_for(instance)
     safe_filename = PurePath(filename).name
-    return f"contracts/{safe_project_folder_name(contract)}/{safe_filename}"
+    if instance.__class__.__name__ == "PaymentRecord" and contract.invoice_status == "不开票":
+        subfolder = "收据文件"
+    else:
+        folder_map = {
+            "Contract": "合同文件",
+            "ContractFile": "合同文件",
+            "SettlementFile": "结算文件",
+            "InvoiceRecord": "发票文件",
+            "PaymentRecord": "发票文件",
+            "MaintenanceRecord": "维保文件",
+        }
+        subfolder = folder_map.get(instance.__class__.__name__, "其他文件")
+    return f"contracts/{safe_project_folder_name(contract)}/{subfolder}/{safe_filename}"
 
 
 # 定义合同主表、附件表、开票记录表、收票记录表、维护保养记录表和系统设置表。
@@ -99,13 +111,27 @@ class Contract(models.Model):
 
     @property
     def invoice_total(self) -> Decimal:
-        # 汇总当前合同的全部开票记录金额。
-        return self.invoicerecord_set.aggregate(total=models.Sum("amount"))["total"] or Decimal("0")
+        # 兼容旧模板命名：这里返回项目收入。
+        total = Decimal("0")
+        for record in self.invoicerecord_set.all():
+            if record.record_type in {"收票", "收据"}:
+                total += record.amount
+        for record in self.paymentrecord_set.all():
+            if record.record_type not in {"开票", "开据"}:
+                total += record.amount
+        return total
 
     @property
     def payment_total(self) -> Decimal:
-        # 汇总当前合同的全部收票记录金额。
-        return self.paymentrecord_set.aggregate(total=models.Sum("amount"))["total"] or Decimal("0")
+        # 兼容旧模板命名：这里返回项目支出。
+        total = Decimal("0")
+        for record in self.invoicerecord_set.all():
+            if record.record_type not in {"收票", "收据"}:
+                total += record.amount
+        for record in self.paymentrecord_set.all():
+            if record.record_type in {"开票", "开据"}:
+                total += record.amount
+        return total
 
     @property
     def payment_rate(self) -> Decimal:
@@ -144,10 +170,27 @@ class ContractFile(models.Model):
         return self.original_name or self.file.name
 
 
+# 保存合同结算文件，和合同正文、记录附件分目录归档。
+class SettlementFile(models.Model):
+    contract = models.ForeignKey(Contract, related_name="settlement_files", on_delete=models.CASCADE, verbose_name="所属合同")
+    file = models.FileField("结算文件", upload_to=project_file_upload_path)
+    original_name = models.CharField("原文件名", max_length=255, blank=True)
+    created_at = models.DateTimeField("上传时间", default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "结算文件"
+        verbose_name_plural = "结算文件"
+
+    def __str__(self) -> str:
+        return self.original_name or self.file.name
+
+
 # 开票和收票记录共用的抽象基础表。
 class RecordBase(models.Model):
     contract = models.ForeignKey(Contract, on_delete=models.CASCADE, verbose_name="所属合同")
     record_date = models.DateField("日期")
+    record_type = models.CharField("类型", max_length=20, blank=True)
     amount = models.DecimalField("金额", max_digits=14, decimal_places=2, default=0)
     file = models.FileField("附件", upload_to=project_file_upload_path, null=True, blank=True)
     remark = models.CharField("备注", max_length=255, blank=True)

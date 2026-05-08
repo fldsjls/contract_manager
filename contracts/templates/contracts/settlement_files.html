@@ -1,0 +1,59 @@
+{% extends "contracts/base.html" %}
+
+{% block title %}结算文件{% endblock %}
+
+{% block content %}
+  <h1 class="page-title">结算文件</h1>
+
+  <section class="panel">
+    <div class="summary">
+      <span>所属合同：{{ contract.contract_name }}</span>
+      <span>合同编号：{{ contract.contract_number }}</span>
+    </div>
+
+    <form id="settlementUploadForm" method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="file-list-header">
+        <span class="field-label">结算文件</span>
+        <label class="button" for="settlementFiles">添加文件</label>
+        <input class="hidden-file-input" id="settlementFiles" name="files" type="file" multiple>
+      </div>
+    </form>
+
+    <form method="post" style="margin-top: 10px;">
+      {% csrf_token %}
+      <div class="file-list">
+      {% if settlement_files %}
+        {% for item in settlement_files %}
+          <div class="file-item">
+            <input type="checkbox" name="delete_files" value="{{ item.id }}">
+            <span class="file-name" title="{{ item.original_name|default:item.file.name }}">{{ item.original_name|default:item.file.name }}</span>
+            <div class="file-actions">
+              <a class="button" href="{% url 'contracts:settlement_file_preview' item.id %}">预览</a>
+              <a class="button" href="{{ item.file.url }}" download>下载</a>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="file-empty">暂无结算文件，请点击“添加文件”上传。</div>
+      {% endif %}
+      </div>
+
+      <div class="toolbar" style="margin-top: 18px;">
+        <button class="button danger" type="submit" name="action" value="delete_files">删除</button>
+        <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
+      </div>
+    </form>
+  </section>
+
+  <script>
+    const settlementFilesInput = document.querySelector("#settlementFiles");
+    const settlementUploadForm = document.querySelector("#settlementUploadForm");
+
+    settlementFilesInput.addEventListener("change", () => {
+      if (settlementFilesInput.files.length) {
+        settlementUploadForm.submit();
+      }
+    });
+  </script>
+{% endblock %}

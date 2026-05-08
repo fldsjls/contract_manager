@@ -80,8 +80,9 @@
                 <thead>
                   <tr>
                     <th>日期</th>
+                    <th>类型</th>
                     <th>金额</th>
-                    <th>附件</th>
+                    <th>发票文件</th>
                     <th>备注</th>
                   </tr>
                 </thead>
@@ -89,6 +90,7 @@
                   {% for record in invoice_records %}
                     <tr>
                       <td>{{ record.record_date }}</td>
+                      <td>{{ record.record_type|default:"开票" }}</td>
                       <td>¥ {{ record.amount|floatformat:2 }}</td>
                       <td>{% if record.file %}<a href="{{ record.file.url }}" target="_blank">已上传</a>{% else %}未上传{% endif %}</td>
                       <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
@@ -103,15 +105,16 @@
         </div>
 
         <div class="chart-area">
-          <h2>收票记录</h2>
+          <h2>{% if contract.invoice_status == "不开票" %}收据记录{% else %}收票记录{% endif %}</h2>
           {% if payment_records %}
             <div class="table-wrap">
               <table class="record-table">
                 <thead>
                   <tr>
                     <th>日期</th>
+                    <th>类型</th>
                     <th>金额</th>
-                    <th>附件</th>
+                    <th>{% if contract.invoice_status == "不开票" %}收据文件{% else %}发票文件{% endif %}</th>
                     <th>备注</th>
                   </tr>
                 </thead>
@@ -119,6 +122,7 @@
                   {% for record in payment_records %}
                     <tr>
                       <td>{{ record.record_date }}</td>
+                      <td>{{ record.record_type|default:"收票" }}</td>
                       <td>¥ {{ record.amount|floatformat:2 }}</td>
                       <td>{% if record.file %}<a href="{{ record.file.url }}" target="_blank">已上传</a>{% else %}未上传{% endif %}</td>
                       <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
@@ -144,7 +148,7 @@
                   <tr>
                     <th>日期</th>
                     <th>月份</th>
-                    <th>附件</th>
+                    <th>维保文件</th>
                     <th>备注</th>
                   </tr>
                 </thead>

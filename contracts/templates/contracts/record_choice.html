@@ -14,8 +14,17 @@
     </div>
 
     <div class="toolbar">
-      <a class="button primary" href="{% url 'contracts:invoice_record_create' contract.id %}">添加开票记录</a>
+      {% if contract.invoice_status == "不开票" %}
+        <span class="button muted">添加开票记录</span>
+      {% else %}
+        <a class="button primary" href="{% url 'contracts:invoice_record_create' contract.id %}">添加开票记录</a>
+      {% endif %}
       <a class="button" href="{% url 'contracts:payment_record_create' contract.id %}">添加收票记录</a>
+      {% if contract.contract_type == "维保" %}
+        <a class="button success" href="{% url 'contracts:maintenance_record_create' contract.id %}">添加维护保养记录</a>
+      {% else %}
+        <span class="button muted">添加维护保养记录</span>
+      {% endif %}
       <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
     </div>
   </section>

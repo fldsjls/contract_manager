@@ -3,7 +3,7 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-  <!-- 开票或收票记录批量新增页面。 -->
+  <!-- 开票、收票或维护保养记录批量新增页面。 -->
   <h1 class="page-title">{{ title }}</h1>
 
   <!-- 表格表单支持一次新增多条记录。 -->
@@ -21,7 +21,7 @@
           <thead>
             <tr>
               <th>日期</th>
-              <th>金额</th>
+              <th>{% if month_field %}月份{% else %}金额{% endif %}</th>
               <th>附件</th>
               <th>备注</th>
               <th>操作</th>
@@ -30,7 +30,13 @@
           <tbody>
             <tr data-row-index="0">
               <td><input name="record_date" type="date" value="{{ today|date:'Y-m-d' }}" required></td>
-              <td><input name="amount" type="number" step="0.01" min="0" value="0" required></td>
+              <td>
+                {% if month_field %}
+                  <input name="month" type="month" value="{{ current_month }}" required>
+                {% else %}
+                  <input name="amount" type="number" step="0.01" min="0" value="0" required>
+                {% endif %}
+              </td>
               <td><input name="file_0" type="file"></td>
               <td><input name="remark" type="text"></td>
               <td><button class="button" type="button" data-remove-row>删除</button></td>
@@ -69,7 +75,13 @@
       row.dataset.rowIndex = index;
       row.innerHTML = `
         <td><input name="record_date" type="date" value="{{ today|date:'Y-m-d' }}" required></td>
-        <td><input name="amount" type="number" step="0.01" min="0" value="0" required></td>
+        <td>
+          {% if month_field %}
+            <input name="month" type="month" value="{{ current_month }}" required>
+          {% else %}
+            <input name="amount" type="number" step="0.01" min="0" value="0" required>
+          {% endif %}
+        </td>
         <td><input name="file_${index}" type="file"></td>
         <td><input name="remark" type="text"></td>
         <td><button class="button" type="button" data-remove-row>删除</button></td>

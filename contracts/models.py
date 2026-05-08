@@ -26,7 +26,7 @@ def project_file_upload_path(instance, filename: str) -> str:
     return f"contracts/{safe_project_folder_name(contract)}/{safe_filename}"
 
 
-# 定义合同主表、附件表、开票记录表、收票记录表和系统设置表。
+# 定义合同主表、附件表、开票记录表、收票记录表、维护保养记录表和系统设置表。
 class Contract(models.Model):
     # 合同类型用于表单下拉选择。
     CONTRACT_TYPES = [
@@ -176,6 +176,27 @@ class PaymentRecord(RecordBase):
     class Meta(RecordBase.Meta):
         verbose_name = "收票记录"
         verbose_name_plural = "收票记录"
+
+
+# 维护保养记录表。
+class MaintenanceRecord(models.Model):
+    contract = models.ForeignKey(Contract, on_delete=models.CASCADE, verbose_name="所属合同")
+    record_date = models.DateField("日期")
+    month = models.CharField("月份", max_length=30)
+    file = models.FileField("附件", upload_to=project_file_upload_path, null=True, blank=True)
+    remark = models.CharField("备注", max_length=255, blank=True)
+    created_at = models.DateTimeField("创建时间", default=timezone.now)
+    updated_at = models.DateTimeField("更新时间", auto_now=True)
+
+    class Meta:
+        # 维护保养记录按日期和创建顺序显示。
+        ordering = ["record_date", "id"]
+        verbose_name = "维护保养记录"
+        verbose_name_plural = "维护保养记录"
+
+    def __str__(self) -> str:
+        # 后台中显示记录所属合同、日期和月份。
+        return f"{self.contract.contract_name} - {self.record_date} - {self.month}"
 
 
 # 保存系统级开关配置。

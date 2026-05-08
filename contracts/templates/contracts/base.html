@@ -141,6 +141,11 @@
       background: #dc2626;
       color: #fff;
     }
+    .button.success {
+      border-color: #16a34a;
+      background: #16a34a;
+      color: #fff;
+    }
     .button.muted {
       color: #98a2b3;
       border-color: #d9dee7;
@@ -176,6 +181,15 @@
     }
     .modal-card.wide {
       width: min(860px, calc(100vw - 48px));
+      height: min(640px, calc(100vh - 48px));
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .modal-card.wide .modal-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
     }
     .modal-header {
       padding: 18px 20px 8px;
@@ -189,9 +203,16 @@
     }
     .modal-actions {
       display: flex;
+      align-items: center;
       justify-content: flex-end;
       gap: 10px;
       padding: 0 20px 20px;
+    }
+    .modal-left-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-right: auto;
     }
     .range-modal-card {
       width: min(420px, calc(100vw - 48px));
@@ -433,6 +454,7 @@
       display: grid;
       gap: 14px;
       white-space: normal;
+      min-height: 100%;
     }
     .project-stats-name {
       color: #475467;
@@ -442,10 +464,73 @@
       margin-bottom: 0;
     }
     .project-stats-chart {
-      height: 280px;
+      height: 300px;
       width: 100%;
       border: 1px solid #d9dee7;
       background: #fff;
+    }
+    .maintenance-calendar {
+      display: grid;
+      gap: 14px;
+      white-space: normal;
+      min-height: 100%;
+      align-content: start;
+    }
+    .maintenance-calendar-header {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .maintenance-calendar-title {
+      color: #475467;
+      font-size: 15px;
+    }
+    .maintenance-year-control {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .maintenance-year-label {
+      min-width: 96px;
+      text-align: center;
+    }
+    .maintenance-month-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .maintenance-month {
+      min-height: 92px;
+      padding: 10px;
+      border: 1px solid #d9dee7;
+      background: #fff;
+    }
+    .maintenance-month.has-records {
+      border-color: #16a34a;
+      background: #ecfdf3;
+    }
+    .maintenance-month-name {
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .maintenance-month-records {
+      display: grid;
+      gap: 4px;
+      color: #475467;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .maintenance-month-record {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .project-popup-tabs {
+      display: flex;
+      gap: 10px;
+      margin-top: 0;
+      justify-content: flex-start;
     }
     .chart-grid {
       display: grid;
@@ -740,7 +825,7 @@
   <div class="app-shell">
     <!-- 左侧导航栏显示模块入口和当前登录模式。 -->
     <aside class="sidebar">
-      <div class="brand">合同系统</div>
+      <div class="brand">金达铭公司</div>
       <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'contracts:dashboard' %}">统计总览</a>
       <a class="nav-link {% if active_nav == 'contracts' %}active{% endif %}" href="{% url 'contracts:contract_list' %}">合同列表</a>
       <a class="nav-link {% if active_nav == 'trash' %}active{% endif %}" href="{% url 'contracts:trash' %}">回收站</a>

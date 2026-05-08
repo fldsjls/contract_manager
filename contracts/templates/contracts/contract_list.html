@@ -83,10 +83,12 @@
                 class="selectable-row"
                 data-contract-id="{{ contract.id }}"
                 data-contract-name="{{ contract.contract_name }}"
+                data-contract-type="{{ contract.contract_type }}"
                 data-invoice-total="¥ {{ contract.invoice_total|floatformat:2 }}"
                 data-payment-total="¥ {{ contract.payment_total|floatformat:2 }}"
                 data-payment-rate="{{ contract.payment_rate|floatformat:1 }}%"
                 data-stats-url="{% url 'contracts:contract_stats_data' contract.id %}"
+                data-maintenance-url="{% url 'contracts:maintenance_record_data' contract.id %}"
                 data-file-url="{% if contract.latest_file %}{% url 'contracts:contract_file_preview' contract.latest_file.id %}{% elif contract.file %}{% url 'contracts:legacy_contract_file_preview' contract.id %}{% endif %}"
               >
                 <td>{{ forloop.counter }}</td>
@@ -117,6 +119,7 @@
       <div class="modal-header" id="centerModalTitle"></div>
       <div class="modal-body" id="centerModalBody"></div>
       <div class="modal-actions">
+        <div class="modal-left-actions" id="centerModalLeftActions" data-keep-selection></div>
         <button class="button" id="centerModalCancel" type="button">取消</button>
         <button class="button primary" id="centerModalConfirm" type="button">确定</button>
       </div>
@@ -169,6 +172,7 @@
     const centerModalCard = document.querySelector("#centerModalCard");
     const centerModalTitle = document.querySelector("#centerModalTitle");
     const centerModalBody = document.querySelector("#centerModalBody");
+    const centerModalLeftActions = document.querySelector("#centerModalLeftActions");
     const centerModalCancel = document.querySelector("#centerModalCancel");
     const centerModalConfirm = document.querySelector("#centerModalConfirm");
     const projectRangeModal = document.querySelector("#projectRangeModal");
@@ -186,6 +190,11 @@
       year: new Date().getFullYear(),
       month: new Date().getMonth() + 1,
     };
+    let maintenanceState = {
+      url: "",
+      year: new Date().getFullYear(),
+      enabled: false,
+    };
 
     function setDisabled(button, disabled) {
       button.setAttribute("aria-disabled", disabled ? "true" : "false");
@@ -198,6 +207,7 @@
     function closeCenterModal() {
       centerModal.hidden = true;
       centerModalCard.classList.remove("wide");
+      centerModalLeftActions.innerHTML = "";
       modalConfirmHandler = null;
       centerModalConfirm.classList.remove("danger");
       centerModalConfirm.classList.add("primary");
@@ -207,6 +217,7 @@
     function openCenterModal({ title, body, confirmText = "确定", cancelText = "取消", danger = false, onConfirm = null }) {
       centerModalTitle.textContent = title;
       centerModalBody.textContent = body;
+      centerModalLeftActions.innerHTML = "";
       centerModalCard.classList.remove("wide");
       centerModalConfirm.textContent = confirmText;
       centerModalCancel.textContent = cancelText;
@@ -236,6 +247,8 @@
         statsButton.dataset.paymentTotal = "";
         statsButton.dataset.paymentRate = "";
         statsButton.dataset.statsUrl = "";
+        statsButton.dataset.maintenanceUrl = "";
+        statsButton.dataset.contractType = "";
       }
     }
 
@@ -277,6 +290,8 @@
           statsButton.dataset.paymentTotal = row.dataset.paymentTotal;
           statsButton.dataset.paymentRate = row.dataset.paymentRate;
           statsButton.dataset.statsUrl = row.dataset.statsUrl;
+          statsButton.dataset.maintenanceUrl = row.dataset.maintenanceUrl;
+          statsButton.dataset.contractType = row.dataset.contractType;
         }
       });
     }
@@ -318,8 +333,105 @@
         projectStatsState.period = "all";
         projectStatsState.year = new Date().getFullYear();
         projectStatsState.month = new Date().getMonth() + 1;
+        maintenanceState.url = statsButton.dataset.maintenanceUrl;
+        maintenanceState.year = new Date().getFullYear();
+        maintenanceState.enabled = statsButton.dataset.contractType === "维保";
         await loadProjectStats();
       });
+    }
+
+    async function loadMaintenanceCalendar() {
+      if (!maintenanceState.enabled) {
+        return;
+      }
+      const params = new URLSearchParams({ year: maintenanceState.year });
+      centerModalBody.textContent = "正在加载维护保养记录...";
+      try {
+        const response = await fetch(`${maintenanceState.url}?${params.toString()}`, {
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        if (!response.ok) {
+          throw new Error("维护保养记录加载失败");
+        }
+        renderMaintenanceCalendar(await response.json());
+      } catch (error) {
+        centerModalBody.textContent = "维护保养记录加载失败，请稍后重试。";
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function renderMaintenanceCalendar(data) {
+      maintenanceState.year = data.year;
+      centerModalBody.textContent = "";
+      centerModalLeftActions.innerHTML = "";
+      const wrapper = document.createElement("div");
+      wrapper.className = "maintenance-calendar";
+      wrapper.innerHTML = `
+        <div class="maintenance-calendar-header">
+          <div class="maintenance-calendar-title"></div>
+          <div class="maintenance-year-control" data-keep-selection>
+            <button class="button icon-button" id="maintenanceYearPrev" type="button">←</button>
+            <div class="button maintenance-year-label">${data.year} 年</div>
+            <button class="button icon-button" id="maintenanceYearNext" type="button">→</button>
+          </div>
+        </div>
+        <div class="maintenance-month-grid"></div>
+      `;
+      wrapper.querySelector(".maintenance-calendar-title").textContent = data.contract_name;
+      const grid = wrapper.querySelector(".maintenance-month-grid");
+      data.months.forEach((month) => {
+        const item = document.createElement("div");
+        item.className = `maintenance-month${month.has_records ? " has-records" : ""}`;
+        const records = month.records.map((record) => {
+          const attachment = record.file_url ? `<a href="${escapeHtml(record.file_url)}" target="_blank">附件</a>` : "无附件";
+          return `<div class="maintenance-month-record" title="${escapeHtml(record.remark)}">${escapeHtml(record.date)} · ${escapeHtml(record.month)} · ${attachment}</div>`;
+        }).join("");
+        item.innerHTML = `
+          <div class="maintenance-month-name">${month.label}</div>
+          <div class="maintenance-month-records">${records || "暂无记录"}</div>
+        `;
+        grid.appendChild(item);
+      });
+      centerModalBody.appendChild(wrapper);
+      centerModalLeftActions.appendChild(projectPopupTabs("maintenance"));
+      wrapper.querySelector("#maintenanceYearPrev").addEventListener("click", async () => {
+        maintenanceState.year -= 1;
+        await loadMaintenanceCalendar();
+      });
+      wrapper.querySelector("#maintenanceYearNext").addEventListener("click", async () => {
+        maintenanceState.year += 1;
+        await loadMaintenanceCalendar();
+      });
+    }
+
+    function projectPopupTabs(activeTab) {
+      const tabs = document.createElement("div");
+      tabs.className = "project-popup-tabs";
+      tabs.setAttribute("data-keep-selection", "");
+      const statsTab = document.createElement("button");
+      statsTab.className = `button${activeTab === "stats" ? " primary" : ""}`;
+      statsTab.type = "button";
+      statsTab.textContent = "项目统计";
+      statsTab.addEventListener("click", loadProjectStats);
+      const maintenanceTab = document.createElement("button");
+      maintenanceTab.className = `button${activeTab === "maintenance" ? " primary" : ""}${maintenanceState.enabled ? "" : " muted"}`;
+      maintenanceTab.type = "button";
+      maintenanceTab.textContent = "维护记录";
+      maintenanceTab.disabled = !maintenanceState.enabled;
+      maintenanceTab.setAttribute("aria-disabled", maintenanceState.enabled ? "false" : "true");
+      if (maintenanceState.enabled) {
+        maintenanceTab.addEventListener("click", loadMaintenanceCalendar);
+      }
+      tabs.appendChild(statsTab);
+      tabs.appendChild(maintenanceTab);
+      return tabs;
     }
 
     function formatMoney(value) {
@@ -366,6 +478,7 @@
       projectStatsState.year = data.year;
       projectStatsState.month = data.month;
       centerModalBody.textContent = "";
+      centerModalLeftActions.innerHTML = "";
       const wrapper = document.createElement("div");
       wrapper.className = "project-stats";
       wrapper.innerHTML = `
@@ -395,6 +508,7 @@
       `;
       wrapper.querySelector(".project-stats-name").textContent = data.contract_name;
       centerModalBody.appendChild(wrapper);
+      centerModalLeftActions.appendChild(projectPopupTabs("stats"));
       wrapper.querySelector("#projectStatsRangeButton").addEventListener("click", openProjectRangeModal);
       const chartElement = wrapper.querySelector("#projectStatsChart");
       const chart = echarts.init(chartElement);

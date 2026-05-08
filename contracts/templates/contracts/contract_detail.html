@@ -90,8 +90,8 @@
                     <tr>
                       <td>{{ record.record_date }}</td>
                       <td>¥ {{ record.amount|floatformat:2 }}</td>
-                      <td>{% if record.file %}已上传{% else %}未上传{% endif %}</td>
-                      <td class="remark">{{ record.remark }}</td>
+                      <td>{% if record.file %}<a href="{{ record.file.url }}" target="_blank">已上传</a>{% else %}未上传{% endif %}</td>
+                      <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
                     </tr>
                   {% endfor %}
                 </tbody>
@@ -120,8 +120,8 @@
                     <tr>
                       <td>{{ record.record_date }}</td>
                       <td>¥ {{ record.amount|floatformat:2 }}</td>
-                      <td>{% if record.file %}已上传{% else %}未上传{% endif %}</td>
-                      <td class="remark">{{ record.remark }}</td>
+                      <td>{% if record.file %}<a href="{{ record.file.url }}" target="_blank">已上传</a>{% else %}未上传{% endif %}</td>
+                      <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
                     </tr>
                   {% endfor %}
                 </tbody>
@@ -132,6 +132,39 @@
           {% endif %}
         </div>
       </section>
+
+      {% if contract.contract_type == "维保" %}
+        <!-- 维护保养记录只在维保合同中展示。 -->
+        <section class="chart-area maintenance-area">
+          <h2>维护保养记录</h2>
+          {% if maintenance_records %}
+            <div class="table-wrap">
+              <table class="record-table">
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th>月份</th>
+                    <th>附件</th>
+                    <th>备注</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for record in maintenance_records %}
+                    <tr>
+                      <td>{{ record.record_date }}</td>
+                      <td>{{ record.month }}</td>
+                      <td>{% if record.file %}<a href="{{ record.file.url }}" target="_blank">已上传</a>{% else %}未上传{% endif %}</td>
+                      <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty">暂无维护保养记录</div>
+          {% endif %}
+        </section>
+      {% endif %}
     </div>
   </div>
 {% endblock %}

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AppSetting, Contract, ContractFile, InvoiceRecord, PaymentRecord
+from .models import AppSetting, Contract, ContractFile, InvoiceRecord, MaintenanceRecord, PaymentRecord
 
 
 # 注册合同模型到 Django 管理后台。
@@ -52,6 +52,17 @@ class PaymentRecordAdmin(admin.ModelAdmin):
     # 后台收票记录搜索字段。
     search_fields = ("contract__contract_name", "contract__contract_number", "remark")
     # 后台按日期筛选收票记录。
+    list_filter = ("record_date",)
+
+
+# 注册维护保养记录模型到后台。
+@admin.register(MaintenanceRecord)
+class MaintenanceRecordAdmin(admin.ModelAdmin):
+    # 后台维护保养记录列表显示的字段。
+    list_display = ("contract", "record_date", "month", "remark")
+    # 后台维护保养记录搜索字段。
+    search_fields = ("contract__contract_name", "contract__contract_number", "month", "remark")
+    # 后台按日期筛选维护保养记录。
     list_filter = ("record_date",)
 
 

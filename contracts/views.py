@@ -19,7 +19,7 @@ from .forms import (
     LoginForm,
     default_contract_number,
 )
-from .models import AppSetting, Contract, ContractFile, InvoiceRecord, PaymentRecord
+from .models import AppSetting, Contract, ContractFile, InvoiceRecord, MaintenanceRecord, PaymentRecord
 
 
 # 回收站内合同默认保留 7 天。
@@ -120,6 +120,8 @@ def purge_expired_trash() -> None:
             delete_file_from_storage(record.file)
         for record in contract.paymentrecord_set.all():
             delete_file_from_storage(record.file)
+        for record in contract.maintenancerecord_set.all():
+            delete_file_from_storage(record.file)
         contract.delete()
 
 
@@ -138,6 +140,31 @@ def save_records_from_request(request, contract: Contract, record_model) -> int:
             contract=contract,
             record_date=record_date,
             amount=amount,
+            file=request.FILES.get(f"file_{index}"),
+            remark=remark,
+        )
+        saved_count += 1
+    return saved_count
+
+
+# 从批量记录表单中读取多行维护保养数据。
+def save_maintenance_records_from_request(request, contract: Contract) -> int:
+    dates = request.POST.getlist("record_date")
+    months = request.POST.getlist("month")
+    remarks = request.POST.getlist("remark")
+    saved_count = 0
+    for index, record_date in enumerate(dates):
+        month = months[index] if index < len(months) else ""
+        remark = remarks[index] if index < len(remarks) else ""
+        if not record_date or not month:
+            continue
+        if "-" in month:
+            year_text, month_text = month.split("-", 1)
+            month = f"{year_text}年{int(month_text)}月"
+        MaintenanceRecord.objects.create(
+            contract=contract,
+            record_date=record_date,
+            month=month,
             file=request.FILES.get(f"file_{index}"),
             remark=remark,
         )
@@ -420,6 +447,45 @@ def contract_stats_data(request, pk: int):
     )
 
 
+# 返回单个合同的维护保养记录月份日历数据。
+def maintenance_record_data(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    if contract.contract_type != "维保":
+        return JsonResponse({"error": "只有维保合同可以查看维护保养记录。"}, status=403)
+    today = timezone.localdate()
+    try:
+        year = int(request.GET.get("year", today.year))
+    except (TypeError, ValueError):
+        year = today.year
+    records = contract.maintenancerecord_set.filter(record_date__year=year).order_by("record_date", "id")
+    grouped_records = {}
+    for record in records:
+        grouped_records.setdefault(record.record_date.month, []).append(
+            {
+                "date": f"{record.record_date.year}年{record.record_date.month}月{record.record_date.day}日",
+                "month": record.month,
+                "remark": record.remark,
+                "has_file": bool(record.file),
+                "file_url": record.file.url if record.file else "",
+            }
+        )
+    return JsonResponse(
+        {
+            "contract_name": contract.contract_name,
+            "year": year,
+            "months": [
+                {
+                    "month": month,
+                    "label": f"{month}月",
+                    "has_records": month in grouped_records,
+                    "records": grouped_records.get(month, []),
+                }
+                for month in range(1, 13)
+            ],
+        }
+    )
+
+
 # 渲染合同文件预览页，避免局域网用户直接触发浏览器下载。
 def contract_file_preview(request, pk: int):
     item = get_object_or_404(ContractFile, pk=pk, contract__is_deleted=False)
@@ -612,6 +678,7 @@ def contract_detail(request, pk: int):
             "contract": contract,
             "contract_files": contract.files.all(),
             "primary_file": primary_file,
+            "maintenance_records": contract.maintenancerecord_set.all(),
             "invoice_records": contract.invoicerecord_set.all(),
             "payment_records": contract.paymentrecord_set.all(),
             "active_nav": "contracts",
@@ -753,9 +820,6 @@ def contract_delete(request, pk: int):
 # 根据合同是否开票，进入开票或收票记录新增入口。
 def record_add(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
-    if contract.invoice_status == "不开票":
-        return redirect("contracts:payment_record_create", pk=pk)
-
     context = context_with_auth(
         request,
         {
@@ -807,6 +871,32 @@ def payment_record_create(request, pk: int):
                 "contract": contract,
                 "title": "新增收票记录",
                 "today": timezone.localdate(),
+                "active_nav": "contracts",
+            },
+        ),
+    )
+
+
+@admin_required
+# 新增一批维护保养记录。
+def maintenance_record_create(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    if contract.contract_type != "维保":
+        return redirect("contracts:record_add", pk=pk)
+    if request.method == "POST":
+        if save_maintenance_records_from_request(request, contract):
+            return redirect("contracts:contract_list")
+    return render(
+        request,
+        "contracts/record_form.html",
+        context_with_auth(
+            request,
+            {
+                "contract": contract,
+                "title": "新增维护保养记录",
+                "today": timezone.localdate(),
+                "month_field": True,
+                "current_month": timezone.localdate().strftime("%Y-%m"),
                 "active_nav": "contracts",
             },
         ),

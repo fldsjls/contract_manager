@@ -114,11 +114,11 @@ class Contract(models.Model):
         # 兼容旧模板命名：这里返回项目收入。
         total = Decimal("0")
         for record in self.invoicerecord_set.all():
-            if record.record_type in {"收票", "收据"}:
-                total += record.amount
+            if record.record_type not in {"收票", "收据"}:
+                total += record.actual_amount if record.actual_amount is not None else record.amount
         for record in self.paymentrecord_set.all():
-            if record.record_type not in {"开票", "开据"}:
-                total += record.amount
+            if record.record_type in {"开票", "开据"}:
+                total += record.actual_amount if record.actual_amount is not None else record.amount
         return total
 
     @property
@@ -126,11 +126,11 @@ class Contract(models.Model):
         # 兼容旧模板命名：这里返回项目支出。
         total = Decimal("0")
         for record in self.invoicerecord_set.all():
-            if record.record_type not in {"收票", "收据"}:
-                total += record.amount
+            if record.record_type in {"收票", "收据"}:
+                total += record.actual_amount if record.actual_amount is not None else record.amount
         for record in self.paymentrecord_set.all():
-            if record.record_type in {"开票", "开据"}:
-                total += record.amount
+            if record.record_type not in {"开票", "开据"}:
+                total += record.actual_amount if record.actual_amount is not None else record.amount
         return total
 
     @property
@@ -192,6 +192,7 @@ class RecordBase(models.Model):
     record_date = models.DateField("日期")
     record_type = models.CharField("类型", max_length=20, blank=True)
     amount = models.DecimalField("金额", max_digits=14, decimal_places=2, default=0)
+    actual_amount = models.DecimalField("实际金额", max_digits=14, decimal_places=2, null=True, blank=True)
     file = models.FileField("附件", upload_to=project_file_upload_path, null=True, blank=True)
     remark = models.CharField("备注", max_length=255, blank=True)
     created_at = models.DateTimeField("创建时间", default=timezone.now)

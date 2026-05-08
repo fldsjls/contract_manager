@@ -3,11 +3,9 @@
 {% block title %}合同详情{% endblock %}
 
 {% block content %}
-  <!-- 合同详情页面，展示合同基础信息和关联记录。 -->
   <div class="page-content detail-page">
     <h1 class="page-title">{{ contract.contract_name }}</h1>
 
-    <!-- 顶部操作栏用于返回列表或进入编辑。 -->
     <div class="toolbar">
       <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
       {% if is_admin_mode %}
@@ -15,9 +13,7 @@
       {% endif %}
     </div>
 
-    <!-- 详情内容区包含合同信息表和记录表。 -->
     <div class="detail-scroll">
-      <!-- 合同基础信息面板。 -->
       <section class="panel">
         <div class="summary">
           <span>合同编号：{{ contract.contract_number }}</span>
@@ -68,107 +64,259 @@
         </table>
       </section>
 
-      <!-- 开票记录和收票记录并排展示。 -->
-      <section class="record-grid">
+      <section class="record-grid {% if contract.contract_type == '维保' %}detail-record-grid-fixed{% endif %}">
         <div class="chart-area">
-          <h2>开票记录</h2>
-          {% if contract.invoice_status == "不开票" %}
-            <div class="empty">该合同设置为不开票，开票记录不可用。</div>
-          {% elif invoice_records %}
-            <div class="table-wrap">
-              <table class="record-table">
-                <thead>
-                  <tr>
-                    <th>日期</th>
-                    <th>类型</th>
-                    <th>金额</th>
-                    <th>发票文件</th>
-                    <th>备注</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for record in invoice_records %}
-                    <tr>
-                      <td>{{ record.record_date }}</td>
-                      <td>{{ record.record_type|default:"开票" }}</td>
-                      <td>¥ {{ record.amount|floatformat:2 }}</td>
-                      <td>{% if record.file %}<a href="{{ record.file.url }}" target="_blank">已上传</a>{% else %}未上传{% endif %}</td>
-                      <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
+          <form method="post" action="{% url 'contracts:record_delete' contract.id %}">
+            {% csrf_token %}
+            <div class="record-panel-title">
+              <h2>{% if contract.invoice_status == "不开票" %}开据记录{% else %}开票记录{% endif %}</h2>
+              {% if is_admin_mode and invoice_records %}
+                <button class="button danger record-delete-button" type="submit">删除</button>
+              {% endif %}
             </div>
-          {% else %}
-            <div class="empty">暂无开票记录</div>
-          {% endif %}
+            {% if contract.invoice_status == "不开票" %}
+              <div class="empty">该合同设置为不开票，开票记录不可用。</div>
+            {% elif invoice_records %}
+              <div class="table-wrap">
+                <table class="record-table detail-record-table standard-record-table">
+                  <colgroup>
+                    {% if is_admin_mode %}<col class="select-colgroup standard-select-colgroup">{% endif %}
+                    <col class="date-colgroup">
+                    <col class="money-colgroup">
+                    <col class="money-colgroup">
+                    <col class="remark-colgroup">
+                    <col class="file-colgroup">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      {% if is_admin_mode %}<th class="select-col"><input type="checkbox" data-record-select-all></th>{% endif %}
+                      <th>日期</th>
+                      <th>票面金额</th>
+                      <th>实际金额</th>
+                      <th>备注</th>
+                      <th>发票文件</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for record in invoice_records %}
+                      <tr>
+                        {% if is_admin_mode %}<td class="select-col"><input type="checkbox" name="record_ids" value="invoice:{{ record.id }}"></td>{% endif %}
+                        <td>{{ record.record_date }}</td>
+                        <td>¥ {{ record.amount|floatformat:2 }}</td>
+                        <td>¥ {{ record.actual_amount|default:record.amount|floatformat:2 }}</td>
+                        <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
+                        <td>
+                          <button
+                            class="button file-preview-button record-file-trigger"
+                            type="button"
+                            data-upload-url="{% url 'contracts:record_file_update' 'invoice' record.id %}"
+                            data-download-url="{% if record.file %}{{ record.file.url }}{% endif %}"
+                            data-file-name="{% if record.file %}{{ record.file.name }}{% else %}未上传{% endif %}"
+                          ><span class="file-preview-name">{% if record.file %}{{ record.file.name }}{% else %}上传文件{% endif %}</span></button>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="empty">暂无开票记录</div>
+            {% endif %}
+          </form>
         </div>
 
         <div class="chart-area">
-          <h2>{% if contract.invoice_status == "不开票" %}收据记录{% else %}收票记录{% endif %}</h2>
-          {% if payment_records %}
-            <div class="table-wrap">
-              <table class="record-table">
-                <thead>
-                  <tr>
-                    <th>日期</th>
-                    <th>类型</th>
-                    <th>金额</th>
-                    <th>{% if contract.invoice_status == "不开票" %}收据文件{% else %}发票文件{% endif %}</th>
-                    <th>备注</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for record in payment_records %}
-                    <tr>
-                      <td>{{ record.record_date }}</td>
-                      <td>{{ record.record_type|default:"收票" }}</td>
-                      <td>¥ {{ record.amount|floatformat:2 }}</td>
-                      <td>{% if record.file %}<a href="{{ record.file.url }}" target="_blank">已上传</a>{% else %}未上传{% endif %}</td>
-                      <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
+          <form method="post" action="{% url 'contracts:record_delete' contract.id %}">
+            {% csrf_token %}
+            <div class="record-panel-title">
+              <h2>{% if contract.invoice_status == "不开票" %}收据记录{% else %}收票记录{% endif %}</h2>
+              {% if is_admin_mode and payment_records %}
+                <button class="button danger record-delete-button" type="submit">删除</button>
+              {% endif %}
             </div>
-          {% else %}
-            <div class="empty">暂无收票记录</div>
-          {% endif %}
+            {% if payment_records %}
+              <div class="table-wrap">
+                <table class="record-table detail-record-table standard-record-table">
+                  <colgroup>
+                    {% if is_admin_mode %}<col class="select-colgroup standard-select-colgroup">{% endif %}
+                    <col class="date-colgroup">
+                    <col class="money-colgroup">
+                    <col class="money-colgroup">
+                    <col class="remark-colgroup">
+                    <col class="file-colgroup">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      {% if is_admin_mode %}<th class="select-col"><input type="checkbox" data-record-select-all></th>{% endif %}
+                      <th>日期</th>
+                      <th>票面金额</th>
+                      <th>实际金额</th>
+                      <th>备注</th>
+                      <th>{% if contract.invoice_status == "不开票" %}收据文件{% else %}发票文件{% endif %}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for record in payment_records %}
+                      <tr>
+                        {% if is_admin_mode %}<td class="select-col"><input type="checkbox" name="record_ids" value="payment:{{ record.id }}"></td>{% endif %}
+                        <td>{{ record.record_date }}</td>
+                        <td>¥ {{ record.amount|floatformat:2 }}</td>
+                        <td>¥ {{ record.actual_amount|default:record.amount|floatformat:2 }}</td>
+                        <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
+                        <td>
+                          <button
+                            class="button file-preview-button record-file-trigger"
+                            type="button"
+                            data-upload-url="{% url 'contracts:record_file_update' 'payment' record.id %}"
+                            data-download-url="{% if record.file %}{{ record.file.url }}{% endif %}"
+                            data-file-name="{% if record.file %}{{ record.file.name }}{% else %}未上传{% endif %}"
+                          ><span class="file-preview-name">{% if record.file %}{{ record.file.name }}{% else %}上传文件{% endif %}</span></button>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="empty">暂无{% if contract.invoice_status == "不开票" %}收据{% else %}收票{% endif %}记录</div>
+            {% endif %}
+          </form>
         </div>
       </section>
 
       {% if contract.contract_type == "维保" %}
-        <!-- 维护保养记录只在维保合同中展示。 -->
         <section class="chart-area maintenance-area">
-          <h2>维护保养记录</h2>
-          {% if maintenance_records %}
-            <div class="table-wrap">
-              <table class="record-table">
-                <thead>
-                  <tr>
-                    <th>日期</th>
-                    <th>月份</th>
-                    <th>维保文件</th>
-                    <th>备注</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for record in maintenance_records %}
-                    <tr>
-                      <td>{{ record.record_date }}</td>
-                      <td>{{ record.month }}</td>
-                      <td>{% if record.file %}<a href="{{ record.file.url }}" target="_blank">已上传</a>{% else %}未上传{% endif %}</td>
-                      <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
+          <form method="post" action="{% url 'contracts:record_delete' contract.id %}">
+            {% csrf_token %}
+            <div class="record-panel-title">
+              <h2>维护保养记录</h2>
+              {% if is_admin_mode and maintenance_records %}
+                <button class="button danger record-delete-button" type="submit">删除</button>
+              {% endif %}
             </div>
-          {% else %}
-            <div class="empty">暂无维护保养记录</div>
-          {% endif %}
+            {% if maintenance_records %}
+              <div class="table-wrap">
+                <table class="record-table detail-record-table">
+                  <colgroup>
+                    {% if is_admin_mode %}<col class="select-colgroup">{% endif %}
+                    <col class="date-colgroup">
+                    <col class="month-colgroup">
+                    <col class="remark-colgroup">
+                    <col class="file-colgroup">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      {% if is_admin_mode %}<th class="select-col"><input type="checkbox" data-record-select-all></th>{% endif %}
+                      <th>日期</th>
+                      <th>月份</th>
+                      <th>备注</th>
+                      <th>维保文件</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for record in maintenance_records %}
+                      <tr>
+                        {% if is_admin_mode %}<td class="select-col"><input type="checkbox" name="record_ids" value="maintenance:{{ record.id }}"></td>{% endif %}
+                        <td>{{ record.record_date }}</td>
+                        <td>{{ record.month }}</td>
+                        <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
+                        <td>
+                          <button
+                            class="button file-preview-button record-file-trigger"
+                            type="button"
+                            data-upload-url="{% url 'contracts:record_file_update' 'maintenance' record.id %}"
+                            data-download-url="{% if record.file %}{{ record.file.url }}{% endif %}"
+                            data-file-name="{% if record.file %}{{ record.file.name }}{% else %}未上传{% endif %}"
+                          ><span class="file-preview-name">{% if record.file %}{{ record.file.name }}{% else %}上传文件{% endif %}</span></button>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="empty">暂无维护保养记录</div>
+            {% endif %}
+          </form>
         </section>
       {% endif %}
     </div>
   </div>
+
+  <div class="modal-backdrop" id="recordFileModal" hidden>
+    <div class="modal-card range-modal-card" role="dialog" aria-modal="true" aria-labelledby="recordFileModalTitle">
+      <div class="modal-header" id="recordFileModalTitle">记录文件</div>
+      <form id="recordFileUploadForm" method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="modal-body">
+          <div class="range-section">
+            <div class="field-label">当前文件</div>
+            <div id="recordFileName" class="button" style="text-align: left; overflow: hidden; text-overflow: ellipsis;"></div>
+          </div>
+          <div class="range-section">
+            <label class="field-label" for="recordFileInput">上传文件</label>
+            <input id="recordFileInput" name="file" type="file">
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" id="recordFileCancel" type="button">取消</button>
+          <a class="button" id="recordFileDownload" href="#" download>下载文件</a>
+          {% if is_admin_mode %}
+            <button class="button primary" type="submit">上传文件</button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    document.querySelectorAll("[data-record-select-all]").forEach((checkbox) => {
+      checkbox.addEventListener("change", () => {
+        const form = checkbox.closest("form");
+        form.querySelectorAll("input[name='record_ids']").forEach((item) => {
+          item.checked = checkbox.checked;
+        });
+      });
+    });
+
+    document.querySelectorAll(".record-delete-button").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        const form = button.closest("form");
+        const checked = form.querySelectorAll("input[name='record_ids']:checked");
+        if (!checked.length || !confirm("确定删除选中的记录吗？")) {
+          event.preventDefault();
+        }
+      });
+    });
+
+    const recordFileModal = document.querySelector("#recordFileModal");
+    const recordFileUploadForm = document.querySelector("#recordFileUploadForm");
+    const recordFileName = document.querySelector("#recordFileName");
+    const recordFileDownload = document.querySelector("#recordFileDownload");
+    const recordFileCancel = document.querySelector("#recordFileCancel");
+    document.querySelectorAll(".record-file-trigger").forEach((button) => {
+      button.addEventListener("click", () => {
+        const downloadUrl = button.dataset.downloadUrl || "";
+        recordFileUploadForm.action = button.dataset.uploadUrl;
+        recordFileName.textContent = button.dataset.fileName || "未上传";
+        recordFileDownload.href = downloadUrl || "#";
+        recordFileDownload.setAttribute("aria-disabled", downloadUrl ? "false" : "true");
+        recordFileDownload.classList.toggle("disabled", !downloadUrl);
+        recordFileModal.hidden = false;
+      });
+    });
+    recordFileCancel.addEventListener("click", () => {
+      recordFileModal.hidden = true;
+    });
+    recordFileModal.addEventListener("click", (event) => {
+      if (event.target === recordFileModal) {
+        recordFileModal.hidden = true;
+      }
+    });
+    recordFileDownload.addEventListener("click", (event) => {
+      if (recordFileDownload.getAttribute("aria-disabled") === "true") {
+        event.preventDefault();
+      }
+    });
+  </script>
 {% endblock %}

@@ -44,7 +44,7 @@ class SettlementFileAdmin(admin.ModelAdmin):
 @admin.register(InvoiceRecord)
 class InvoiceRecordAdmin(admin.ModelAdmin):
     # 后台开票记录列表显示的字段。
-    list_display = ("contract", "record_date", "record_type", "amount", "remark")
+    list_display = ("contract", "record_date", "record_type", "amount", "actual_amount", "remark")
     # 后台开票记录搜索字段。
     search_fields = ("contract__contract_name", "contract__contract_number", "remark")
     # 后台按日期筛选开票记录。
@@ -55,7 +55,7 @@ class InvoiceRecordAdmin(admin.ModelAdmin):
 @admin.register(PaymentRecord)
 class PaymentRecordAdmin(admin.ModelAdmin):
     # 后台收票记录列表显示的字段。
-    list_display = ("contract", "record_date", "record_type", "amount", "remark")
+    list_display = ("contract", "record_date", "record_type", "amount", "actual_amount", "remark")
     # 后台收票记录搜索字段。
     search_fields = ("contract__contract_name", "contract__contract_number", "remark")
     # 后台按日期筛选收票记录。

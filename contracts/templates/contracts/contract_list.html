@@ -490,24 +490,30 @@
       wrapper.innerHTML = `
         <div class="file-list-header">
           <div class="project-stats-name"></div>
-          <button class="button" id="projectStatsRangeButton" type="button">${data.range_label}</button>
+          <div class="file-actions">
+            <label class="switch-control" for="projectStatsModeToggle" title="切换开票/收票视图">
+              <input id="projectStatsModeToggle" type="checkbox">
+              <span class="switch-track"></span>
+            </label>
+            <button class="button" id="projectStatsRangeButton" type="button">${data.range_label}</button>
+          </div>
         </div>
         <section class="metric-grid">
           <div class="metric-card">
-            <div class="metric-title">项目金额</div>
+            <div class="metric-title">合同金额</div>
             <div class="metric-value">${formatMoney(data.amount)}</div>
           </div>
           <div class="metric-card">
-            <div class="metric-title">项目收入</div>
-            <div class="metric-value">${formatMoney(data.income_total ?? data.invoice_total)}</div>
+            <div class="metric-title" data-metric-title="primary"></div>
+            <div class="metric-value" data-metric-value="primary"></div>
           </div>
           <div class="metric-card">
-            <div class="metric-title">项目支出</div>
-            <div class="metric-value">${formatMoney(data.expense_total ?? data.payment_total)}</div>
+            <div class="metric-title" data-metric-title="secondary"></div>
+            <div class="metric-value" data-metric-value="secondary"></div>
           </div>
           <div class="metric-card">
-            <div class="metric-title">收款率</div>
-            <div class="metric-value">${Number(data.payment_rate || 0).toFixed(1)}%</div>
+            <div class="metric-title" data-metric-title="rate"></div>
+            <div class="metric-value" data-metric-value="rate"></div>
           </div>
         </section>
         <div class="project-stats-chart" id="projectStatsChart"></div>
@@ -516,8 +522,39 @@
       centerModalBody.appendChild(wrapper);
       centerModalLeftActions.appendChild(projectPopupTabs("stats"));
       wrapper.querySelector("#projectStatsRangeButton").addEventListener("click", openProjectRangeModal);
+      const modeToggle = wrapper.querySelector("#projectStatsModeToggle");
       const chartElement = wrapper.querySelector("#projectStatsChart");
       const chart = echarts.init(chartElement);
+      const projectLabels = data.labels || {
+        invoice_primary: "开票金额",
+        invoice_secondary: "收款金额",
+        invoice_rate: "收款率",
+        receipt_primary: "收票金额",
+        receipt_secondary: "付款金额",
+        receipt_rate: "利润率",
+      };
+      const projectModes = data.modes || {
+        invoice: {
+          primary_total: data.income_total ?? data.invoice_total,
+          secondary_total: data.income_total ?? data.invoice_total,
+          rate: data.payment_rate,
+          chart: { primary: data.chart.income || data.chart.invoice, secondary: data.chart.income || data.chart.invoice },
+        },
+        receipt: {
+          primary_total: data.expense_total ?? data.payment_total,
+          secondary_total: data.expense_total ?? data.payment_total,
+          rate: data.payment_rate,
+          chart: { primary: data.chart.expense || data.chart.payment, secondary: data.chart.expense || data.chart.payment },
+        },
+      };
+      function projectSeriesData(values, peerValues, defaultPosition) {
+        return values.map((value, index) => ({
+          value,
+          label: {
+            position: Number(value || 0) === 0 && Number(peerValues[index] || 0) === 0 ? "top" : defaultPosition,
+          },
+        }));
+      }
       chart.setOption({
         color: ["#2563eb", "#14b8a6"],
         tooltip: {
@@ -529,7 +566,7 @@
           left: 18,
           itemWidth: 18,
           itemHeight: 8,
-          data: ["收入", "支出"],
+          data: [projectLabels.invoice_primary, projectLabels.invoice_secondary],
         },
         grid: {
           left: 34,
@@ -588,14 +625,19 @@
         ],
         series: [
           {
-            name: "收入",
+            id: "project-primary-line",
+            name: projectLabels.invoice_primary,
             type: "line",
-            data: data.chart.income,
+            data: projectModes.invoice.chart.primary,
             symbol: "circle",
             symbolSize: 7,
-            lineStyle: { width: 2.4 },
+            z: 4,
+            itemStyle: { color: "#2563eb" },
+            lineStyle: { width: 2.4, color: "#2563eb" },
             label: {
               show: true,
+              position: "top",
+              distance: 8,
               formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
               color: "#2563eb",
               fontSize: 11,
@@ -609,14 +651,19 @@
             },
           },
           {
-            name: "支出",
+            id: "project-secondary-line",
+            name: projectLabels.invoice_secondary,
             type: "line",
-            data: data.chart.expense,
+            data: projectSeriesData(projectModes.invoice.chart.secondary, projectModes.invoice.chart.primary, "bottom"),
             symbol: "circle",
             symbolSize: 7,
-            lineStyle: { width: 2.4 },
+            z: 3,
+            itemStyle: { color: "#14b8a6" },
+            lineStyle: { width: 2.4, color: "#14b8a6" },
             label: {
               show: true,
+              position: "bottom",
+              distance: 8,
               formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
               color: "#0f9f8f",
               fontSize: 11,
@@ -629,8 +676,59 @@
               ]),
             },
           },
+          {
+            id: "project-secondary-points",
+            name: projectLabels.invoice_secondary,
+            type: "scatter",
+            data: projectModes.invoice.chart.secondary,
+            symbol: "circle",
+            symbolSize: 7,
+            z: 5,
+            silent: true,
+            tooltip: { show: false },
+            itemStyle: { color: "#14b8a6" },
+            label: { show: false },
+          },
         ],
       });
+      function applyProjectStatsMode() {
+        const mode = modeToggle.checked ? "receipt" : "invoice";
+        const labels = mode === "invoice"
+          ? {
+              primary: projectLabels.invoice_primary,
+              secondary: projectLabels.invoice_secondary,
+              rate: projectLabels.invoice_rate,
+            }
+          : {
+              primary: projectLabels.receipt_primary,
+              secondary: projectLabels.receipt_secondary,
+              rate: projectLabels.receipt_rate,
+            };
+        const modeData = projectModes[mode];
+        wrapper.querySelector("[data-metric-title='primary']").textContent = labels.primary;
+        wrapper.querySelector("[data-metric-value='primary']").textContent = formatMoney(modeData.primary_total);
+        wrapper.querySelector("[data-metric-title='secondary']").textContent = labels.secondary;
+        wrapper.querySelector("[data-metric-value='secondary']").textContent = formatMoney(modeData.secondary_total);
+        wrapper.querySelector("[data-metric-title='rate']").textContent = labels.rate;
+        wrapper.querySelector("[data-metric-value='rate']").textContent = `${Number(modeData.rate || 0).toFixed(1)}%`;
+        chart.setOption({
+          legend: { data: [labels.primary, labels.secondary] },
+          series: [
+            { id: "project-primary-line", name: labels.primary, data: modeData.chart.primary, label: { position: "top", distance: 8 } },
+            {
+              id: "project-secondary-line",
+              name: labels.secondary,
+              data: projectSeriesData(modeData.chart.secondary, modeData.chart.primary, "bottom"),
+              itemStyle: { color: "#14b8a6" },
+              lineStyle: { color: "#14b8a6" },
+              label: { position: "bottom", distance: 8 },
+            },
+            { id: "project-secondary-points", name: labels.secondary, data: modeData.chart.secondary },
+          ],
+        });
+      }
+      modeToggle.addEventListener("change", applyProjectStatsMode);
+      applyProjectStatsMode();
       setTimeout(() => chart.resize(), 0);
     }
 

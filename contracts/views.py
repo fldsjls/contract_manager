@@ -24,8 +24,14 @@ from .models import AppSetting, Contract, ContractFile, InvoiceRecord, Maintenan
 
 # 回收站内合同默认保留 7 天。
 TRASH_RETENTION_DAYS = 7
-EXPENSE_TYPES = {"开票", "开据"}
-INCOME_TYPES = {"收票", "收据"}
+INCOME_TYPES = {"开票", "开据"}
+EXPENSE_TYPES = {"收票", "收据"}
+TYPE_SIDE = {
+    "开票": "income",
+    "开据": "income",
+    "收票": "expense",
+    "收据": "expense",
+}
 
 
 # 判断当前请求是否处于管理员模式。
@@ -142,11 +148,13 @@ def purge_expired_trash() -> None:
 def save_records_from_request(request, contract: Contract, record_model) -> int:
     dates = request.POST.getlist("record_date")
     amounts = request.POST.getlist("amount")
+    actual_amounts = request.POST.getlist("actual_amount")
     record_types = request.POST.getlist("record_type")
     remarks = request.POST.getlist("remark")
     saved_count = 0
     for index, record_date in enumerate(dates):
         amount = amounts[index] if index < len(amounts) else ""
+        actual_amount = actual_amounts[index] if index < len(actual_amounts) else None
         record_type = record_types[index] if index < len(record_types) else ""
         remark = remarks[index] if index < len(remarks) else ""
         if not record_date or amount == "":
@@ -156,6 +164,7 @@ def save_records_from_request(request, contract: Contract, record_model) -> int:
             record_date=record_date,
             record_type=record_type,
             amount=amount,
+            actual_amount=actual_amount or None,
             file=request.FILES.get(f"file_{index}"),
             remark=remark,
         )
@@ -166,11 +175,13 @@ def save_records_from_request(request, contract: Contract, record_model) -> int:
 def save_typed_records_from_request(request, contract: Contract, record_model_by_type: dict[str, type]) -> int:
     dates = request.POST.getlist("record_date")
     amounts = request.POST.getlist("amount")
+    actual_amounts = request.POST.getlist("actual_amount")
     record_types = request.POST.getlist("record_type")
     remarks = request.POST.getlist("remark")
     saved_count = 0
     for index, record_date in enumerate(dates):
         amount = amounts[index] if index < len(amounts) else ""
+        actual_amount = actual_amounts[index] if index < len(actual_amounts) else None
         record_type = record_types[index] if index < len(record_types) else ""
         remark = remarks[index] if index < len(remarks) else ""
         record_model = record_model_by_type.get(record_type)
@@ -181,6 +192,7 @@ def save_typed_records_from_request(request, contract: Contract, record_model_by
             record_date=record_date,
             record_type=record_type,
             amount=amount,
+            actual_amount=actual_amount or None,
             file=request.FILES.get(f"file_{index}"),
             remark=remark,
         )
@@ -192,23 +204,81 @@ def income_expense_totals(invoice_records, payment_records) -> tuple[Decimal, De
     income_total = Decimal("0")
     expense_total = Decimal("0")
     for record in invoice_records:
-        if record.record_type in INCOME_TYPES:
-            income_total += record.amount
+        amount = record_amount_for_stats(record)
+        if record_side(record) == "income":
+            income_total += amount
         else:
-            expense_total += record.amount
+            expense_total += amount
     for record in payment_records:
-        if record.record_type in EXPENSE_TYPES:
-            expense_total += record.amount
+        amount = record_amount_for_stats(record)
+        if record_side(record) == "income":
+            income_total += amount
         else:
-            income_total += record.amount
+            expense_total += amount
     return income_total, expense_total
 
 
+def record_amount_for_stats(record) -> Decimal:
+    return record.actual_amount if record.actual_amount is not None else record.amount
+
+
+def record_side(record) -> str:
+    return TYPE_SIDE.get(record.record_type, "income" if isinstance(record, InvoiceRecord) else "expense")
+
+
 def add_income_expense(target: dict, record) -> None:
-    if record.record_type in EXPENSE_TYPES or isinstance(record, InvoiceRecord) and not record.record_type:
-        target["expense"] = target.get("expense", Decimal("0")) + record.amount
+    amount = record_amount_for_stats(record)
+    if record_side(record) == "income":
+        target["income"] = target.get("income", Decimal("0")) + amount
     else:
-        target["income"] = target.get("income", Decimal("0")) + record.amount
+        target["expense"] = target.get("expense", Decimal("0")) + amount
+
+
+def project_mode_labels(contract: Contract) -> dict:
+    has_invoice = contract.invoice_status != "不开票"
+    return {
+        "invoice_primary": "开票金额" if has_invoice else "开据金额",
+        "invoice_secondary": "收款金额" if has_invoice else "收款金额",
+        "invoice_rate": "收款率",
+        "receipt_primary": "收票金额" if has_invoice else "收据金额",
+        "receipt_secondary": "付款金额",
+        "receipt_rate": "利润率",
+    }
+
+
+def project_mode_totals(records) -> dict:
+    totals = {
+        "invoice_primary": Decimal("0"),
+        "invoice_secondary": Decimal("0"),
+        "receipt_primary": Decimal("0"),
+        "receipt_secondary": Decimal("0"),
+    }
+    for record in records:
+        side = "invoice" if record_side(record) == "income" else "receipt"
+        totals[f"{side}_primary"] += record.amount
+        totals[f"{side}_secondary"] += record_amount_for_stats(record)
+    return totals
+
+
+def project_mode_chart_rows(rows: list[dict], records) -> list[dict]:
+    by_label = {row["label"]: row for row in rows}
+    for row in rows:
+        row.update(
+            {
+                "income_primary": Decimal("0"),
+                "income_secondary": Decimal("0"),
+                "expense_primary": Decimal("0"),
+                "expense_secondary": Decimal("0"),
+            }
+        )
+    for record, label in records:
+        row = by_label.get(label)
+        if row is None:
+            continue
+        side = record_side(record)
+        row[f"{side}_primary"] += record.amount
+        row[f"{side}_secondary"] += record_amount_for_stats(record)
+    return rows
 
 
 # 从批量记录表单中读取多行维护保养数据。
@@ -468,11 +538,117 @@ def build_contract_chart_rows(contract: Contract, period: str, year: int, month:
     ]
 
 
+def build_contract_mode_chart_rows(contract: Contract, period: str, year: int, month: int) -> list[dict]:
+    records = list(contract.invoicerecord_set.all()) + list(contract.paymentrecord_set.all())
+    if period == "all":
+        today = timezone.localdate()
+        units = [today - timedelta(days=offset) for offset in range(11, -1, -1)]
+        unit_for_record = lambda record: record.record_date
+        filtered_records = [record for record in records if units[0] <= record.record_date <= today]
+    elif period == "year":
+        start_year = year - 11
+        units = list(range(start_year, year + 1))
+        unit_for_record = lambda record: record.record_date.year
+        filtered_records = [record for record in records if start_year <= record.record_date.year <= year]
+    else:
+        units = list(range(1, 13))
+        unit_for_record = lambda record: record.record_date.month
+        filtered_records = [record for record in records if record.record_date.year == year]
+
+    totals_by_unit = {}
+    for record in filtered_records:
+        unit = unit_for_record(record)
+        side = record_side(record)
+        totals = totals_by_unit.setdefault(
+            unit,
+            {
+                "invoice_primary": Decimal("0"),
+                "invoice_secondary": Decimal("0"),
+                "receipt_primary": Decimal("0"),
+                "receipt_secondary": Decimal("0"),
+            },
+        )
+        mode = "invoice" if side == "income" else "receipt"
+        totals[f"{mode}_primary"] += record.amount
+        totals[f"{mode}_secondary"] += record_amount_for_stats(record)
+
+    def label_for_unit(unit):
+        if period == "all":
+            return unit.strftime("%m-%d")
+        if period == "year":
+            return f"{unit}年"
+        return f"{unit:02d}月"
+
+    return [
+        {
+            "label": label_for_unit(unit),
+            "invoice_primary": totals_by_unit.get(unit, {}).get("invoice_primary", Decimal("0")),
+            "invoice_secondary": totals_by_unit.get(unit, {}).get("invoice_secondary", Decimal("0")),
+            "receipt_primary": totals_by_unit.get(unit, {}).get("receipt_primary", Decimal("0")),
+            "receipt_secondary": totals_by_unit.get(unit, {}).get("receipt_secondary", Decimal("0")),
+        }
+        for unit in units
+    ]
+
+
 # 返回单个合同的统计弹窗数据。
+def build_dashboard_mode_chart_rows(invoice_records, payment_records, period: str, year: int, month: int) -> list[dict]:
+    records = list(invoice_records) + list(payment_records)
+    if period == "all":
+        today = timezone.localdate()
+        units = [today - timedelta(days=offset) for offset in range(11, -1, -1)]
+        unit_for_record = lambda record: record.record_date
+        filtered_records = [record for record in records if units[0] <= record.record_date <= today]
+    elif period == "year":
+        start_year = year - 11
+        units = list(range(start_year, year + 1))
+        unit_for_record = lambda record: record.record_date.year
+        filtered_records = [record for record in records if start_year <= record.record_date.year <= year]
+    else:
+        units = list(range(1, 13))
+        unit_for_record = lambda record: record.record_date.month
+        filtered_records = [record for record in records if record.record_date.year == year]
+
+    totals_by_unit = {}
+    for record in filtered_records:
+        unit = unit_for_record(record)
+        totals = totals_by_unit.setdefault(
+            unit,
+            {
+                "invoice_primary": Decimal("0"),
+                "invoice_secondary": Decimal("0"),
+                "receipt_primary": Decimal("0"),
+                "receipt_secondary": Decimal("0"),
+            },
+        )
+        mode = "invoice" if record_side(record) == "income" else "receipt"
+        totals[f"{mode}_primary"] += record.amount
+        totals[f"{mode}_secondary"] += record_amount_for_stats(record)
+
+    def label_for_unit(unit):
+        if period == "all":
+            return unit.strftime("%m-%d")
+        if period == "year":
+            return f"{unit}年"
+        return f"{unit:02d}月"
+
+    return [
+        {
+            "label": label_for_unit(unit),
+            "invoice_primary": totals_by_unit.get(unit, {}).get("invoice_primary", Decimal("0")),
+            "invoice_secondary": totals_by_unit.get(unit, {}).get("invoice_secondary", Decimal("0")),
+            "receipt_primary": totals_by_unit.get(unit, {}).get("receipt_primary", Decimal("0")),
+            "receipt_secondary": totals_by_unit.get(unit, {}).get("receipt_secondary", Decimal("0")),
+        }
+        for unit in units
+    ]
+
+
 def contract_stats_data(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     period, year, month, _, _, range_label = chart_range_from_request(request)
     chart_rows = build_contract_chart_rows(contract, period, year, month)
+    mode_chart_rows = build_contract_mode_chart_rows(contract, period, year, month)
     invoice_records = contract.invoicerecord_set.all()
     payment_records = contract.paymentrecord_set.all()
     if period == "year":
@@ -483,6 +659,10 @@ def contract_stats_data(request, pk: int):
         invoice_records = invoice_records.filter(record_date__year=year)
         payment_records = payment_records.filter(record_date__year=year)
     income_total, expense_total = income_expense_totals(invoice_records, payment_records)
+    mode_totals = project_mode_totals(list(invoice_records) + list(payment_records))
+    labels = project_mode_labels(contract)
+    income_rate = (mode_totals["invoice_secondary"] / contract.amount * Decimal("100")) if contract.amount else Decimal("0")
+    expense_rate = (mode_totals["receipt_secondary"] / contract.amount * Decimal("100")) if contract.amount else Decimal("0")
     payment_rate = (income_total / contract.amount * Decimal("100")) if contract.amount else Decimal("0")
     return JsonResponse(
         {
@@ -497,6 +677,27 @@ def contract_stats_data(request, pk: int):
             "year": year,
             "month": month,
             "range_label": range_label,
+            "labels": labels,
+            "modes": {
+                "invoice": {
+                    "primary_total": float(mode_totals["invoice_primary"]),
+                    "secondary_total": float(mode_totals["invoice_secondary"]),
+                    "rate": float(income_rate),
+                    "chart": {
+                        "primary": [float(row["invoice_primary"]) for row in mode_chart_rows],
+                        "secondary": [float(row["invoice_secondary"]) for row in mode_chart_rows],
+                    },
+                },
+                "receipt": {
+                    "primary_total": float(mode_totals["receipt_primary"]),
+                    "secondary_total": float(mode_totals["receipt_secondary"]),
+                    "rate": float(expense_rate),
+                    "chart": {
+                        "primary": [float(row["receipt_primary"]) for row in mode_chart_rows],
+                        "secondary": [float(row["receipt_secondary"]) for row in mode_chart_rows],
+                    },
+                },
+            },
             "chart": {
                 "labels": [row["label"] for row in chart_rows],
                 "income": [float(row["income"]) for row in chart_rows],
@@ -637,15 +838,55 @@ def dashboard(request):
     active_contracts, scoped_invoice_records, scoped_payment_records = scoped_querysets(chart_period, chart_year, chart_month)
     total_amount = active_contracts.aggregate(total=Sum("amount"))["total"] or Decimal("0")
     total_income, total_expense = income_expense_totals(scoped_invoice_records, scoped_payment_records)
+    mode_totals = project_mode_totals(list(scoped_invoice_records) + list(scoped_payment_records))
+    income_rate = (mode_totals["invoice_secondary"] / total_amount * Decimal("100")) if total_amount else Decimal("0")
+    expense_rate = (mode_totals["receipt_secondary"] / total_amount * Decimal("100")) if total_amount else Decimal("0")
     payment_rate = (total_income / total_amount * Decimal("100")) if total_amount else Decimal("0")
 
     chart_rows = build_chart_rows(chart_period, chart_year, chart_month)
+    mode_chart_rows = build_dashboard_mode_chart_rows(
+        scoped_invoice_records,
+        scoped_payment_records,
+        chart_period,
+        chart_year,
+        chart_month,
+    )
     chart_data = {
-        "labels": [row["label"] for row in chart_rows],
+        "labels": [row["label"] for row in mode_chart_rows],
         "income": [float(row["income"]) for row in chart_rows],
         "expense": [float(row["expense"]) for row in chart_rows],
         "invoice": [float(row["income"]) for row in chart_rows],
         "payment": [float(row["expense"]) for row in chart_rows],
+        "modes": {
+            "invoice": {
+                "labels": {
+                    "primary": "总开票/开据金额",
+                    "secondary": "总收款金额",
+                    "rate": "收款率",
+                },
+                "primary_total": float(mode_totals["invoice_primary"]),
+                "secondary_total": float(mode_totals["invoice_secondary"]),
+                "rate": float(income_rate),
+                "chart": {
+                    "primary": [float(row["invoice_primary"]) for row in mode_chart_rows],
+                    "secondary": [float(row["invoice_secondary"]) for row in mode_chart_rows],
+                },
+            },
+            "receipt": {
+                "labels": {
+                    "primary": "总收票/收据金额",
+                    "secondary": "总付款金额",
+                    "rate": "利润率",
+                },
+                "primary_total": float(mode_totals["receipt_primary"]),
+                "secondary_total": float(mode_totals["receipt_secondary"]),
+                "rate": float(expense_rate),
+                "chart": {
+                    "primary": [float(row["receipt_primary"]) for row in mode_chart_rows],
+                    "secondary": [float(row["receipt_secondary"]) for row in mode_chart_rows],
+                },
+            },
+        },
     }
     max_amount = max(
         [row["income"] for row in chart_rows] + [row["expense"] for row in chart_rows],
@@ -653,7 +894,7 @@ def dashboard(request):
     ) or Decimal("1")
     chart_rows = enrich_chart_rows(chart_rows, max_amount)
 
-    recent_contracts = list(active_contracts.order_by("-created_at")[:5])
+    recent_contracts = list(active_contracts.order_by("-created_at"))
     context = context_with_auth(
         request,
         {
@@ -662,6 +903,9 @@ def dashboard(request):
             "total_expense": total_expense,
             "total_invoice": total_income,
             "total_payment": total_expense,
+            "dashboard_mode_totals": mode_totals,
+            "dashboard_income_rate": income_rate,
+            "dashboard_expense_rate": expense_rate,
             "payment_rate": payment_rate,
             "chart_rows": chart_rows,
             "chart_data": chart_data,
@@ -755,6 +999,55 @@ def contract_detail(request, pk: int):
         },
     )
     return render(request, "contracts/contract_detail.html", context)
+
+
+RECORD_MODEL_MAP = {
+    "invoice": InvoiceRecord,
+    "payment": PaymentRecord,
+    "maintenance": MaintenanceRecord,
+}
+
+
+def record_model_for_kind(kind: str):
+    return RECORD_MODEL_MAP.get(kind)
+
+
+@admin_required
+def record_delete(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    if request.method != "POST":
+        return redirect("contracts:contract_detail", pk=contract.pk)
+    for record_key in request.POST.getlist("record_ids"):
+        try:
+            kind, raw_id = record_key.split(":", 1)
+            record_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        record_model = record_model_for_kind(kind)
+        if record_model is None:
+            continue
+        try:
+            record = record_model.objects.get(pk=record_id, contract=contract)
+        except record_model.DoesNotExist:
+            continue
+        delete_file_from_storage(record.file)
+        record.delete()
+    return redirect("contracts:contract_detail", pk=contract.pk)
+
+
+@admin_required
+def record_file_update(request, kind: str, pk: int):
+    record_model = record_model_for_kind(kind)
+    if record_model is None:
+        return redirect("contracts:contract_list")
+    record = get_object_or_404(record_model, pk=pk, contract__is_deleted=False)
+    if request.method == "POST":
+        uploaded_file = request.FILES.get("file")
+        if uploaded_file:
+            delete_file_from_storage(record.file)
+            record.file = uploaded_file
+            record.save(update_fields=["file", "updated_at"])
+    return redirect("contracts:contract_detail", pk=record.contract_id)
 
 
 @admin_required
@@ -977,6 +1270,8 @@ def invoice_record_create(request, pk: int):
                 "title": "新增发票记录",
                 "today": timezone.localdate(),
                 "record_type_options": ["开票", "收票"],
+                "amount_label": "票面金额",
+                "actual_amount_field": True,
                 "file_label": "发票文件",
                 "active_nav": "contracts",
             },
@@ -1003,6 +1298,8 @@ def payment_record_create(request, pk: int):
                 "title": "新增收据记录",
                 "today": timezone.localdate(),
                 "record_type_options": ["开据", "收据"],
+                "amount_label": "票面金额",
+                "actual_amount_field": True,
                 "file_label": "收据文件",
                 "active_nav": "contracts",
             },
@@ -1029,6 +1326,7 @@ def maintenance_record_create(request, pk: int):
                 "title": "新增维护保养记录",
                 "today": timezone.localdate(),
                 "month_field": True,
+                "form_kind": "maintenance",
                 "current_month": timezone.localdate().strftime("%Y-%m"),
                 "file_label": "维保文件",
                 "active_nav": "contracts",

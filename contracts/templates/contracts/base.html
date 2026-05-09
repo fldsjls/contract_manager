@@ -86,6 +86,12 @@
       margin-bottom: 14px;
       flex-wrap: wrap;
     }
+    .detail-toolbar {
+      width: 100%;
+    }
+    .detail-maintenance-link {
+      margin-left: auto;
+    }
     .summary {
       display: flex;
       gap: 16px;
@@ -136,6 +142,12 @@
       border-color: #2563eb;
       background: #2563eb;
       color: #fff;
+    }
+    .button.current,
+    .button.primary:disabled {
+      opacity: 1;
+      cursor: default;
+      pointer-events: none;
     }
     .button.danger {
       border-color: #dc2626;
@@ -381,7 +393,12 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    td.remark { overflow: visible; text-overflow: clip; }
+    td.remark {
+      max-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .contract-list-page .table-wrap {
       overflow-x: hidden;
     }
@@ -936,13 +953,46 @@
       margin-bottom: 0;
       flex: 0 0 auto;
     }
+    .detail-page .panel > table {
+      table-layout: fixed;
+    }
+    .detail-page .panel > table th {
+      white-space: nowrap;
+    }
+    .detail-page .panel > table th:nth-child(1),
+    .detail-page .panel > table th:nth-child(3) {
+      width: 13%;
+    }
+    .detail-page .panel > table td:nth-child(2),
+    .detail-page .panel > table td:nth-child(4) {
+      width: 37%;
+    }
+    .detail-page .panel > table td {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .detail-page .record-grid {
       flex: 1;
-      min-height: 240px;
+      min-height: 360px;
     }
     .detail-page .record-grid.detail-record-grid-fixed {
-      flex: 0 0 300px;
-      min-height: 300px;
+      flex: 1;
+      min-height: 360px;
+    }
+    .detail-page .record-grid.maintenance-record-grid-full {
+      grid-template-columns: 1fr;
+      flex: 1;
+      min-height: 360px;
+    }
+    .detail-page .maintenance-record-grid-full .chart-area {
+      width: 100%;
+    }
+    .maintenance-record-detail-table {
+      font-size: 14px;
+    }
+    .detail-page .record-grid .chart-area {
+      min-width: 0;
     }
     .detail-page .record-grid .chart-area {
       min-height: 0;
@@ -969,13 +1019,14 @@
     .detail-record-table {
       table-layout: fixed;
       min-width: 0;
+      font-size: 12px;
     }
     .detail-record-table .select-colgroup { width: 24px; }
-    .detail-record-table .standard-select-colgroup { width: 5px; }
-    .detail-record-table .date-colgroup { width: 148px; }
-    .detail-record-table .money-colgroup { width: 126px; }
-    .detail-record-table .file-colgroup { width: 124px; }
-    .detail-record-table .month-colgroup { width: 116px; }
+    .detail-record-table .standard-select-colgroup { width: 28px; }
+    .detail-record-table .date-colgroup { width: 104px; }
+    .detail-record-table .money-colgroup { width: 104px; }
+    .detail-record-table .file-colgroup { width: 112px; }
+    .detail-record-table .month-colgroup { width: 104px; }
     .detail-record-table .remark-colgroup { width: auto; }
     .detail-record-table .select-col {
       width: 24px;
@@ -999,7 +1050,7 @@
     }
     .detail-record-table .file-preview-button {
       width: 100%;
-      max-width: 108px;
+      max-width: 104px;
       height: 34px;
       padding: 6px 8px;
       margin: 0 auto;
@@ -1010,8 +1061,7 @@
       overflow: hidden;
       text-overflow: clip;
       white-space: nowrap;
-      padding-left: 8px;
-      padding-right: 8px;
+      padding: 6px 5px;
     }
     .detail-page .record-grid .table-wrap {
       overflow-x: hidden;
@@ -1037,8 +1087,30 @@
       min-height: 0;
     }
     .detail-page .maintenance-area {
+      width: calc((100% - 16px) / 2);
+      max-width: calc((100% - 16px) / 2);
       flex: 0 0 270px;
       min-height: 270px;
+    }
+    .maintenance-page-area {
+      width: calc((100% - 16px) / 2);
+      min-height: 360px;
+    }
+    .record-file-modal-card {
+      width: min(380px, calc(100vw - 48px));
+      max-height: none;
+      overflow: hidden;
+    }
+    .record-file-modal-card .modal-header {
+      padding: 22px 24px 10px;
+    }
+    .record-file-modal-card form {
+      margin: 0;
+    }
+    .record-file-actions {
+      padding: 12px 24px 22px;
+      justify-content: flex-end;
+      gap: 10px;
     }
     .button.disabled,
     .button[aria-disabled="true"] {

@@ -76,7 +76,7 @@
               <th><a class="sort-link {% if sort == 'contract_number' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=contract_number&direction={% if sort == 'contract_number' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同编号</a></th>
               <th><a class="sort-link {% if sort == 'contract_type' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=contract_type&direction={% if sort == 'contract_type' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同类型</a></th>
               <th><a class="sort-link {% if sort == 'party_name' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=party_name&direction={% if sort == 'party_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">甲方名称</a></th>
-              <th><a class="sort-link {% if sort == 'amount' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=amount&direction={% if sort == 'amount' and direction == 'asc' %}desc{% else %}asc{% endif %}">金额</a></th>
+              <th><a class="sort-link {% if sort == 'amount' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=amount&direction={% if sort == 'amount' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同金额</a></th>
               <th><a class="sort-link {% if sort == 'invoice_status' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=invoice_status&direction={% if sort == 'invoice_status' and direction == 'asc' %}desc{% else %}asc{% endif %}">是否开票</a></th>
               <th><a class="sort-link {% if sort == 'start_date' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=start_date&direction={% if sort == 'start_date' and direction == 'asc' %}desc{% else %}asc{% endif %}">开始日期</a></th>
               <th><a class="sort-link {% if sort == 'end_date' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=end_date&direction={% if sort == 'end_date' and direction == 'asc' %}desc{% else %}asc{% endif %}">截止日期</a></th>
@@ -424,17 +424,25 @@
       tabs.className = "project-popup-tabs";
       tabs.setAttribute("data-keep-selection", "");
       const statsTab = document.createElement("button");
-      statsTab.className = `button${activeTab === "stats" ? " primary" : ""}`;
+      const isStatsActive = activeTab === "stats";
+      statsTab.className = `button${isStatsActive ? " primary current" : ""}`;
       statsTab.type = "button";
       statsTab.textContent = "项目统计";
-      statsTab.addEventListener("click", loadProjectStats);
+      statsTab.disabled = isStatsActive;
+      if (!isStatsActive) {
+        statsTab.addEventListener("click", loadProjectStats);
+      }
       tabs.appendChild(statsTab);
       if (maintenanceState.enabled) {
         const maintenanceTab = document.createElement("button");
-        maintenanceTab.className = `button${activeTab === "maintenance" ? " primary" : ""}`;
+        const isMaintenanceActive = activeTab === "maintenance";
+        maintenanceTab.className = `button${isMaintenanceActive ? " primary current" : ""}`;
         maintenanceTab.type = "button";
         maintenanceTab.textContent = "维保记录";
-        maintenanceTab.addEventListener("click", loadMaintenanceCalendar);
+        maintenanceTab.disabled = isMaintenanceActive;
+        if (!isMaintenanceActive) {
+          maintenanceTab.addEventListener("click", loadMaintenanceCalendar);
+        }
         tabs.appendChild(maintenanceTab);
       }
       return tabs;
@@ -470,7 +478,10 @@
       projectYearControl.style.display = projectStatsState.period === "year" ? "flex" : "none";
       projectMonthControl.style.display = projectStatsState.period === "month" ? "flex" : "none";
       projectPeriodOptions.forEach((button) => {
-        button.classList.toggle("primary", button.dataset.period === projectStatsState.period);
+        const isCurrentPeriod = button.dataset.period === projectStatsState.period;
+        button.classList.toggle("primary", isCurrentPeriod);
+        button.classList.toggle("current", isCurrentPeriod);
+        button.disabled = isCurrentPeriod;
       });
     }
 
@@ -747,6 +758,9 @@
     });
     projectPeriodOptions.forEach((button) => {
       button.addEventListener("click", () => {
+        if (button.dataset.period === projectStatsState.period) {
+          return;
+        }
         projectStatsState.period = button.dataset.period;
         updateProjectRangeLabels();
       });

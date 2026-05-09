@@ -35,6 +35,7 @@ urlpatterns = [
     path("contracts/<int:pk>/records/new/", views.record_add, name="record_add"),
     path("contracts/<int:pk>/records/delete/", views.record_delete, name="record_delete"),
     path("records/<str:kind>/<int:pk>/file/", views.record_file_update, name="record_file_update"),
+    path("contracts/<int:pk>/maintenance-records/", views.maintenance_record_list, name="maintenance_record_list"),
     path("contracts/<int:pk>/invoice-records/new/", views.invoice_record_create, name="invoice_record_create"),
     path("contracts/<int:pk>/payment-records/new/", views.payment_record_create, name="payment_record_create"),
     path("contracts/<int:pk>/maintenance-records/new/", views.maintenance_record_create, name="maintenance_record_create"),

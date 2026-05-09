@@ -22,7 +22,7 @@
             <tr>
               <th>日期</th>
               {% if record_type_options %}<th>类型</th>{% endif %}
-              <th>{% if month_field %}月份{% else %}{{ amount_label|default:"金额" }}{% endif %}</th>
+              <th>{% if month_field %}月份{% else %}{{ amount_label|default:"合同金额" }}{% endif %}</th>
               {% if actual_amount_field %}<th>实际金额</th>{% endif %}
               <th>备注</th>
               <th>{{ file_label|default:"附件" }}</th>

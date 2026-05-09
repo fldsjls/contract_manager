@@ -1,6 +1,6 @@
 {% extends "contracts/base.html" %}
 
-{% block title %}合同详情{% endblock %}
+{% block title %}维护保养记录{% endblock %}
 
 {% block content %}
   <div class="page-content detail-page">
@@ -11,9 +11,7 @@
       {% if is_admin_mode %}
         <a class="button primary" href="{% url 'contracts:contract_update' contract.id %}">编辑合同</a>
       {% endif %}
-      {% if contract.contract_type == "维保" %}
-        <a class="button success detail-maintenance-link" href="{% url 'contracts:maintenance_record_list' contract.id %}">维护保养记录</a>
-      {% endif %}
+      <a class="button success detail-maintenance-link" href="{% url 'contracts:contract_detail' contract.id %}">开票收票记录</a>
     </div>
 
     <div class="detail-scroll">
@@ -67,123 +65,59 @@
         </table>
       </section>
 
-      <section class="record-grid">
+      <section class="record-grid maintenance-record-grid-full">
         <div class="chart-area">
           <form method="post" action="{% url 'contracts:record_delete' contract.id %}">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.path }}">
             <div class="record-panel-title">
-              <h2>{% if contract.invoice_status == "不开票" %}开据记录{% else %}开票记录{% endif %}</h2>
-              {% if is_admin_mode and invoice_records %}
+              <h2>维护保养记录</h2>
+              {% if is_admin_mode and maintenance_records %}
                 <button class="button danger record-delete-button" type="submit">删除</button>
               {% endif %}
             </div>
-            {% if contract.invoice_status == "不开票" %}
-              <div class="empty">该合同设置为不开票，开票记录不可用。</div>
-            {% elif invoice_records %}
+            {% if maintenance_records %}
               <div class="table-wrap">
-                <table class="record-table detail-record-table standard-record-table">
+                <table class="record-table detail-record-table maintenance-record-detail-table">
                   <colgroup>
                     <col class="date-colgroup">
-                    <col class="money-colgroup">
-                    <col class="money-colgroup">
+                    <col class="month-colgroup">
                     <col class="remark-colgroup">
                     <col class="file-colgroup">
-                    {% if is_admin_mode %}<col class="select-colgroup standard-select-colgroup">{% endif %}
+                    {% if is_admin_mode %}<col class="select-colgroup">{% endif %}
                   </colgroup>
                   <thead>
                     <tr>
                       <th>日期</th>
-                      <th>票面金额</th>
-                      <th>实际金额</th>
+                      <th>月份</th>
                       <th>备注</th>
-                      <th>发票文件</th>
+                      <th>维保文件</th>
                       {% if is_admin_mode %}<th class="select-col"><input type="checkbox" data-record-select-all></th>{% endif %}
                     </tr>
                   </thead>
                   <tbody>
-                    {% for record in invoice_records %}
+                    {% for record in maintenance_records %}
                       <tr>
                         <td>{{ record.record_date }}</td>
-                        <td>¥ {{ record.amount|floatformat:2 }}</td>
-                        <td>¥ {{ record.actual_amount|default:record.amount|floatformat:2 }}</td>
+                        <td>{{ record.month }}</td>
                         <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
                         <td>
                           <button
                             class="button file-preview-button record-file-trigger"
                             type="button"
-                            data-upload-url="{% url 'contracts:record_file_update' 'invoice' record.id %}"
+                            data-upload-url="{% url 'contracts:record_file_update' 'maintenance' record.id %}"
                             data-download-url="{% if record.file %}{{ record.file.url }}{% endif %}"
                             data-file-name="{% if record.file %}{{ record.file.name }}{% else %}未上传{% endif %}"
                           ><span class="file-preview-name">{% if record.file %}{{ record.file.name }}{% else %}上传文件{% endif %}</span></button>
                         </td>
-                        {% if is_admin_mode %}<td class="select-col"><input type="checkbox" name="record_ids" value="invoice:{{ record.id }}"></td>{% endif %}
+                        {% if is_admin_mode %}<td class="select-col"><input type="checkbox" name="record_ids" value="maintenance:{{ record.id }}"></td>{% endif %}
                       </tr>
                     {% endfor %}
                   </tbody>
                 </table>
               </div>
             {% else %}
-              <div class="empty">暂无开票记录</div>
-            {% endif %}
-          </form>
-        </div>
-
-        <div class="chart-area">
-          <form method="post" action="{% url 'contracts:record_delete' contract.id %}">
-            {% csrf_token %}
-            <input type="hidden" name="next" value="{{ request.path }}">
-            <div class="record-panel-title">
-              <h2>{% if contract.invoice_status == "不开票" %}收据记录{% else %}收票记录{% endif %}</h2>
-              {% if is_admin_mode and payment_records %}
-                <button class="button danger record-delete-button" type="submit">删除</button>
-              {% endif %}
-            </div>
-            {% if payment_records %}
-              <div class="table-wrap">
-                <table class="record-table detail-record-table standard-record-table">
-                  <colgroup>
-                    <col class="date-colgroup">
-                    <col class="money-colgroup">
-                    <col class="money-colgroup">
-                    <col class="remark-colgroup">
-                    <col class="file-colgroup">
-                    {% if is_admin_mode %}<col class="select-colgroup standard-select-colgroup">{% endif %}
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th>日期</th>
-                      <th>票面金额</th>
-                      <th>实际金额</th>
-                      <th>备注</th>
-                      <th>{% if contract.invoice_status == "不开票" %}收据文件{% else %}发票文件{% endif %}</th>
-                      {% if is_admin_mode %}<th class="select-col"><input type="checkbox" data-record-select-all></th>{% endif %}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for record in payment_records %}
-                      <tr>
-                        <td>{{ record.record_date }}</td>
-                        <td>¥ {{ record.amount|floatformat:2 }}</td>
-                        <td>¥ {{ record.actual_amount|default:record.amount|floatformat:2 }}</td>
-                        <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
-                        <td>
-                          <button
-                            class="button file-preview-button record-file-trigger"
-                            type="button"
-                            data-upload-url="{% url 'contracts:record_file_update' 'payment' record.id %}"
-                            data-download-url="{% if record.file %}{{ record.file.url }}{% endif %}"
-                            data-file-name="{% if record.file %}{{ record.file.name }}{% else %}未上传{% endif %}"
-                          ><span class="file-preview-name">{% if record.file %}{{ record.file.name }}{% else %}上传文件{% endif %}</span></button>
-                        </td>
-                        {% if is_admin_mode %}<td class="select-col"><input type="checkbox" name="record_ids" value="payment:{{ record.id }}"></td>{% endif %}
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-            {% else %}
-              <div class="empty">暂无{% if contract.invoice_status == "不开票" %}收据{% else %}收票{% endif %}记录</div>
+              <div class="empty">暂无维护保养记录</div>
             {% endif %}
           </form>
         </div>
@@ -191,7 +125,6 @@
     </div>
   </div>
 
-  {# 记录附件弹窗只保留三个动作；上传按钮触发隐藏文件框并自动提交覆盖旧文件。 #}
   <div class="modal-backdrop" id="recordFileModal" hidden>
     <div class="modal-card record-file-modal-card" role="dialog" aria-modal="true" aria-labelledby="recordFileModalTitle">
       <div class="modal-header" id="recordFileModalTitle">记录文件</div>
@@ -211,7 +144,6 @@
   </div>
 
   <script>
-    // 表格内只展示文件名本身，避免把 media 子目录路径露出来。
     function baseFileName(value) {
       return (value || "未上传").split(/[\\/]/).pop();
     }

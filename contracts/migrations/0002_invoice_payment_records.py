@@ -16,7 +16,7 @@ class Migration(migrations.Migration):
             fields=[
                 ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
                 ("record_date", models.DateField(verbose_name="日期")),
-                ("amount", models.DecimalField(decimal_places=2, default=0, max_digits=14, verbose_name="金额")),
+                ("amount", models.DecimalField(decimal_places=2, default=0, max_digits=14, verbose_name="合同金额")),
                 ("file", models.FileField(blank=True, null=True, upload_to="records/", verbose_name="附件")),
                 ("remark", models.CharField(blank=True, max_length=255, verbose_name="备注")),
                 ("created_at", models.DateTimeField(default=django.utils.timezone.now, verbose_name="创建时间")),
@@ -42,7 +42,7 @@ class Migration(migrations.Migration):
             fields=[
                 ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
                 ("record_date", models.DateField(verbose_name="日期")),
-                ("amount", models.DecimalField(decimal_places=2, default=0, max_digits=14, verbose_name="金额")),
+                ("amount", models.DecimalField(decimal_places=2, default=0, max_digits=14, verbose_name="合同金额")),
                 ("file", models.FileField(blank=True, null=True, upload_to="records/", verbose_name="附件")),
                 ("remark", models.CharField(blank=True, max_length=255, verbose_name="备注")),
                 ("created_at", models.DateTimeField(default=django.utils.timezone.now, verbose_name="创建时间")),

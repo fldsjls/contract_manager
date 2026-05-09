@@ -1014,9 +1014,11 @@ def record_model_for_kind(kind: str):
 
 @admin_required
 def record_delete(request, pk: int):
+    # 详情页三类记录共用同一个删除入口，前端用 kind:id 标记来源表。
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if request.method != "POST":
         return redirect("contracts:contract_detail", pk=contract.pk)
+    next_url = request.POST.get("next", "")
     for record_key in request.POST.getlist("record_ids"):
         try:
             kind, raw_id = record_key.split(":", 1)
@@ -1032,11 +1034,14 @@ def record_delete(request, pk: int):
             continue
         delete_file_from_storage(record.file)
         record.delete()
+    if next_url.startswith("/"):
+        return redirect(next_url)
     return redirect("contracts:contract_detail", pk=contract.pk)
 
 
 @admin_required
 def record_file_update(request, kind: str, pk: int):
+    # 单条记录只保留一个附件，新上传文件会覆盖并删除旧文件。
     record_model = record_model_for_kind(kind)
     if record_model is None:
         return redirect("contracts:contract_list")
@@ -1047,7 +1052,24 @@ def record_file_update(request, kind: str, pk: int):
             delete_file_from_storage(record.file)
             record.file = uploaded_file
             record.save(update_fields=["file", "updated_at"])
+    next_url = request.POST.get("next", "")
+    if next_url.startswith("/"):
+        return redirect(next_url)
     return redirect("contracts:contract_detail", pk=record.contract_id)
+
+
+def maintenance_record_list(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    context = context_with_auth(
+        request,
+        {
+            "contract": contract,
+            "primary_file": contract.latest_file,
+            "maintenance_records": contract.maintenancerecord_set.all(),
+            "active_nav": "contracts",
+        },
+    )
+    return render(request, "contracts/maintenance_record_list.html", context)
 
 
 @admin_required

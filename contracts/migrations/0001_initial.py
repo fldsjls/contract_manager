@@ -35,7 +35,7 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 ("party_name", models.CharField(max_length=200, verbose_name="甲方名称")),
-                ("amount", models.DecimalField(decimal_places=2, default=0, max_digits=14, verbose_name="金额")),
+                ("amount", models.DecimalField(decimal_places=2, default=0, max_digits=14, verbose_name="合同金额")),
                 (
                     "invoice_status",
                     models.CharField(

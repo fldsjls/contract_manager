@@ -18,23 +18,28 @@
 
     <!-- 行操作按钮默认禁用，选中合同后由脚本启用。 -->
     <div class="action-toolbar" aria-label="合同操作" data-keep-selection>
-      {% if is_admin_mode %}
+      {% if can_manage %}
         <a class="button primary" href="{% url 'contracts:contract_create' %}">新增合同</a>
-        <a class="button row-action" id="recordButton" href="#" data-url-template="{% url 'contracts:record_add' 0 %}" aria-disabled="true">添加记录</a>
       {% else %}
         <a class="button muted" href="{% url 'contracts:login' %}">登录后新增</a>
       {% endif %}
+      {% if can_add_money_records %}
+        <a class="button row-action" id="moneyRecordButton" href="#" data-invoice-url-template="{% url 'contracts:invoice_record_create' 0 %}" data-receipt-url-template="{% url 'contracts:payment_record_create' 0 %}" aria-disabled="true">添加发票</a>
+      {% endif %}
+      {% if can_manage %}
+        <a class="button row-action" id="recordButton" href="#" data-url-template="{% url 'contracts:maintenance_record_create' 0 %}" aria-disabled="true">添加记录</a>
+      {% endif %}
       <a class="button row-action" id="detailButton" href="#" data-url-template="{% url 'contracts:contract_detail' 0 %}" aria-disabled="true">查看详情</a>
-      {% if is_admin_mode %}
+      {% if can_manage %}
         <a class="button row-action" id="editButton" href="#" data-url-template="{% url 'contracts:contract_update' 0 %}" aria-disabled="true">编辑合同</a>
       {% endif %}
       <a class="button row-action" id="fileButton" href="#" aria-disabled="true">预览合同</a>
       <button class="button row-action" id="statsButton" type="button" aria-disabled="true">统计</button>
-      {% if is_admin_mode %}
+      {% if can_manage %}
         <a class="button row-action" id="settlementButton" href="#" data-url-template="{% url 'contracts:settlement_file_list' 0 %}" aria-disabled="true">结算</a>
       {% endif %}
       <span class="toolbar-spacer"></span>
-      {% if is_admin_mode %}
+      {% if can_manage %}
         <button class="button danger row-action" id="deleteButton" type="button" data-url-template="{% url 'contracts:contract_delete' 0 %}" aria-disabled="true">删除合同</button>
       {% endif %}
     </div>
@@ -92,6 +97,7 @@
                 data-contract-id="{{ contract.id }}"
                 data-contract-name="{{ contract.contract_name }}"
                 data-contract-type="{{ contract.contract_type }}"
+                data-invoice-status="{{ contract.invoice_status }}"
                 data-invoice-total="¥ {{ contract.invoice_total|floatformat:2 }}"
                 data-payment-total="¥ {{ contract.payment_total|floatformat:2 }}"
                 data-payment-rate="{{ contract.payment_rate|floatformat:1 }}%"
@@ -173,6 +179,7 @@
     const table = document.querySelector("#contractTable");
     const rowButtons = document.querySelectorAll(".row-action");
     const fileButton = document.querySelector("#fileButton");
+    const moneyRecordButton = document.querySelector("#moneyRecordButton");
     const statsButton = document.querySelector("#statsButton");
     const deleteButton = document.querySelector("#deleteButton");
     const deleteForm = document.querySelector("#deleteForm");
@@ -292,6 +299,16 @@
           setDisabled(fileButton, true);
         }
 
+        const invoiceStatus = row.dataset.invoiceStatus || "";
+        if (moneyRecordButton) {
+          const template = invoiceStatus === "不开票"
+            ? moneyRecordButton.dataset.receiptUrlTemplate
+            : moneyRecordButton.dataset.invoiceUrlTemplate;
+          moneyRecordButton.href = template.replace("/0/", `/${id}/`);
+          moneyRecordButton.textContent = invoiceStatus === "不开票" ? "添加收据" : "添加发票";
+          setDisabled(moneyRecordButton, false);
+        }
+
         if (statsButton) {
           statsButton.dataset.contractName = row.dataset.contractName;
           statsButton.dataset.invoiceTotal = row.dataset.invoiceTotal;
@@ -343,7 +360,8 @@
         projectStatsState.month = new Date().getMonth() + 1;
         maintenanceState.url = statsButton.dataset.maintenanceUrl;
         maintenanceState.year = new Date().getFullYear();
-        maintenanceState.enabled = statsButton.dataset.contractType === "维保";
+        maintenanceState.enabled = Boolean(statsButton.dataset.contractType);
+        maintenanceState.label = `${statsButton.dataset.contractType || "项目"}记录`;
         await loadProjectStats();
       });
     }
@@ -353,17 +371,17 @@
         return;
       }
       const params = new URLSearchParams({ year: maintenanceState.year });
-      centerModalBody.textContent = "正在加载维护保养记录...";
+      centerModalBody.textContent = `正在加载${maintenanceState.label || "项目记录"}...`;
       try {
         const response = await fetch(`${maintenanceState.url}?${params.toString()}`, {
           headers: { "X-Requested-With": "XMLHttpRequest" },
         });
         if (!response.ok) {
-          throw new Error("维护保养记录加载失败");
+          throw new Error("项目记录加载失败");
         }
         renderMaintenanceCalendar(await response.json());
       } catch (error) {
-        centerModalBody.textContent = "维护保养记录加载失败，请稍后重试。";
+        centerModalBody.textContent = `${maintenanceState.label || "项目记录"}加载失败，请稍后重试。`;
       }
     }
 
@@ -399,7 +417,13 @@
         item.className = `maintenance-month${month.has_records ? " has-records" : ""}`;
         const records = month.records.map((record) => {
           const attachment = record.file_url ? `<a href="${escapeHtml(record.file_url)}" target="_blank">附件</a>` : "无附件";
-          return `<div class="maintenance-month-record" title="${escapeHtml(record.remark)}">${escapeHtml(record.date)} · ${escapeHtml(record.month)} · ${attachment}</div>`;
+          return `
+            <div class="maintenance-month-record">
+              <span>日期: ${escapeHtml(record.date)}</span>
+              <span title="${escapeHtml(record.remark)}">备注: ${escapeHtml(record.remark)}</span>
+              <span>附件: ${attachment}</span>
+            </div>
+          `;
         }).join("");
         item.innerHTML = `
           <div class="maintenance-month-name">${month.label}</div>
@@ -438,7 +462,7 @@
         const isMaintenanceActive = activeTab === "maintenance";
         maintenanceTab.className = `button${isMaintenanceActive ? " primary current" : ""}`;
         maintenanceTab.type = "button";
-        maintenanceTab.textContent = "维保记录";
+        maintenanceTab.textContent = maintenanceState.label || "项目记录";
         maintenanceTab.disabled = isMaintenanceActive;
         if (!isMaintenanceActive) {
           maintenanceTab.addEventListener("click", loadMaintenanceCalendar);

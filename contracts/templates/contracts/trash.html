@@ -35,7 +35,7 @@
               <td>¥ {{ contract.amount|floatformat:2 }}</td>
               <td>{{ contract.deleted_at|date:"Y-m-d H:i" }}</td>
               <td>
-                {% if is_admin_mode %}
+                {% if can_manage %}
                   <form method="post" action="{% url 'contracts:contract_restore' contract.id %}">
                     {% csrf_token %}
                     <button class="button primary" type="submit">恢复</button>

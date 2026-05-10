@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- 登录页独立于后台布局，提供管理员登录和游客入口。 -->
+<!-- 登录页独立于后台布局，提供用户登录和游客入口。 -->
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -61,7 +61,7 @@
   </style>
 </head>
 <body>
-  <!-- 登录卡片包含账号密码表单和游客模式按钮。 -->
+  <!-- 登录卡片共用账号密码表单，后端会按账号身份进入管理员或普通用户模式。 -->
   <main class="login-card">
     <h1>合同管理系统</h1>
     <form method="post">
@@ -74,9 +74,8 @@
       {{ form.password }}
       {{ form.password.errors }}
       <div class="actions">
-        <button class="primary" type="submit">管理员登录</button>
-        <a href="{% url 'contracts:guest_login' %}">游客进入</a>
-        <a href="{% url 'contracts:dashboard' %}">返回总览</a>
+        <button class="primary" type="submit">用户登录</button>
+        <a href="{% url 'contracts:guest_login' %}">游客登入</a>
       </div>
     </form>
   </main>

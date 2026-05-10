@@ -4,6 +4,7 @@
 {% block title %}统计总览{% endblock %}
 
 {% block content %}
+  <!-- 统计总览首页：顶部卡片随收入/支出开关切换，下面保持趋势和项目列表。 -->
   <div class="page-content dashboard-page">
     <div class="dashboard-title-row">
       <h1 class="page-title">统计总览</h1>
@@ -19,6 +20,7 @@
     </div>
 
     <div class="dashboard-scroll">
+      <!-- 总金额、开票/开据金额、收款金额和比例指标。 -->
       <section class="dashboard-top-row">
         <div class="metric-grid">
           <div class="metric-card">
@@ -40,6 +42,7 @@
         </div>
       </section>
 
+      <!-- 左侧趋势图和右侧即将到期项目共用同一行布局。 -->
       <section class="chart-grid">
         <div class="chart-area">
           <div class="file-list-header" style="margin-bottom: 8px;">
@@ -80,6 +83,7 @@
         </div>
       </section>
 
+      <!-- 最近项目表格在记录过多时只在该区域内滚动。 -->
       <section class="chart-area recent-panel">
         <h2>最近项目</h2>
         {% if recent_contracts %}
@@ -118,6 +122,7 @@
     </div>
   </div>
 
+  <!-- 统计范围弹窗：全部、按年和按月使用同一套前端状态。 -->
   <div class="modal-backdrop" id="rangeModal" hidden>
     <div class="modal-card range-modal-card" role="dialog" aria-modal="true" aria-labelledby="rangeModalTitle">
       <div class="modal-header" id="rangeModalTitle">选择统计范围</div>
@@ -157,6 +162,7 @@
 
   <script src="{% static 'contracts/vendor/echarts.min.js' %}"></script>
   <script>
+    // 后端通过 json_script 注入图表数据，前端只负责视图切换和 ECharts 渲染。
     const rangeModal = document.querySelector("#rangeModal");
     const rangeModalButton = document.querySelector("#rangeModalButton");
     const rangeModalCancel = document.querySelector("#rangeModalCancel");
@@ -169,6 +175,7 @@
     const monthLabel = document.querySelector("#monthLabel");
     const periodOptions = document.querySelectorAll(".period-option");
 
+    // 根据统计方式切换年份/月度选择控件，并同步按钮选中状态。
     function updateRangeLabels() {
       const year = Number.parseInt(yearInput.value, 10);
       yearLabel.textContent = `${year - 11} - ${year} 年`;
@@ -224,6 +231,7 @@
       return `¥ ${Number(value || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
 
+    // 收入/支出趋势共用一张图，开关只替换标题、指标和两组序列数据。
     if (trendChartElement && trendChartDataElement && window.echarts) {
       const trendData = JSON.parse(trendChartDataElement.textContent);
       const trendChart = echarts.init(trendChartElement);
@@ -379,6 +387,7 @@
         ],
       });
 
+      // 切换总览模式时保持坐标轴、缩放条和交互状态不变。
       function applyDashboardMode() {
         const mode = dashboardModeToggle.checked ? "receipt" : "invoice";
         const modeData = trendData.modes[mode];

@@ -11,7 +11,7 @@
       <a class="button" href="{{ file_url }}" download>下载文件</a>
       <span class="file-preview-name" title="{{ file_name }}">{{ file_name }}</span>
       <span class="toolbar-spacer"></span>
-      {% if is_admin_mode %}
+      {% if can_manage %}
         <form method="post" action="{{ delete_url }}" style="margin: 0;">
           {% csrf_token %}
           <button class="button danger" type="submit">删除文件</button>

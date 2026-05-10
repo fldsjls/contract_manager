@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}合同管理系统{% endblock %}</title>
   <style>
+    /* 全局布局和通用排版，保证桌面端页面固定在应用窗口内滚动。 */
     * { box-sizing: border-box; }
     [hidden] { display: none !important; }
     html,
@@ -127,6 +128,7 @@
       flex-wrap: nowrap;
     }
     .toolbar-spacer { flex: 1; }
+    /* 统一按钮体系，后续页面只通过 primary/success/danger/current 区分状态。 */
     .button, button {
       display: inline-block;
       padding: 9px 15px;
@@ -217,6 +219,7 @@
       pointer-events: none;
       cursor: not-allowed;
     }
+    /* 通用弹窗结构，项目统计、范围选择和登录提示共用这套容器。 */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -245,7 +248,7 @@
       overflow: hidden;
     }
     .modal-card.wide .modal-body {
-      flex: 0 1 auto;
+      flex: 1;
       min-height: 0;
       overflow: auto;
       padding-bottom: 10px;
@@ -540,6 +543,7 @@
       gap: 14px;
       margin-bottom: 16px;
     }
+    /* 统计卡片和项目统计弹窗共用的数值展示样式。 */
     .metric-card {
       background: #fff;
       border: 1px solid #d9dee7;
@@ -585,11 +589,13 @@
         border: 1px solid #d9dee7;
         background: #fff;
     }
+    /* 项目统计弹窗里的类型记录日历，按月份展示每类扩展记录。 */
     .maintenance-calendar {
       display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
       gap: 14px;
       white-space: normal;
-      min-height: 100%;
+      height: 100%;
       align-content: start;
     }
     .maintenance-calendar-header {
@@ -614,10 +620,12 @@
     .maintenance-month-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-rows: repeat(3, minmax(0, 1fr));
       gap: 10px;
+      min-height: 0;
     }
     .maintenance-month {
-      min-height: 92px;
+      min-height: 0;
       padding: 10px;
       border: 1px solid #d9dee7;
       background: #fff;
@@ -638,6 +646,14 @@
       line-height: 1.5;
     }
     .maintenance-month-record {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .maintenance-month-record span {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -930,6 +946,7 @@
       min-height: 0;
       overflow: auto;
     }
+    /* 合同列表和详情页各自控制内部滚动，避免浏览器窗口出现多层横向滚动。 */
     .contract-list-page {
       overflow: hidden;
     }
@@ -971,6 +988,47 @@
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .inline-remark-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      width: 100%;
+    }
+    .inline-remark-editor {
+      min-width: 0;
+    }
+    .inline-remark-display {
+      display: block;
+      width: 100%;
+      min-height: 20px;
+      padding: 4px 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .inline-remark-display.empty {
+      color: #98a2b3;
+    }
+    .inline-remark-editor .inline-remark-form {
+      display: none;
+    }
+    .inline-remark-editor.editing .inline-remark-display {
+      display: none;
+    }
+    .inline-remark-editor.editing .inline-remark-form {
+      display: grid;
+    }
+    .inline-remark-form textarea {
+      min-height: 38px;
+      max-height: 96px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+    .inline-remark-form .button {
+      white-space: nowrap;
     }
     .detail-page .record-grid {
       flex: 1;
@@ -1016,6 +1074,7 @@
     .record-delete-button {
       flex: 0 0 auto;
     }
+    /* 详情页记录表使用固定列宽，只有备注和文件名允许省略。 */
     .detail-record-table {
       table-layout: fixed;
       min-width: 0;
@@ -1156,19 +1215,22 @@
       <a class="nav-link {% if active_nav == 'contracts' %}active{% endif %}" href="{% url 'contracts:contract_list' %}">合同列表</a>
       <a class="nav-link {% if active_nav == 'trash' %}active{% endif %}" href="{% url 'contracts:trash' %}">回收站</a>
       <a
-        class="nav-link {% if active_nav == 'settings' %}active{% endif %} {% if is_guest_mode %}requires-admin-login{% endif %}"
-        href="{% if is_guest_mode %}{% url 'contracts:login' %}{% else %}{% url 'contracts:settings' %}{% endif %}"
+        class="nav-link {% if active_nav == 'settings' %}active{% endif %} {% if not can_manage %}requires-admin-login{% endif %}"
+        href="{% if not can_manage %}{% url 'contracts:login' %}{% else %}{% url 'contracts:settings' %}{% endif %}"
       >设置</a>
       <div class="auth-box">
         {% if is_admin_mode %}
           <strong>管理员模式</strong>
           <a href="{% url 'contracts:logout' %}">退出登录</a>
+        {% elif is_normal_mode %}
+          <strong>普通用户</strong>
+          <a href="{% url 'contracts:logout' %}">退出普通用户</a>
         {% elif is_guest_mode %}
           <strong>游客模式</strong>
           <a href="{% url 'contracts:logout' %}">退出游客</a>
         {% else %}
           <strong>未登录</strong>
-          <a href="{% url 'contracts:login' %}">登录 / 游客进入</a>
+          <a href="{% url 'contracts:login' %}">登录 / 游客登入</a>
         {% endif %}
       </div>
     </aside>
@@ -1194,6 +1256,31 @@
     const adminLoginCancel = document.querySelector("#adminLoginCancel");
     const adminLoginConfirm = document.querySelector("#adminLoginConfirm");
     const adminOnlyLinks = document.querySelectorAll(".requires-admin-login");
+
+    function initInlineRemarkEditors() {
+      document.querySelectorAll(".inline-remark-editor").forEach((editor) => {
+        const display = editor.querySelector(".inline-remark-display");
+        const textarea = editor.querySelector("textarea");
+        if (!display || !textarea) {
+          return;
+        }
+        display.addEventListener("click", (event) => {
+          event.stopPropagation();
+          editor.classList.add("editing");
+          textarea.focus();
+        });
+        textarea.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            editor.classList.remove("editing");
+          }
+        });
+        editor.addEventListener("click", (event) => {
+          event.stopPropagation();
+        });
+      });
+    }
+
+    initInlineRemarkEditors();
 
     function closeAdminLoginModal() {
       adminLoginModal.hidden = true;

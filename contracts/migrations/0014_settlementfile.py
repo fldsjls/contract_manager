@@ -5,12 +5,15 @@ import django.utils.timezone
 import contracts.models
 
 
+# 新增结算文件表，把结算附件从普通合同文件中单独分目录保存。
 class Migration(migrations.Migration):
 
+    # 结算文件依赖合同主表和统一上传路径函数。
     dependencies = [
         ("contracts", "0013_maintenancerecord"),
     ]
 
+    # 每个结算文件都关联一个合同，并保存原文件名用于页面展示。
     operations = [
         migrations.CreateModel(
             name="SettlementFile",

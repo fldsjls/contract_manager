@@ -3,6 +3,7 @@
 {% block title %}结算文件{% endblock %}
 
 {% block content %}
+  <!-- 结算文件独立于合同文件保存，上传后自动提交到当前合同的结算目录。 -->
   <h1 class="page-title">结算文件</h1>
 
   <section class="panel">
@@ -11,6 +12,7 @@
       <span>合同编号：{{ contract.contract_number }}</span>
     </div>
 
+    <!-- 选择文件即上传，保持和合同文件列表相同的操作方式。 -->
     <form id="settlementUploadForm" method="post" enctype="multipart/form-data">
       {% csrf_token %}
       <div class="file-list-header">
@@ -20,6 +22,7 @@
       </div>
     </form>
 
+    <!-- 已上传结算文件支持多选删除、预览和下载。 -->
     <form method="post" style="margin-top: 10px;">
       {% csrf_token %}
       <div class="file-list">
@@ -47,6 +50,7 @@
   </section>
 
   <script>
+    // 选中文件后立即提交上传表单，减少额外确认步骤。
     const settlementFilesInput = document.querySelector("#settlementFiles");
     const settlementUploadForm = document.querySelector("#settlementUploadForm");
 

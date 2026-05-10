@@ -24,6 +24,7 @@ from .models import AppSetting, Contract, ContractFile, InvoiceRecord, Maintenan
 
 # 回收站内合同默认保留 7 天。
 TRASH_RETENTION_DAYS = 7
+# 记录类型到收入/支出方向的映射，统计图和总览卡片都依赖这里归类。
 INCOME_TYPES = {"开票", "开据"}
 EXPENSE_TYPES = {"收票", "收据"}
 TYPE_SIDE = {
@@ -36,11 +37,57 @@ TYPE_SIDE = {
 
 # 判断当前请求是否处于管理员模式。
 def is_admin_mode(request) -> bool:
-    return bool(request.user.is_authenticated and not request.session.get("guest_mode", False))
+    return bool(
+        request.user.is_authenticated
+        and request.user.is_staff
+        and not request.session.get("guest_mode", False)
+        and not request.session.get("normal_mode", False)
+    )
 
 
-# 限制只有管理员模式才能访问写入类页面。
+# 判断当前请求是否处于普通用户模式。
+def is_normal_mode(request) -> bool:
+    return bool(
+        request.user.is_authenticated
+        and not request.user.is_staff
+        and request.session.get("normal_mode", False)
+        and not request.session.get("guest_mode", False)
+    )
+
+
+# 普通用户继承管理员的大部分操作，只屏蔽发票/收据类新增入口。
+def can_manage(request) -> bool:
+    return is_admin_mode(request) or is_normal_mode(request)
+
+
+def can_add_money_records(request) -> bool:
+    return is_admin_mode(request)
+
+
+# 限制只有管理员或普通用户模式才能访问写入类页面。
 def admin_required(view_func):
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if can_manage(request):
+            return view_func(request, *args, **kwargs)
+        return redirect("contracts:login")
+
+    return wrapper
+
+
+# 发票/收据类记录只允许管理员新增，普通用户和游客都不展示也不能直连。
+def money_record_required(view_func):
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if can_add_money_records(request):
+            return view_func(request, *args, **kwargs)
+        return redirect("contracts:login")
+
+    return wrapper
+
+
+# 账号密码等真正的管理员能力不下放给普通用户。
+def true_admin_required(view_func):
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
         if is_admin_mode(request):
@@ -54,7 +101,10 @@ def admin_required(view_func):
 def context_with_auth(request, context: dict | None = None) -> dict:
     data = context or {}
     data["is_admin_mode"] = is_admin_mode(request)
+    data["is_normal_mode"] = is_normal_mode(request)
     data["is_guest_mode"] = bool(request.session.get("guest_mode", False))
+    data["can_manage"] = can_manage(request)
+    data["can_add_money_records"] = can_add_money_records(request)
     return data
 
 
@@ -201,6 +251,7 @@ def save_typed_records_from_request(request, contract: Contract, record_model_by
 
 
 def income_expense_totals(invoice_records, payment_records) -> tuple[Decimal, Decimal]:
+    # 兼容发票和收据两张表，按 record_type 而不是模型名判断收入/支出。
     income_total = Decimal("0")
     expense_total = Decimal("0")
     for record in invoice_records:
@@ -219,14 +270,17 @@ def income_expense_totals(invoice_records, payment_records) -> tuple[Decimal, De
 
 
 def record_amount_for_stats(record) -> Decimal:
+    # 实际金额优先用于统计；未填实际金额时回退到票面金额。
     return record.actual_amount if record.actual_amount is not None else record.amount
 
 
 def record_side(record) -> str:
+    # 旧数据可能没有明确类型，按模型给出兜底方向。
     return TYPE_SIDE.get(record.record_type, "income" if isinstance(record, InvoiceRecord) else "expense")
 
 
 def add_income_expense(target: dict, record) -> None:
+    # 将单条记录累加到按日期/年份/月度汇总的目标字典。
     amount = record_amount_for_stats(record)
     if record_side(record) == "income":
         target["income"] = target.get("income", Decimal("0")) + amount
@@ -235,6 +289,7 @@ def add_income_expense(target: dict, record) -> None:
 
 
 def project_mode_labels(contract: Contract) -> dict:
+    # 不开发票的合同把“开票/收票”文案替换成“开据/收据”。
     has_invoice = contract.invoice_status != "不开票"
     return {
         "invoice_primary": "开票金额" if has_invoice else "开据金额",
@@ -247,6 +302,7 @@ def project_mode_labels(contract: Contract) -> dict:
 
 
 def project_mode_totals(records) -> dict:
+    # 项目统计弹窗需要同时展示票面金额和实际金额两组口径。
     totals = {
         "invoice_primary": Decimal("0"),
         "invoice_secondary": Decimal("0"),
@@ -261,6 +317,7 @@ def project_mode_totals(records) -> dict:
 
 
 def project_mode_chart_rows(rows: list[dict], records) -> list[dict]:
+    # 在已有时间轴行上叠加收入/支出的票面金额和实际金额。
     by_label = {row["label"]: row for row in rows}
     for row in rows:
         row.update(
@@ -709,11 +766,9 @@ def contract_stats_data(request, pk: int):
     )
 
 
-# 返回单个合同的维护保养记录月份日历数据。
+# 返回单个合同的类型记录月份日历数据。
 def maintenance_record_data(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
-    if contract.contract_type != "维保":
-        return JsonResponse({"error": "只有维保合同可以查看维护保养记录。"}, status=403)
     today = timezone.localdate()
     try:
         year = int(request.GET.get("year", today.year))
@@ -985,6 +1040,8 @@ def contract_list(request):
 # 渲染单个合同详情页面。
 def contract_detail(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    if is_normal_mode(request):
+        return redirect("contracts:maintenance_record_list", pk=contract.pk)
     primary_file = contract.latest_file
     context = context_with_auth(
         request,
@@ -1001,6 +1058,17 @@ def contract_detail(request, pk: int):
     return render(request, "contracts/contract_detail.html", context)
 
 
+@admin_required
+def contract_remark_update(request, pk: int):
+    # 详情页允许直接补充或修改合同备注，不必进入完整编辑表单。
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    if request.method == "POST":
+        contract.remark = request.POST.get("remark", "").strip()
+        contract.save(update_fields=["remark", "updated_at"])
+    next_url = request.POST.get("next") or reverse("contracts:contract_detail", args=[contract.pk])
+    return redirect(next_url)
+
+
 RECORD_MODEL_MAP = {
     "invoice": InvoiceRecord,
     "payment": PaymentRecord,
@@ -1009,6 +1077,7 @@ RECORD_MODEL_MAP = {
 
 
 def record_model_for_kind(kind: str):
+    # 前端提交的记录来源标记会映射到具体模型。
     return RECORD_MODEL_MAP.get(kind)
 
 
@@ -1058,12 +1127,31 @@ def record_file_update(request, kind: str, pk: int):
     return redirect("contracts:contract_detail", pk=record.contract_id)
 
 
+@admin_required
+def record_remark_update(request, kind: str, pk: int):
+    # 详情页记录备注允许原位编辑，保存后回到当前列表位置。
+    record_model = record_model_for_kind(kind)
+    if record_model is None:
+        return redirect("contracts:contract_list")
+    record = get_object_or_404(record_model, pk=pk, contract__is_deleted=False)
+    if request.method == "POST":
+        record.remark = request.POST.get("remark", "").strip()
+        record.save(update_fields=["remark", "updated_at"])
+    next_url = request.POST.get("next", "")
+    if next_url.startswith("/"):
+        return redirect(next_url)
+    return redirect("contracts:contract_detail", pk=record.contract_id)
+
+
 def maintenance_record_list(request, pk: int):
+    # 所有合同类型的扩展记录共用 MaintenanceRecord 表和同一个列表模板。
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    record_label = f"{contract.contract_type}记录"
     context = context_with_auth(
         request,
         {
             "contract": contract,
+            "record_label": record_label,
             "primary_file": contract.latest_file,
             "maintenance_records": contract.maintenancerecord_set.all(),
             "active_nav": "contracts",
@@ -1261,18 +1349,12 @@ def contract_delete(request, pk: int):
 @admin_required
 # 根据合同是否开票，进入开票或收票记录新增入口。
 def record_add(request, pk: int):
-    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
-    context = context_with_auth(
-        request,
-        {
-            "contract": contract,
-            "active_nav": "contracts",
-        },
-    )
-    return render(request, "contracts/record_choice.html", context)
+    # 现在“添加记录”只负责进入合同类型扩展记录表单。
+    get_object_or_404(Contract, pk=pk, is_deleted=False)
+    return redirect("contracts:maintenance_record_create", pk=pk)
 
 
-@admin_required
+@money_record_required
 # 新增一批开票记录。
 def invoice_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
@@ -1301,7 +1383,7 @@ def invoice_record_create(request, pk: int):
     )
 
 
-@admin_required
+@money_record_required
 # 新增一批收票记录。
 def payment_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
@@ -1333,11 +1415,17 @@ def payment_record_create(request, pk: int):
 # 新增一批维护保养记录。
 def maintenance_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
-    if contract.contract_type != "维保":
-        return redirect("contracts:record_add", pk=pk)
     if request.method == "POST":
         if save_maintenance_records_from_request(request, contract):
             return redirect("contracts:contract_list")
+    record_titles = {
+        "维保": "新增维保记录",
+        "评估": "新增评估记录",
+        "检测": "新增检测记录",
+        "改造": "新增改造记录",
+        "新建": "新增新建记录",
+        "其他": "新增其他记录",
+    }
     return render(
         request,
         "contracts/record_form.html",
@@ -1345,12 +1433,12 @@ def maintenance_record_create(request, pk: int):
             request,
             {
                 "contract": contract,
-                "title": "新增维护保养记录",
+                "title": record_titles.get(contract.contract_type, f"新增{contract.contract_type}记录"),
                 "today": timezone.localdate(),
                 "month_field": True,
                 "form_kind": "maintenance",
                 "current_month": timezone.localdate().strftime("%Y-%m"),
-                "file_label": "维保文件",
+                "file_label": f"{contract.contract_type}文件",
                 "active_nav": "contracts",
             },
         ),
@@ -1411,7 +1499,7 @@ def settings_view(request):
     )
 
 
-@admin_required
+@true_admin_required
 # 修改当前管理员账号的登录密码。
 def password_change(request):
     if request.method == "POST":
@@ -1429,7 +1517,7 @@ def password_change(request):
     )
 
 
-# 处理管理员登录和游客模式进入。
+# 处理用户账号密码登录，并按账号身份自动进入管理员或普通用户模式。
 def login_view(request):
     if request.method == "POST":
         form = LoginForm(request.POST)
@@ -1439,11 +1527,13 @@ def login_view(request):
                 username=form.cleaned_data["username"],
                 password=form.cleaned_data["password"],
             )
-            if user is not None and user.is_staff:
+            if user is None:
+                form.add_error(None, "账号或密码不正确。")
+            else:
                 login(request, user)
                 request.session["guest_mode"] = False
+                request.session["normal_mode"] = not user.is_staff
                 return redirect("contracts:dashboard")
-            form.add_error(None, "账号或密码不正确，或该账号不是管理员。")
     else:
         form = LoginForm()
     return render(request, "contracts/login.html", {"form": form})
@@ -1453,7 +1543,13 @@ def login_view(request):
 def guest_login_view(request):
     logout(request)
     request.session["guest_mode"] = True
+    request.session["normal_mode"] = False
     return redirect("contracts:dashboard")
+
+
+# 普通用户现在使用账号密码登录，保留旧地址用于回到登录页。
+def normal_login_view(request):
+    return redirect("contracts:login")
 
 
 # 退出当前登录或游客会话。

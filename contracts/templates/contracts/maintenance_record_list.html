@@ -1,20 +1,24 @@
 {% extends "contracts/base.html" %}
 
-{% block title %}维护保养记录{% endblock %}
+{% block title %}{{ record_label }}{% endblock %}
 
 {% block content %}
   <div class="page-content detail-page">
     <h1 class="page-title">{{ contract.contract_name }}</h1>
 
+    <!-- 类型记录页顶部操作区：返回列表、编辑合同和必要时切回收支记录页。 -->
     <div class="toolbar detail-toolbar">
       <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
-      {% if is_admin_mode %}
+      {% if can_manage %}
         <a class="button primary" href="{% url 'contracts:contract_update' contract.id %}">编辑合同</a>
       {% endif %}
-      <a class="button success detail-maintenance-link" href="{% url 'contracts:contract_detail' contract.id %}">开票收票记录</a>
+      {% if not is_normal_mode %}
+        <a class="button success detail-maintenance-link" href="{% url 'contracts:contract_detail' contract.id %}">开票收票记录</a>
+      {% endif %}
     </div>
 
     <div class="detail-scroll">
+      <!-- 复用合同详情信息表，便于在记录页确认当前合同。 -->
       <section class="panel">
         <div class="summary">
           <span>合同编号：{{ contract.contract_number }}</span>
@@ -59,20 +63,35 @@
               <th>截止日期</th>
               <td>{{ contract.end_date|default:"" }}</td>
               <th>备注</th>
-              <td class="remark" title="{{ contract.remark|default:'' }}">{{ contract.remark|default:"" }}</td>
+              <td>
+                {% if can_manage %}
+                  <div class="inline-remark-editor">
+                    <span class="inline-remark-display {% if not contract.remark %}empty{% endif %}" title="{{ contract.remark|default:'' }}">{{ contract.remark|default:"点击添加备注" }}</span>
+                    <form class="inline-remark-form" method="post" action="{% url 'contracts:contract_remark_update' contract.id %}">
+                      {% csrf_token %}
+                      <input type="hidden" name="next" value="{{ request.path }}">
+                      <textarea name="remark">{{ contract.remark|default:"" }}</textarea>
+                      <button class="button primary" type="submit">保存</button>
+                    </form>
+                  </div>
+                {% else %}
+                  <span class="remark" title="{{ contract.remark|default:'' }}">{{ contract.remark|default:"" }}</span>
+                {% endif %}
+              </td>
             </tr>
           </tbody>
         </table>
       </section>
 
+      <!-- 当前合同类型的扩展记录表，后续新增类型仍复用这块结构。 -->
       <section class="record-grid maintenance-record-grid-full">
         <div class="chart-area">
           <form method="post" action="{% url 'contracts:record_delete' contract.id %}">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.path }}">
             <div class="record-panel-title">
-              <h2>维护保养记录</h2>
-              {% if is_admin_mode and maintenance_records %}
+              <h2>{{ record_label }}</h2>
+              {% if can_manage and maintenance_records %}
                 <button class="button danger record-delete-button" type="submit">删除</button>
               {% endif %}
             </div>
@@ -84,7 +103,7 @@
                     <col class="month-colgroup">
                     <col class="remark-colgroup">
                     <col class="file-colgroup">
-                    {% if is_admin_mode %}<col class="select-colgroup">{% endif %}
+                    {% if can_manage %}<col class="select-colgroup">{% endif %}
                   </colgroup>
                   <thead>
                     <tr>
@@ -92,7 +111,7 @@
                       <th>月份</th>
                       <th>备注</th>
                       <th>维保文件</th>
-                      {% if is_admin_mode %}<th class="select-col"><input type="checkbox" data-record-select-all></th>{% endif %}
+                      {% if can_manage %}<th class="select-col"><input type="checkbox" data-record-select-all></th>{% endif %}
                     </tr>
                   </thead>
                   <tbody>
@@ -100,7 +119,21 @@
                       <tr>
                         <td>{{ record.record_date }}</td>
                         <td>{{ record.month }}</td>
-                        <td class="remark" title="{{ record.remark }}">{{ record.remark }}</td>
+                        <td class="remark">
+                          {% if can_manage %}
+                            <div class="inline-remark-editor">
+                              <span class="inline-remark-display {% if not record.remark %}empty{% endif %}" title="{{ record.remark }}">{{ record.remark|default:"点击添加备注" }}</span>
+                              <form class="inline-remark-form" method="post" action="{% url 'contracts:record_remark_update' 'maintenance' record.id %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ request.path }}">
+                                <textarea name="remark">{{ record.remark }}</textarea>
+                                <button class="button primary" type="submit">保存</button>
+                              </form>
+                            </div>
+                          {% else %}
+                            <span title="{{ record.remark }}">{{ record.remark }}</span>
+                          {% endif %}
+                        </td>
                         <td>
                           <button
                             class="button file-preview-button record-file-trigger"
@@ -110,7 +143,7 @@
                             data-file-name="{% if record.file %}{{ record.file.name }}{% else %}未上传{% endif %}"
                           ><span class="file-preview-name">{% if record.file %}{{ record.file.name }}{% else %}上传文件{% endif %}</span></button>
                         </td>
-                        {% if is_admin_mode %}<td class="select-col"><input type="checkbox" name="record_ids" value="maintenance:{{ record.id }}"></td>{% endif %}
+                        {% if can_manage %}<td class="select-col"><input type="checkbox" name="record_ids" value="maintenance:{{ record.id }}"></td>{% endif %}
                       </tr>
                     {% endfor %}
                   </tbody>
@@ -125,6 +158,7 @@
     </div>
   </div>
 
+  <!-- 单条类型记录的附件弹窗，上传新文件会覆盖旧文件。 -->
   <div class="modal-backdrop" id="recordFileModal" hidden>
     <div class="modal-card record-file-modal-card" role="dialog" aria-modal="true" aria-labelledby="recordFileModalTitle">
       <div class="modal-header" id="recordFileModalTitle">记录文件</div>
@@ -133,7 +167,7 @@
         <input type="hidden" name="next" value="{{ request.path }}">
         <input id="recordFileInput" name="file" type="file" hidden>
         <div class="modal-actions record-file-actions">
-          {% if is_admin_mode %}
+          {% if can_manage %}
             <label class="button primary" for="recordFileInput">上传文件</label>
           {% endif %}
           <a class="button" id="recordFileDownload" href="#" download>下载文件</a>
@@ -144,6 +178,7 @@
   </div>
 
   <script>
+    // 附件按钮只展示文件名，完整路径仍保留在下载地址中。
     function baseFileName(value) {
       return (value || "未上传").split(/[\\/]/).pop();
     }
@@ -153,6 +188,7 @@
       item.title = item.textContent;
     });
 
+    // 全选只作用于本页的类型记录表。
     document.querySelectorAll("[data-record-select-all]").forEach((checkbox) => {
       checkbox.addEventListener("change", () => {
         const form = checkbox.closest("form");
@@ -162,6 +198,7 @@
       });
     });
 
+    // 避免没有选择记录时误触删除提交。
     document.querySelectorAll(".record-delete-button").forEach((button) => {
       button.addEventListener("click", (event) => {
         const form = button.closest("form");
@@ -178,6 +215,7 @@
     const recordFileCancel = document.querySelector("#recordFileCancel");
     const recordFileInput = document.querySelector("#recordFileInput");
 
+    // 打开附件弹窗时绑定当前记录对应的上传地址和下载地址。
     document.querySelectorAll(".record-file-trigger").forEach((button) => {
       button.addEventListener("click", () => {
         const downloadUrl = button.dataset.downloadUrl || "";

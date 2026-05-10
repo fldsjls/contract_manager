@@ -65,12 +65,11 @@
                 {% if can_manage %}
                   <div class="inline-remark-editor">
                     <span class="inline-remark-display {% if not contract.remark %}empty{% endif %}" title="{{ contract.remark|default:'' }}">{{ contract.remark|default:"点击添加备注" }}</span>
-                    <form class="inline-remark-form" method="post" action="{% url 'contracts:contract_remark_update' contract.id %}">
+                    <div class="inline-remark-form" data-action="{% url 'contracts:contract_remark_update' contract.id %}" hidden>
                       {% csrf_token %}
                       <input type="hidden" name="next" value="{{ request.path }}">
                       <textarea name="remark">{{ contract.remark|default:"" }}</textarea>
-                      <button class="button primary" type="submit">保存</button>
-                    </form>
+                    </div>
                   </div>
                 {% else %}
                   <span class="remark" title="{{ contract.remark|default:'' }}">{{ contract.remark|default:"" }}</span>
@@ -126,12 +125,11 @@
                           {% if can_manage %}
                             <div class="inline-remark-editor">
                               <span class="inline-remark-display {% if not record.remark %}empty{% endif %}" title="{{ record.remark }}">{{ record.remark|default:"点击添加备注" }}</span>
-                              <form class="inline-remark-form" method="post" action="{% url 'contracts:record_remark_update' 'invoice' record.id %}">
+                              <div class="inline-remark-form" data-action="{% url 'contracts:record_remark_update' 'invoice' record.id %}" hidden>
                                 {% csrf_token %}
                                 <input type="hidden" name="next" value="{{ request.path }}">
                                 <textarea name="remark">{{ record.remark }}</textarea>
-                                <button class="button primary" type="submit">保存</button>
-                              </form>
+                              </div>
                             </div>
                           {% else %}
                             <span title="{{ record.remark }}">{{ record.remark }}</span>
@@ -199,12 +197,11 @@
                           {% if can_manage %}
                             <div class="inline-remark-editor">
                               <span class="inline-remark-display {% if not record.remark %}empty{% endif %}" title="{{ record.remark }}">{{ record.remark|default:"点击添加备注" }}</span>
-                              <form class="inline-remark-form" method="post" action="{% url 'contracts:record_remark_update' 'payment' record.id %}">
+                              <div class="inline-remark-form" data-action="{% url 'contracts:record_remark_update' 'payment' record.id %}" hidden>
                                 {% csrf_token %}
                                 <input type="hidden" name="next" value="{{ request.path }}">
                                 <textarea name="remark">{{ record.remark }}</textarea>
-                                <button class="button primary" type="submit">保存</button>
-                              </form>
+                              </div>
                             </div>
                           {% else %}
                             <span title="{{ record.remark }}">{{ record.remark }}</span>

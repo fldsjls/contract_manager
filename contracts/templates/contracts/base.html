@@ -281,7 +281,7 @@
     }
     .range-modal-card {
       width: min(420px, calc(100vw - 48px));
-      height: 300px;
+      height: auto;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -302,7 +302,7 @@
       white-space: normal;
     }
     .range-modal-card .modal-actions {
-      margin-top: auto;
+      margin-top: 2px;
       padding: 0 20px 18px;
     }
     .range-section {
@@ -990,20 +990,19 @@
       text-overflow: ellipsis;
     }
     .inline-remark-form {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: center;
+      display: block;
       width: 100%;
     }
     .inline-remark-editor {
       min-width: 0;
+      width: 100%;
     }
     .inline-remark-display {
       display: block;
       width: 100%;
       min-height: 20px;
-      padding: 4px 0;
+      padding: 4px 6px;
+      border: 1px solid transparent;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -1011,24 +1010,24 @@
     }
     .inline-remark-display.empty {
       color: #98a2b3;
+      text-align: center;
     }
-    .inline-remark-editor .inline-remark-form {
-      display: none;
+    .inline-remark-editor:not(.editing) .inline-remark-form {
+      display: none !important;
     }
     .inline-remark-editor.editing .inline-remark-display {
-      display: none;
+      display: none !important;
     }
     .inline-remark-editor.editing .inline-remark-form {
-      display: grid;
+      display: block !important;
     }
     .inline-remark-form textarea {
       min-height: 38px;
       max-height: 96px;
       resize: vertical;
       line-height: 1.5;
-    }
-    .inline-remark-form .button {
-      white-space: nowrap;
+      width: 100%;
+      display: block;
     }
     .detail-page .record-grid {
       flex: 1;
@@ -1257,22 +1256,101 @@
     const adminLoginConfirm = document.querySelector("#adminLoginConfirm");
     const adminOnlyLinks = document.querySelectorAll(".requires-admin-login");
 
+    function closeInlineRemarkEditor(editor) {
+      const display = editor.querySelector(".inline-remark-display");
+      const panel = editor.querySelector(".inline-remark-form");
+      editor.classList.remove("editing");
+      if (display) {
+        display.hidden = false;
+      }
+      if (panel) {
+        panel.hidden = true;
+      }
+    }
+
+    function openInlineRemarkEditor(editor) {
+      const display = editor.querySelector(".inline-remark-display");
+      const panel = editor.querySelector(".inline-remark-form");
+      editor.classList.add("editing");
+      if (display) {
+        display.hidden = true;
+      }
+      if (panel) {
+        panel.hidden = false;
+      }
+    }
+
+    function getInlineRemarkToken(editor) {
+      const tokenInput = editor.querySelector("input[name='csrfmiddlewaretoken']");
+      return tokenInput ? tokenInput.value : "";
+    }
+
+    async function saveInlineRemarkEditor(editor) {
+      const display = editor.querySelector(".inline-remark-display");
+      const panel = editor.querySelector(".inline-remark-form");
+      const textarea = editor.querySelector("textarea");
+      if (!display || !panel || !textarea || !panel.dataset.action) {
+        closeInlineRemarkEditor(editor);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("remark", textarea.value);
+      formData.append("next", window.location.pathname + window.location.search);
+
+      const response = await fetch(panel.dataset.action, {
+        method: "POST",
+        body: formData,
+        headers: {
+          "X-CSRFToken": getInlineRemarkToken(editor),
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const remark = textarea.value.trim();
+      display.textContent = remark || "点击添加备注";
+      display.title = remark;
+      display.classList.toggle("empty", !remark);
+      closeInlineRemarkEditor(editor);
+    }
+
     function initInlineRemarkEditors() {
       document.querySelectorAll(".inline-remark-editor").forEach((editor) => {
         const display = editor.querySelector(".inline-remark-display");
         const textarea = editor.querySelector("textarea");
-        if (!display || !textarea) {
+        const panel = editor.querySelector(".inline-remark-form");
+        if (!display || !textarea || !panel) {
           return;
         }
+        closeInlineRemarkEditor(editor);
         display.addEventListener("click", (event) => {
           event.stopPropagation();
-          editor.classList.add("editing");
+          document.querySelectorAll(".inline-remark-editor.editing").forEach((item) => {
+            if (item !== editor) {
+              closeInlineRemarkEditor(item);
+            }
+          });
+          openInlineRemarkEditor(editor);
           textarea.focus();
         });
         textarea.addEventListener("keydown", (event) => {
-          if (event.key === "Escape") {
-            editor.classList.remove("editing");
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            saveInlineRemarkEditor(editor);
+          } else if (event.key === "Escape") {
+            closeInlineRemarkEditor(editor);
           }
+        });
+        textarea.addEventListener("blur", () => {
+          setTimeout(() => {
+            if (!editor.contains(document.activeElement)) {
+              closeInlineRemarkEditor(editor);
+            }
+          }, 0);
         });
         editor.addEventListener("click", (event) => {
           event.stopPropagation();
@@ -1281,6 +1359,14 @@
     }
 
     initInlineRemarkEditors();
+
+    document.addEventListener("pointerdown", (event) => {
+      document.querySelectorAll(".inline-remark-editor.editing").forEach((editor) => {
+        if (!editor.contains(event.target)) {
+          closeInlineRemarkEditor(editor);
+        }
+      });
+    }, true);
 
     function closeAdminLoginModal() {
       adminLoginModal.hidden = true;
@@ -1315,6 +1401,9 @@
     }
 
     document.addEventListener("click", (event) => {
+      document.querySelectorAll(".inline-remark-editor.editing").forEach((editor) => {
+        closeInlineRemarkEditor(editor);
+      });
       const keepSelection = event.target.closest(
         "a, button, input, select, textarea, label, .selectable-row, [data-keep-selection]"
       );

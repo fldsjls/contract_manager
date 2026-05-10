@@ -12,6 +12,9 @@
     <!-- 搜索栏按合同名称、编号和甲方名称过滤列表。 -->
     <form class="search-toolbar" method="get">
       <input class="search-input" name="q" value="{{ keyword }}" placeholder="搜索合同名称、合同编号、甲方名称">
+      <input name="contract_type" type="hidden" value="{{ contract_type_filter }}">
+      <input name="invoice_status" type="hidden" value="{{ invoice_status_filter }}">
+      <input name="status" type="hidden" value="{{ status_filter }}">
       <button type="submit">搜索</button>
       <a class="button" href="{% url 'contracts:contract_list' %}">重置</a>
     </form>
@@ -40,6 +43,8 @@
       {% endif %}
       <span class="toolbar-spacer"></span>
       {% if can_manage %}
+        <button class="button{% if has_filters %} primary{% endif %}" id="filterButton" type="button">筛选</button>
+        <a class="button" href="{% url 'contracts:contract_list' %}{% if keyword %}?q={{ keyword|urlencode }}{% endif %}">清除筛选</a>
         <button class="button danger row-action" id="deleteButton" type="button" data-url-template="{% url 'contracts:contract_delete' 0 %}" aria-disabled="true">删除合同</button>
       {% endif %}
     </div>
@@ -77,16 +82,16 @@
           <thead>
             <tr>
               <th>序号</th>
-              <th><a class="sort-link {% if sort == 'contract_name' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=contract_name&direction={% if sort == 'contract_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同名称</a></th>
-              <th><a class="sort-link {% if sort == 'contract_number' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=contract_number&direction={% if sort == 'contract_number' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同编号</a></th>
-              <th><a class="sort-link {% if sort == 'contract_type' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=contract_type&direction={% if sort == 'contract_type' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同类型</a></th>
-              <th><a class="sort-link {% if sort == 'party_name' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=party_name&direction={% if sort == 'party_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">甲方名称</a></th>
-              <th><a class="sort-link {% if sort == 'amount' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=amount&direction={% if sort == 'amount' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同金额</a></th>
-              <th><a class="sort-link {% if sort == 'invoice_status' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=invoice_status&direction={% if sort == 'invoice_status' and direction == 'asc' %}desc{% else %}asc{% endif %}">是否开票</a></th>
-              <th><a class="sort-link {% if sort == 'start_date' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=start_date&direction={% if sort == 'start_date' and direction == 'asc' %}desc{% else %}asc{% endif %}">开始日期</a></th>
-              <th><a class="sort-link {% if sort == 'end_date' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=end_date&direction={% if sort == 'end_date' and direction == 'asc' %}desc{% else %}asc{% endif %}">截止日期</a></th>
-              <th><a class="sort-link {% if sort == 'payment_rate' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=payment_rate&direction={% if sort == 'payment_rate' and direction == 'asc' %}desc{% else %}asc{% endif %}">收款率</a></th>
-              <th><a class="sort-link {% if sort == 'status' %}active {{ direction }}{% endif %}" href="?q={{ keyword|urlencode }}&sort=status&direction={% if sort == 'status' and direction == 'asc' %}desc{% else %}asc{% endif %}">状态</a></th>
+              <th><a class="sort-link {% if sort == 'contract_name' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_name&direction={% if sort == 'contract_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同名称</a></th>
+              <th><a class="sort-link {% if sort == 'contract_number' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_number&direction={% if sort == 'contract_number' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同编号</a></th>
+              <th><a class="sort-link {% if sort == 'contract_type' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_type&direction={% if sort == 'contract_type' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同类型</a></th>
+              <th><a class="sort-link {% if sort == 'party_name' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=party_name&direction={% if sort == 'party_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">甲方名称</a></th>
+              <th><a class="sort-link {% if sort == 'amount' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=amount&direction={% if sort == 'amount' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同金额</a></th>
+              <th><a class="sort-link {% if sort == 'invoice_status' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=invoice_status&direction={% if sort == 'invoice_status' and direction == 'asc' %}desc{% else %}asc{% endif %}">是否开票</a></th>
+              <th><a class="sort-link {% if sort == 'start_date' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=start_date&direction={% if sort == 'start_date' and direction == 'asc' %}desc{% else %}asc{% endif %}">开始日期</a></th>
+              <th><a class="sort-link {% if sort == 'end_date' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=end_date&direction={% if sort == 'end_date' and direction == 'asc' %}desc{% else %}asc{% endif %}">截止日期</a></th>
+              <th><a class="sort-link {% if sort == 'payment_rate' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=payment_rate&direction={% if sort == 'payment_rate' and direction == 'asc' %}desc{% else %}asc{% endif %}">收款率</a></th>
+              <th><a class="sort-link {% if sort == 'status' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=status&direction={% if sort == 'status' and direction == 'asc' %}desc{% else %}asc{% endif %}">状态</a></th>
               <th>文件</th>
             </tr>
           </thead>
@@ -140,6 +145,53 @@
     </div>
   </div>
 
+  <!-- 合同筛选弹窗，提交后使用 GET 参数刷新当前列表。 -->
+  <div class="modal-backdrop" id="filterModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="filterModalTitle">
+      <div class="modal-header" id="filterModalTitle">筛选合同</div>
+      <form method="get">
+        <input name="q" type="hidden" value="{{ keyword }}">
+        <input name="sort" type="hidden" value="{{ sort }}">
+        <input name="direction" type="hidden" value="{{ direction }}">
+        <div class="modal-body" style="white-space: normal;">
+          <div class="form-grid" style="grid-template-columns: 1fr; gap: 14px;">
+            <div>
+              <label for="filterContractType">合同类型</label>
+              <select id="filterContractType" name="contract_type">
+                <option value="">全部类型</option>
+                {% for value, label in contract_type_choices %}
+                  <option value="{{ value }}" {% if contract_type_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="filterInvoiceStatus">是否开票</label>
+              <select id="filterInvoiceStatus" name="invoice_status">
+                <option value="">全部</option>
+                {% for value, label in invoice_status_choices %}
+                  <option value="{{ value }}" {% if invoice_status_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="filterStatus">状态</label>
+              <select id="filterStatus" name="status">
+                <option value="">全部状态</option>
+                {% for value in status_choices %}
+                  <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" id="filterModalCancel" type="button">取消</button>
+          <button class="button primary" type="submit">应用</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- 项目统计范围弹窗，样式和统计总览中的范围选择一致。 -->
   <div class="modal-backdrop" id="projectRangeModal" hidden>
     <div class="modal-card range-modal-card" role="dialog" aria-modal="true" aria-labelledby="projectRangeModalTitle">
@@ -182,6 +234,7 @@
     const moneyRecordButton = document.querySelector("#moneyRecordButton");
     const statsButton = document.querySelector("#statsButton");
     const deleteButton = document.querySelector("#deleteButton");
+    const filterButton = document.querySelector("#filterButton");
     const deleteForm = document.querySelector("#deleteForm");
     const centerModal = document.querySelector("#centerModal");
     const centerModalCard = document.querySelector("#centerModalCard");
@@ -190,10 +243,13 @@
     const centerModalLeftActions = document.querySelector("#centerModalLeftActions");
     const centerModalCancel = document.querySelector("#centerModalCancel");
     const centerModalConfirm = document.querySelector("#centerModalConfirm");
+    const filterModal = document.querySelector("#filterModal");
+    const filterModalCancel = document.querySelector("#filterModalCancel");
     const projectRangeModal = document.querySelector("#projectRangeModal");
     const projectRangeCancel = document.querySelector("#projectRangeCancel");
     const projectRangeApply = document.querySelector("#projectRangeApply");
     const projectPeriodOptions = document.querySelectorAll(".project-period-option");
+    const projectRangeControlSpace = document.querySelector("#projectRangeModal .range-control-space");
     const projectYearControl = document.querySelector("#projectYearControl");
     const projectMonthControl = document.querySelector("#projectMonthControl");
     const projectYearLabel = document.querySelector("#projectYearLabel");
@@ -336,6 +392,21 @@
             deleteForm.submit();
           },
         });
+      });
+    }
+
+    if (filterButton && filterModal) {
+      filterButton.addEventListener("click", () => {
+        filterModal.hidden = false;
+        filterModal.querySelector("select").focus();
+      });
+      filterModalCancel.addEventListener("click", () => {
+        filterModal.hidden = true;
+      });
+      filterModal.addEventListener("click", (event) => {
+        if (event.target === filterModal) {
+          filterModal.hidden = true;
+        }
       });
     }
 
@@ -499,6 +570,9 @@
     function updateProjectRangeLabels() {
       projectYearLabel.textContent = `${projectStatsState.year - 11} - ${projectStatsState.year} 年`;
       projectMonthLabel.textContent = `${projectStatsState.year} 年`;
+      projectRangeControlSpace.style.visibility = projectStatsState.period === "all" ? "hidden" : "visible";
+      projectRangeControlSpace.style.pointerEvents = projectStatsState.period === "all" ? "none" : "auto";
+      projectRangeControlSpace.style.display = "flex";
       projectYearControl.style.display = projectStatsState.period === "year" ? "flex" : "none";
       projectMonthControl.style.display = projectStatsState.period === "month" ? "flex" : "none";
       projectPeriodOptions.forEach((button) => {

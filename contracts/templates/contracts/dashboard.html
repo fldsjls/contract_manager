@@ -171,6 +171,7 @@
     const monthInput = document.querySelector("#monthInput");
     const yearControl = document.querySelector("#yearControl");
     const monthControl = document.querySelector("#monthControl");
+    const rangeControlSpace = document.querySelector("#rangeModal .range-control-space");
     const yearLabel = document.querySelector("#yearLabel");
     const monthLabel = document.querySelector("#monthLabel");
     const periodOptions = document.querySelectorAll(".period-option");
@@ -180,6 +181,9 @@
       const year = Number.parseInt(yearInput.value, 10);
       yearLabel.textContent = `${year - 11} - ${year} 年`;
       monthLabel.textContent = `${year} 年`;
+      rangeControlSpace.style.visibility = periodInput.value === "all" ? "hidden" : "visible";
+      rangeControlSpace.style.pointerEvents = periodInput.value === "all" ? "none" : "auto";
+      rangeControlSpace.style.display = "flex";
       yearControl.style.display = periodInput.value === "year" ? "flex" : "none";
       monthControl.style.display = periodInput.value === "month" ? "flex" : "none";
       periodOptions.forEach((button) => {

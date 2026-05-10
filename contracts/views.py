@@ -988,6 +988,9 @@ def dashboard(request):
 def contract_list(request):
     purge_expired_trash()
     keyword = request.GET.get("q", "").strip()
+    filter_contract_type = request.GET.get("contract_type", "").strip()
+    filter_invoice_status = request.GET.get("invoice_status", "").strip()
+    filter_status = request.GET.get("status", "").strip()
     sort = request.GET.get("sort", "id").strip()
     direction = request.GET.get("direction", "asc").strip()
     if direction not in ("asc", "desc"):
@@ -1012,6 +1015,26 @@ def contract_list(request):
             | Q(contract_number__icontains=keyword)
             | Q(party_name__icontains=keyword)
         )
+    valid_contract_types = {value for value, _ in Contract.CONTRACT_TYPES}
+    valid_invoice_statuses = {value for value, _ in Contract.INVOICE_STATUS}
+    status_choices = ["进行中", "即将到期", "已到期"]
+    if filter_contract_type in valid_contract_types:
+        contracts = contracts.filter(contract_type=filter_contract_type)
+    else:
+        filter_contract_type = ""
+    if filter_invoice_status in valid_invoice_statuses:
+        contracts = contracts.filter(invoice_status=filter_invoice_status)
+    else:
+        filter_invoice_status = ""
+    today = timezone.localdate()
+    if filter_status == "已到期":
+        contracts = contracts.filter(end_date__lt=today)
+    elif filter_status == "即将到期":
+        contracts = contracts.filter(end_date__gte=today, end_date__lte=today + timedelta(days=30))
+    elif filter_status == "进行中":
+        contracts = contracts.filter(Q(end_date__isnull=True) | Q(end_date__gt=today + timedelta(days=30)))
+    else:
+        filter_status = ""
     if sort in sort_fields:
         prefix = "-" if direction == "desc" else ""
         contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
@@ -1021,6 +1044,9 @@ def contract_list(request):
     contracts = list(contracts)
     if sort == "payment_rate":
         contracts.sort(key=lambda item: item.payment_rate, reverse=direction == "desc")
+    query_params = request.GET.copy()
+    query_params.pop("sort", None)
+    query_params.pop("direction", None)
     context = context_with_auth(
         request,
         {
@@ -1030,6 +1056,14 @@ def contract_list(request):
             "direction": direction,
             "total_amount": total_amount,
             "contract_count": contract_count,
+            "contract_type_filter": filter_contract_type,
+            "invoice_status_filter": filter_invoice_status,
+            "status_filter": filter_status,
+            "contract_type_choices": Contract.CONTRACT_TYPES,
+            "invoice_status_choices": Contract.INVOICE_STATUS,
+            "status_choices": status_choices,
+            "has_filters": bool(filter_contract_type or filter_invoice_status or filter_status),
+            "query_base": query_params.urlencode(),
             "expiring_contracts": expiring_contract_queryset(),
             "active_nav": "contracts",
         },

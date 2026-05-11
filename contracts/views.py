@@ -1,14 +1,19 @@
 from datetime import timedelta
 from decimal import Decimal
 from functools import wraps
+from html import escape
+import io
 import json
+import os
 from pathlib import Path
+import re
 import socket
+import zipfile
 
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.forms import PasswordChangeForm
 from django.db.models import Q, Sum
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -19,7 +24,16 @@ from .forms import (
     LoginForm,
     default_contract_number,
 )
-from .models import AppSetting, Contract, ContractFile, InvoiceRecord, MaintenanceRecord, PaymentRecord, SettlementFile
+from .models import (
+    AppSetting,
+    Contract,
+    ContractFile,
+    InvoiceRecord,
+    MaintenanceRecord,
+    PaymentRecord,
+    SettlementFile,
+    safe_project_folder_name,
+)
 
 
 # 回收站内合同默认保留 7 天。
@@ -118,6 +132,26 @@ def delete_file_from_storage(file_field) -> None:
         return
     if path.exists() and path.is_file():
         path.unlink()
+
+
+def safe_folder_name(value: str, fallback: str = "未命名项目") -> str:
+    # Windows 文件夹名不能包含部分特殊字符，统一替换后再用于外部图片目录。
+    safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value or "").strip(" ._")
+    return safe_name or fallback
+
+
+def contract_image_folder(contract: Contract) -> Path:
+    # 图片查看使用独立根目录，并按“合同类型/合同名称”分层存放。
+    root_path = AppSetting.current().image_root_path.strip() or AppSetting._meta.get_field("image_root_path").default
+    contract_type_folder = safe_folder_name(contract.contract_type, "未分类")
+    return Path(root_path) / contract_type_folder / safe_project_folder_name(contract)
+
+
+def ensure_contract_image_folder(contract: Contract) -> Path:
+    # 新建合同和点击图片查看时都保证目标文件夹已经存在。
+    folder = contract_image_folder(contract)
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
 
 
 # 保存合同附件，必要时按系统设置替换旧文件。
@@ -984,23 +1018,25 @@ def dashboard(request):
     return render(request, "contracts/dashboard.html", context)
 
 
-# 渲染合同列表页面，并处理搜索和表头排序。
-def contract_list(request):
-    purge_expired_trash()
+def contracts_for_list_request(request):
+    # 合同列表和 Excel 导出共用这一套搜索、筛选、排序规则，避免两处结果不一致。
     keyword = request.GET.get("q", "").strip()
     filter_contract_type = request.GET.get("contract_type", "").strip()
     filter_invoice_status = request.GET.get("invoice_status", "").strip()
     filter_status = request.GET.get("status", "").strip()
+    filter_responsible_person = request.GET.get("responsible_person", "").strip()
     sort = request.GET.get("sort", "id").strip()
     direction = request.GET.get("direction", "asc").strip()
     if direction not in ("asc", "desc"):
         direction = "asc"
+
     sort_fields = {
         "id": "id",
         "contract_name": "contract_name",
         "contract_number": "contract_number",
         "contract_type": "contract_type",
         "party_name": "party_name",
+        "responsible_person": "responsible_person",
         "amount": "amount",
         "invoice_status": "invoice_status",
         "start_date": "start_date",
@@ -1014,6 +1050,160 @@ def contract_list(request):
             Q(contract_name__icontains=keyword)
             | Q(contract_number__icontains=keyword)
             | Q(party_name__icontains=keyword)
+            | Q(responsible_person__icontains=keyword)
+        )
+
+    valid_contract_types = {value for value, _ in Contract.CONTRACT_TYPES}
+    valid_invoice_statuses = {value for value, _ in Contract.INVOICE_STATUS}
+    if filter_contract_type in valid_contract_types:
+        contracts = contracts.filter(contract_type=filter_contract_type)
+    if filter_invoice_status in valid_invoice_statuses:
+        contracts = contracts.filter(invoice_status=filter_invoice_status)
+    if filter_responsible_person:
+        contracts = contracts.filter(responsible_person__icontains=filter_responsible_person)
+
+    today = timezone.localdate()
+    if filter_status == "已到期":
+        contracts = contracts.filter(end_date__lt=today)
+    elif filter_status == "即将到期":
+        contracts = contracts.filter(end_date__gte=today, end_date__lte=today + timedelta(days=30))
+    elif filter_status == "进行中":
+        contracts = contracts.filter(Q(end_date__isnull=True) | Q(end_date__gt=today + timedelta(days=30)))
+
+    if sort in sort_fields:
+        prefix = "-" if direction == "desc" else ""
+        contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
+
+    contracts = list(contracts)
+    if sort == "payment_rate":
+        contracts.sort(key=lambda item: item.payment_rate, reverse=direction == "desc")
+    return contracts
+
+
+def xlsx_cell_ref(row_index: int, column_index: int) -> str:
+    # 把 1 开始的行列号转换为 Excel 的 A1 坐标。
+    letters = ""
+    while column_index:
+        column_index, remainder = divmod(column_index - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return f"{letters}{row_index}"
+
+
+def xlsx_text_cell(row_index: int, column_index: int, value, style: int | None = None) -> str:
+    # inlineStr 会让合同编号等长数字按文本显示，避免 Excel 自动转成科学计数法。
+    style_attr = f' s="{style}"' if style is not None else ""
+    text = escape(str(value or ""))
+    return (
+        f'<c r="{xlsx_cell_ref(row_index, column_index)}" t="inlineStr"{style_attr}>'
+        f"<is><t>{text}</t></is></c>"
+    )
+
+
+def xlsx_number_cell(row_index: int, column_index: int, value, style: int | None = None) -> str:
+    style_attr = f' s="{style}"' if style is not None else ""
+    number = Decimal(str(value or 0)).quantize(Decimal("0.01"))
+    return f'<c r="{xlsx_cell_ref(row_index, column_index)}"{style_attr}><v>{number}</v></c>'
+
+
+def build_contract_list_xlsx(headers, rows) -> bytes:
+    # 使用标准库拼装最小 XLSX 包，避免依赖用户虚拟环境中未安装的 openpyxl。
+    column_widths = [8, 30, 18, 12, 24, 14, 12, 14, 14, 16, 12, 12]
+    cols = "".join(
+        f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
+        for index, width in enumerate(column_widths, start=1)
+    )
+    header_cells = "".join(
+        xlsx_text_cell(1, index, header, style=1)
+        for index, header in enumerate(headers, start=1)
+    )
+    sheet_rows = [f'<row r="1">{header_cells}</row>']
+    for row_index, row in enumerate(rows, start=2):
+        cells = []
+        for column_index, value in enumerate(row, start=1):
+            if column_index == 6:
+                cells.append(xlsx_number_cell(row_index, column_index, value, style=2))
+            else:
+                cells.append(xlsx_text_cell(row_index, column_index, value))
+        sheet_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
+
+    worksheet_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <cols>{cols}</cols>
+  <sheetData>{"".join(sheet_rows)}</sheetData>
+</worksheet>"""
+    workbook_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="合同列表" sheetId="1" r:id="rId1"/></sheets>
+</workbook>"""
+    workbook_rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>"""
+    root_rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>"""
+    content_types = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>"""
+    styles_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font></fonts>
+  <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9EEF5"/><bgColor indexed="64"/></patternFill></fill></fills>
+  <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFCBD3DF"/></left><right style="thin"><color rgb="FFCBD3DF"/></right><top style="thin"><color rgb="FFCBD3DF"/></top><bottom style="thin"><color rgb="FFCBD3DF"/></bottom><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="2" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1"/></cellXfs>
+</styleSheet>"""
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as xlsx:
+        xlsx.writestr("[Content_Types].xml", content_types)
+        xlsx.writestr("_rels/.rels", root_rels)
+        xlsx.writestr("xl/workbook.xml", workbook_xml)
+        xlsx.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        xlsx.writestr("xl/worksheets/sheet1.xml", worksheet_xml)
+        xlsx.writestr("xl/styles.xml", styles_xml)
+    return output.getvalue()
+
+
+# 渲染合同列表页面，并处理搜索和表头排序。
+def contract_list(request):
+    purge_expired_trash()
+    keyword = request.GET.get("q", "").strip()
+    filter_contract_type = request.GET.get("contract_type", "").strip()
+    filter_invoice_status = request.GET.get("invoice_status", "").strip()
+    filter_status = request.GET.get("status", "").strip()
+    filter_responsible_person = request.GET.get("responsible_person", "").strip()
+    sort = request.GET.get("sort", "id").strip()
+    direction = request.GET.get("direction", "asc").strip()
+    if direction not in ("asc", "desc"):
+        direction = "asc"
+    sort_fields = {
+        "id": "id",
+        "contract_name": "contract_name",
+        "contract_number": "contract_number",
+        "contract_type": "contract_type",
+        "party_name": "party_name",
+        "responsible_person": "responsible_person",
+        "amount": "amount",
+        "invoice_status": "invoice_status",
+        "start_date": "start_date",
+        "end_date": "end_date",
+        "status": "end_date",
+        "payment_rate": "id",
+    }
+    contracts = Contract.objects.filter(is_deleted=False)
+    if keyword:
+        contracts = contracts.filter(
+            Q(contract_name__icontains=keyword)
+            | Q(contract_number__icontains=keyword)
+            | Q(party_name__icontains=keyword)
+            | Q(responsible_person__icontains=keyword)
         )
     valid_contract_types = {value for value, _ in Contract.CONTRACT_TYPES}
     valid_invoice_statuses = {value for value, _ in Contract.INVOICE_STATUS}
@@ -1026,6 +1216,8 @@ def contract_list(request):
         contracts = contracts.filter(invoice_status=filter_invoice_status)
     else:
         filter_invoice_status = ""
+    if filter_responsible_person:
+        contracts = contracts.filter(responsible_person__icontains=filter_responsible_person)
     today = timezone.localdate()
     if filter_status == "已到期":
         contracts = contracts.filter(end_date__lt=today)
@@ -1059,16 +1251,62 @@ def contract_list(request):
             "contract_type_filter": filter_contract_type,
             "invoice_status_filter": filter_invoice_status,
             "status_filter": filter_status,
+            "responsible_person_filter": filter_responsible_person,
             "contract_type_choices": Contract.CONTRACT_TYPES,
             "invoice_status_choices": Contract.INVOICE_STATUS,
             "status_choices": status_choices,
-            "has_filters": bool(filter_contract_type or filter_invoice_status or filter_status),
+            "has_filters": bool(filter_contract_type or filter_invoice_status or filter_status or filter_responsible_person),
             "query_base": query_params.urlencode(),
+            "export_query": request.GET.urlencode(),
             "expiring_contracts": expiring_contract_queryset(),
             "active_nav": "contracts",
         },
     )
     return render(request, "contracts/contract_list.html", context)
+
+
+def contract_list_export(request):
+    # 导出结果遵循当前合同列表的搜索、筛选和排序状态。
+    contracts = contracts_for_list_request(request)
+    headers = [
+        "序号",
+        "合同名称",
+        "合同编号",
+        "合同类型",
+        "甲方名称",
+        "合同金额",
+        "是否开票",
+        "开始日期",
+        "截止日期",
+        "负责人",
+        "状态",
+        "文件",
+    ]
+    rows = []
+    for index, contract in enumerate(contracts, start=1):
+        rows.append(
+            [
+                index,
+                contract.contract_name,
+                contract.contract_number,
+                contract.contract_type,
+                contract.party_name,
+                float(contract.amount or 0),
+                contract.invoice_status,
+                contract.start_date.strftime("%Y-%m-%d") if contract.start_date else "",
+                contract.end_date.strftime("%Y-%m-%d") if contract.end_date else "",
+                contract.responsible_person or "",
+                contract.status,
+                "已上传" if contract.latest_file or contract.file else "未上传",
+            ]
+        )
+
+    response = HttpResponse(
+        build_contract_list_xlsx(headers, rows),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="contract_list.xlsx"'
+    return response
 
 
 # 渲染单个合同详情页面。
@@ -1201,6 +1439,7 @@ def contract_create(request):
         form = ContractForm(request.POST, request.FILES)
         if form.is_valid():
             contract = form.save()
+            ensure_contract_image_folder(contract)
             save_contract_files(contract, request.FILES.getlist("files"))
             return redirect("contracts:contract_list")
     else:
@@ -1227,6 +1466,19 @@ def contract_create(request):
             },
         ),
     )
+
+
+@admin_required
+def contract_image_folder_open(request, pk: int):
+    # 打开当前合同在图片整理目录中的专属文件夹，便于直接查看 OCR 整理后的图片。
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    try:
+        folder = ensure_contract_image_folder(contract)
+        if os.name == "nt":
+            os.startfile(str(folder))
+    except OSError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+    return JsonResponse({"ok": True, "path": str(folder)})
 
 
 @admin_required

@@ -10,11 +10,15 @@
     <h1 class="page-title">合同列表</h1>
 
     <!-- 搜索栏按合同名称、编号和甲方名称过滤列表。 -->
-    <form class="search-toolbar" method="get">
-      <input class="search-input" name="q" value="{{ keyword }}" placeholder="搜索合同名称、合同编号、甲方名称">
+    <form class="search-toolbar" method="get" autocomplete="off">
+      <div class="search-preview-wrap">
+        <input class="search-input" id="contractSearchInput" name="q" value="{{ keyword }}" placeholder="搜索合同名称、合同编号、甲方名称、负责人">
+        <div class="search-preview" id="searchPreview" hidden></div>
+      </div>
       <input name="contract_type" type="hidden" value="{{ contract_type_filter }}">
       <input name="invoice_status" type="hidden" value="{{ invoice_status_filter }}">
       <input name="status" type="hidden" value="{{ status_filter }}">
+      <input name="responsible_person" type="hidden" value="{{ responsible_person_filter }}">
       <button type="submit">搜索</button>
       <a class="button" href="{% url 'contracts:contract_list' %}">重置</a>
     </form>
@@ -43,8 +47,10 @@
       {% endif %}
       <span class="toolbar-spacer"></span>
       {% if can_manage %}
+        <button class="button row-action" id="imageFolderButton" type="button" data-url-template="{% url 'contracts:contract_image_folder_open' 0 %}" aria-disabled="true">图片查看</button>
         <button class="button{% if has_filters %} primary{% endif %}" id="filterButton" type="button">筛选</button>
         <a class="button" href="{% url 'contracts:contract_list' %}{% if keyword %}?q={{ keyword|urlencode }}{% endif %}">清除筛选</a>
+        <a class="button" href="{% url 'contracts:contract_list_export' %}{% if export_query %}?{{ export_query }}{% endif %}">导出 Excel</a>
         <button class="button danger row-action" id="deleteButton" type="button" data-url-template="{% url 'contracts:contract_delete' 0 %}" aria-disabled="true">删除合同</button>
       {% endif %}
     </div>
@@ -90,7 +96,7 @@
               <th><a class="sort-link {% if sort == 'invoice_status' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=invoice_status&direction={% if sort == 'invoice_status' and direction == 'asc' %}desc{% else %}asc{% endif %}">是否开票</a></th>
               <th><a class="sort-link {% if sort == 'start_date' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=start_date&direction={% if sort == 'start_date' and direction == 'asc' %}desc{% else %}asc{% endif %}">开始日期</a></th>
               <th><a class="sort-link {% if sort == 'end_date' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=end_date&direction={% if sort == 'end_date' and direction == 'asc' %}desc{% else %}asc{% endif %}">截止日期</a></th>
-              <th><a class="sort-link {% if sort == 'payment_rate' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=payment_rate&direction={% if sort == 'payment_rate' and direction == 'asc' %}desc{% else %}asc{% endif %}">收款率</a></th>
+              <th><a class="sort-link {% if sort == 'responsible_person' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=responsible_person&direction={% if sort == 'responsible_person' and direction == 'asc' %}desc{% else %}asc{% endif %}">负责人</a></th>
               <th><a class="sort-link {% if sort == 'status' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=status&direction={% if sort == 'status' and direction == 'asc' %}desc{% else %}asc{% endif %}">状态</a></th>
               <th>文件</th>
             </tr>
@@ -101,7 +107,10 @@
                 class="selectable-row"
                 data-contract-id="{{ contract.id }}"
                 data-contract-name="{{ contract.contract_name }}"
+                data-contract-number="{{ contract.contract_number }}"
                 data-contract-type="{{ contract.contract_type }}"
+                data-party-name="{{ contract.party_name }}"
+                data-responsible-person="{{ contract.responsible_person }}"
                 data-invoice-status="{{ contract.invoice_status }}"
                 data-invoice-total="¥ {{ contract.invoice_total|floatformat:2 }}"
                 data-payment-total="¥ {{ contract.payment_total|floatformat:2 }}"
@@ -111,7 +120,7 @@
                 data-file-url="{% if contract.latest_file %}{% url 'contracts:contract_file_preview' contract.latest_file.id %}?from=list{% elif contract.file %}{% url 'contracts:legacy_contract_file_preview' contract.id %}?from=list{% endif %}"
               >
                 <td>{{ forloop.counter }}</td>
-                <td class="name">{{ contract.contract_name }}</td>
+                <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
                 <td>{{ contract.contract_number }}</td>
                 <td>{{ contract.contract_type }}</td>
                 <td class="party">{{ contract.party_name }}</td>
@@ -119,7 +128,7 @@
                 <td>{{ contract.invoice_status }}</td>
                 <td>{{ contract.start_date|default:"" }}</td>
                 <td>{{ contract.end_date|default:"" }}</td>
-                <td>{{ contract.payment_rate|floatformat:1 }}%</td>
+                <td>{{ contract.responsible_person|default:"" }}</td>
                 <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
                 <td>{% if contract.latest_file or contract.file %}已上传{% else %}未上传{% endif %}</td>
               </tr>
@@ -172,6 +181,10 @@
                   <option value="{{ value }}" {% if invoice_status_filter == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
+            </div>
+            <div>
+              <label for="filterResponsiblePerson">负责人</label>
+              <input id="filterResponsiblePerson" name="responsible_person" value="{{ responsible_person_filter }}" placeholder="输入负责人">
             </div>
             <div>
               <label for="filterStatus">状态</label>
@@ -229,9 +242,12 @@
   <script src="{% static 'contracts/vendor/echarts.min.js' %}"></script>
   <script>
     const table = document.querySelector("#contractTable");
+    const contractSearchInput = document.querySelector("#contractSearchInput");
+    const searchPreview = document.querySelector("#searchPreview");
     const rowButtons = document.querySelectorAll(".row-action");
     const fileButton = document.querySelector("#fileButton");
     const moneyRecordButton = document.querySelector("#moneyRecordButton");
+    const imageFolderButton = document.querySelector("#imageFolderButton");
     const statsButton = document.querySelector("#statsButton");
     const deleteButton = document.querySelector("#deleteButton");
     const filterButton = document.querySelector("#filterButton");
@@ -245,6 +261,7 @@
     const centerModalConfirm = document.querySelector("#centerModalConfirm");
     const filterModal = document.querySelector("#filterModal");
     const filterModalCancel = document.querySelector("#filterModalCancel");
+    const filterResponsiblePerson = document.querySelector("#filterResponsiblePerson");
     const projectRangeModal = document.querySelector("#projectRangeModal");
     const projectRangeCancel = document.querySelector("#projectRangeCancel");
     const projectRangeApply = document.querySelector("#projectRangeApply");
@@ -273,6 +290,14 @@
 
     function urlFor(button, id) {
       return button.dataset.urlTemplate.replace("/0/", `/${id}/`);
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
     }
 
     function closeCenterModal() {
@@ -325,6 +350,50 @@
 
     window.clearPageSelection = clearSelection;
 
+    function selectContractRow(row) {
+      clearSelection();
+      row.classList.add("selected");
+
+      const id = row.dataset.contractId;
+      rowButtons.forEach((button) => {
+        if (button.dataset.urlTemplate) {
+          button.dataset.currentUrl = urlFor(button, id);
+          if (button.tagName.toLowerCase() === "a") {
+            button.href = button.dataset.currentUrl;
+          }
+        }
+        setDisabled(button, false);
+      });
+
+      if (fileButton && row.dataset.fileUrl) {
+        fileButton.href = row.dataset.fileUrl;
+        setDisabled(fileButton, false);
+      } else if (fileButton) {
+        fileButton.removeAttribute("href");
+        setDisabled(fileButton, true);
+      }
+
+      const invoiceStatus = row.dataset.invoiceStatus || "";
+      if (moneyRecordButton) {
+        const template = invoiceStatus === "不开票"
+          ? moneyRecordButton.dataset.receiptUrlTemplate
+          : moneyRecordButton.dataset.invoiceUrlTemplate;
+        moneyRecordButton.href = template.replace("/0/", `/${id}/`);
+        moneyRecordButton.textContent = invoiceStatus === "不开票" ? "添加收据" : "添加发票";
+        setDisabled(moneyRecordButton, false);
+      }
+
+      if (statsButton) {
+        statsButton.dataset.contractName = row.dataset.contractName;
+        statsButton.dataset.invoiceTotal = row.dataset.invoiceTotal;
+        statsButton.dataset.paymentTotal = row.dataset.paymentTotal;
+        statsButton.dataset.paymentRate = row.dataset.paymentRate;
+        statsButton.dataset.statsUrl = row.dataset.statsUrl;
+        statsButton.dataset.maintenanceUrl = row.dataset.maintenanceUrl;
+        statsButton.dataset.contractType = row.dataset.contractType;
+      }
+    }
+
     if (table) {
       table.addEventListener("click", (event) => {
         const row = event.target.closest(".selectable-row");
@@ -333,46 +402,69 @@
           return;
         }
 
-        clearSelection();
-        row.classList.add("selected");
+        selectContractRow(row);
+      });
+    }
 
-        const id = row.dataset.contractId;
-        rowButtons.forEach((button) => {
-          if (button.dataset.urlTemplate) {
-            button.dataset.currentUrl = urlFor(button, id);
-            if (button.tagName.toLowerCase() === "a") {
-              button.href = button.dataset.currentUrl;
-            }
-          }
-          setDisabled(button, false);
+    function contractRows() {
+      return Array.from(document.querySelectorAll(".selectable-row"));
+    }
+
+    function rowSearchText(row) {
+      return [
+        row.dataset.contractName,
+        row.dataset.contractNumber,
+        row.dataset.partyName,
+        row.dataset.responsiblePerson,
+      ].join(" ").toLowerCase();
+    }
+
+    function hideSearchPreview() {
+      if (searchPreview) {
+        searchPreview.hidden = true;
+      }
+    }
+
+    function renderSearchPreview() {
+      if (!contractSearchInput || !searchPreview) {
+        return;
+      }
+      const keyword = contractSearchInput.value.trim().toLowerCase();
+      searchPreview.innerHTML = "";
+      if (!keyword) {
+        hideSearchPreview();
+        return;
+      }
+      const matches = contractRows()
+        .filter((row) => rowSearchText(row).includes(keyword))
+        .slice(0, 8);
+      matches.forEach((row) => {
+        const item = document.createElement("button");
+        item.className = "search-preview-item";
+        item.type = "button";
+        item.innerHTML = `
+          <span class="search-preview-title">${escapeHtml(row.dataset.contractName)}</span>
+          <span class="search-preview-meta">编号: ${escapeHtml(row.dataset.contractNumber)}　甲方: ${escapeHtml(row.dataset.partyName)}　负责人: ${escapeHtml(row.dataset.responsiblePerson || "未填写")}</span>
+        `;
+        item.addEventListener("mousedown", (event) => {
+          event.preventDefault();
         });
+        item.addEventListener("click", () => {
+          selectContractRow(row);
+          row.scrollIntoView({ block: "center", behavior: "smooth" });
+          hideSearchPreview();
+        });
+        searchPreview.appendChild(item);
+      });
+      searchPreview.hidden = matches.length === 0;
+    }
 
-        if (fileButton && row.dataset.fileUrl) {
-          fileButton.href = row.dataset.fileUrl;
-          setDisabled(fileButton, false);
-        } else if (fileButton) {
-          fileButton.removeAttribute("href");
-          setDisabled(fileButton, true);
-        }
-
-        const invoiceStatus = row.dataset.invoiceStatus || "";
-        if (moneyRecordButton) {
-          const template = invoiceStatus === "不开票"
-            ? moneyRecordButton.dataset.receiptUrlTemplate
-            : moneyRecordButton.dataset.invoiceUrlTemplate;
-          moneyRecordButton.href = template.replace("/0/", `/${id}/`);
-          moneyRecordButton.textContent = invoiceStatus === "不开票" ? "添加收据" : "添加发票";
-          setDisabled(moneyRecordButton, false);
-        }
-
-        if (statsButton) {
-          statsButton.dataset.contractName = row.dataset.contractName;
-          statsButton.dataset.invoiceTotal = row.dataset.invoiceTotal;
-          statsButton.dataset.paymentTotal = row.dataset.paymentTotal;
-          statsButton.dataset.paymentRate = row.dataset.paymentRate;
-          statsButton.dataset.statsUrl = row.dataset.statsUrl;
-          statsButton.dataset.maintenanceUrl = row.dataset.maintenanceUrl;
-          statsButton.dataset.contractType = row.dataset.contractType;
+    if (contractSearchInput) {
+      contractSearchInput.addEventListener("input", renderSearchPreview);
+      contractSearchInput.addEventListener("focus", renderSearchPreview);
+      document.addEventListener("click", (event) => {
+        if (!event.target.closest(".search-preview-wrap")) {
+          hideSearchPreview();
         }
       });
     }
@@ -406,6 +498,84 @@
       filterModal.addEventListener("click", (event) => {
         if (event.target === filterModal) {
           filterModal.hidden = true;
+        }
+      });
+    }
+
+    function setupResponsibleMemory(input) {
+      if (!input) {
+        return;
+      }
+      const responsiblePersonStorageKey = "contract_last_responsible_person";
+      const responsiblePersonHistoryKey = "contract_responsible_person_history";
+      const legacyResponsiblePerson = localStorage.getItem(responsiblePersonStorageKey);
+      const savedResponsiblePeople = JSON.parse(localStorage.getItem(responsiblePersonHistoryKey) || "[]");
+      const responsiblePeople = Array.from(new Set([legacyResponsiblePerson, ...savedResponsiblePeople].filter(Boolean)));
+      const fieldWrap = document.createElement("div");
+      const dropdown = document.createElement("div");
+      fieldWrap.className = "memory-field-wrap";
+      dropdown.className = "memory-dropdown";
+      dropdown.hidden = true;
+      input.parentNode.insertBefore(fieldWrap, input);
+      fieldWrap.appendChild(input);
+      fieldWrap.appendChild(dropdown);
+
+      function renderOptions() {
+        const keyword = input.value.trim().toLowerCase();
+        const matches = responsiblePeople.filter((value) => value.toLowerCase().includes(keyword));
+        dropdown.innerHTML = "";
+        matches.forEach((value) => {
+          const option = document.createElement("button");
+          option.className = "memory-option";
+          option.type = "button";
+          option.textContent = value;
+          option.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+          });
+          option.addEventListener("click", () => {
+            input.value = value;
+            dropdown.hidden = true;
+            input.focus();
+          });
+          dropdown.appendChild(option);
+        });
+        dropdown.hidden = matches.length === 0;
+      }
+
+      function saveValue() {
+        const value = input.value.trim();
+        if (!value) {
+          return;
+        }
+        const nextPeople = [value, ...responsiblePeople.filter((item) => item !== value)].slice(0, 20);
+        localStorage.setItem(responsiblePersonStorageKey, value);
+        localStorage.setItem(responsiblePersonHistoryKey, JSON.stringify(nextPeople));
+      }
+
+      input.addEventListener("focus", renderOptions);
+      input.addEventListener("click", renderOptions);
+      input.addEventListener("input", renderOptions);
+      input.closest("form")?.addEventListener("submit", saveValue);
+      document.addEventListener("click", (event) => {
+        if (!fieldWrap.contains(event.target)) {
+          dropdown.hidden = true;
+        }
+      });
+    }
+
+    setupResponsibleMemory(filterResponsiblePerson);
+
+    if (imageFolderButton) {
+      imageFolderButton.addEventListener("click", async () => {
+        if (imageFolderButton.getAttribute("aria-disabled") === "true" || !imageFolderButton.dataset.currentUrl) {
+          return;
+        }
+        const response = await fetch(imageFolderButton.dataset.currentUrl, {
+          credentials: "same-origin",
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        if (!response.ok) {
+          alert("图片文件夹打开失败，请检查设置中的保存位置。");
         }
       });
     }
@@ -454,14 +624,6 @@
       } catch (error) {
         centerModalBody.textContent = `${maintenanceState.label || "项目记录"}加载失败，请稍后重试。`;
       }
-    }
-
-    function escapeHtml(value) {
-      return String(value || "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;");
     }
 
     function renderMaintenanceCalendar(data) {

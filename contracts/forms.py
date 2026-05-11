@@ -19,6 +19,7 @@ class ContractForm(forms.ModelForm):
             "sign_date",
             "start_date",
             "end_date",
+            "responsible_person",
             "remark",
         ]
         widgets = {
@@ -98,4 +99,4 @@ class LoginForm(forms.Form):
 class AppSettingForm(forms.ModelForm):
     class Meta:
         model = AppSetting
-        fields = ["delete_source_file"]
+        fields = ["delete_source_file", "image_root_path"]

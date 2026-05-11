@@ -14,12 +14,18 @@ def safe_project_folder_name(contract: "Contract") -> str:
     return safe_name or "未命名项目"
 
 
+def safe_text_folder_name(value: str, fallback: str = "未分类") -> str:
+    # 合同类型也会进入文件路径，和合同名称使用同一套 Windows 文件夹名清理规则。
+    safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value or "").strip(" ._")
+    return safe_name or fallback
+
+
 # 获取上传对象所属合同。
 def upload_contract_for(instance):
     return getattr(instance, "contract", instance)
 
 
-# 按功能把项目文件保存到 media/contracts/项目名称/功能文件夹/文件名。
+# 按功能把项目文件保存到 media/contracts/合同类型/项目名称/功能文件夹/文件名。
 def project_file_upload_path(instance, filename: str) -> str:
     contract = upload_contract_for(instance)
     safe_filename = PurePath(filename).name
@@ -35,7 +41,8 @@ def project_file_upload_path(instance, filename: str) -> str:
             "MaintenanceRecord": "维保文件",
         }
         subfolder = folder_map.get(instance.__class__.__name__, "其他文件")
-    return f"contracts/{safe_project_folder_name(contract)}/{subfolder}/{safe_filename}"
+    contract_type_folder = safe_text_folder_name(getattr(contract, "contract_type", ""))
+    return f"contracts/{contract_type_folder}/{safe_project_folder_name(contract)}/{subfolder}/{safe_filename}"
 
 
 # 定义合同主表、附件表、开票记录表、收票记录表、维护保养记录表和系统设置表。
@@ -65,6 +72,7 @@ class Contract(models.Model):
     sign_date = models.DateField("签订日期", null=True, blank=True)
     start_date = models.DateField("开始日期", null=True, blank=True)
     end_date = models.DateField("截止日期", null=True, blank=True)
+    responsible_person = models.CharField("负责人", max_length=100, blank=True)
     file = models.FileField("合同文件", upload_to=project_file_upload_path, null=True, blank=True)
     remark = models.TextField("备注", blank=True)
     is_deleted = models.BooleanField("是否删除", default=False)
@@ -246,6 +254,12 @@ class MaintenanceRecord(models.Model):
 # 保存系统级开关配置。
 class AppSetting(models.Model):
     delete_source_file = models.BooleanField("上传时是否删除原文件", default=False)
+    image_root_path = models.CharField(
+        "图片保存位置",
+        max_length=500,
+        default=r"C:\Users\YF\Desktop\ocr_image_renamer\整理后图片",
+        blank=True,
+    )
     updated_at = models.DateTimeField("更新时间", auto_now=True)
 
     class Meta:

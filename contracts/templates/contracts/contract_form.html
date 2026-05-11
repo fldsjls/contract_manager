@@ -95,10 +95,69 @@
     const signDateInput = document.querySelector("#id_sign_date");
     const startDateInput = document.querySelector("#id_start_date");
     const contractNumberInput = document.querySelector("#id_contract_number");
+    const responsiblePersonInput = document.querySelector("#id_responsible_person");
     const resetContractNumberButton = document.querySelector("#resetContractNumber");
     const copySignDateButton = document.querySelector("#copySignDate");
     const defaultContractNumber = "{{ default_contract_number }}";
+    const responsiblePersonStorageKey = "contract_last_responsible_person";
+    const responsiblePersonHistoryKey = "contract_responsible_person_history";
+    const isContractEditPage = Boolean("{{ contract.id|default:'' }}");
     const reorderUrl = "{% if contract %}{% url 'contracts:contract_file_reorder' contract.id %}{% endif %}";
+
+    if (responsiblePersonInput) {
+      const legacyResponsiblePerson = localStorage.getItem(responsiblePersonStorageKey);
+      const savedResponsiblePeople = JSON.parse(localStorage.getItem(responsiblePersonHistoryKey) || "[]");
+      const responsiblePeople = Array.from(new Set([legacyResponsiblePerson, ...savedResponsiblePeople].filter(Boolean)));
+      const responsibleFieldWrap = document.createElement("div");
+      const responsibleDropdown = document.createElement("div");
+      responsibleFieldWrap.className = "memory-field-wrap";
+      responsibleDropdown.className = "memory-dropdown";
+      responsibleDropdown.hidden = true;
+      responsiblePersonInput.parentNode.insertBefore(responsibleFieldWrap, responsiblePersonInput);
+      responsibleFieldWrap.appendChild(responsiblePersonInput);
+      responsibleFieldWrap.appendChild(responsibleDropdown);
+
+      function renderResponsibleOptions() {
+        const keyword = responsiblePersonInput.value.trim().toLowerCase();
+        const matches = responsiblePeople.filter((value) => value.toLowerCase().includes(keyword));
+        responsibleDropdown.innerHTML = "";
+        matches.forEach((value) => {
+          const option = document.createElement("button");
+          option.className = "memory-option";
+          option.type = "button";
+          option.textContent = value;
+          option.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+          });
+          option.addEventListener("click", () => {
+            responsiblePersonInput.value = value;
+            responsibleDropdown.hidden = true;
+            responsiblePersonInput.focus();
+          });
+          responsibleDropdown.appendChild(option);
+        });
+        responsibleDropdown.hidden = matches.length === 0;
+      }
+
+      const saveResponsiblePerson = () => {
+        const value = responsiblePersonInput.value.trim();
+        if (!value) {
+          return;
+        }
+        const nextPeople = [value, ...responsiblePeople.filter((item) => item !== value)].slice(0, 20);
+        localStorage.setItem(responsiblePersonStorageKey, value);
+        localStorage.setItem(responsiblePersonHistoryKey, JSON.stringify(nextPeople));
+      };
+      responsiblePersonInput.closest("form")?.addEventListener("submit", saveResponsiblePerson);
+      responsiblePersonInput.addEventListener("focus", renderResponsibleOptions);
+      responsiblePersonInput.addEventListener("click", renderResponsibleOptions);
+      responsiblePersonInput.addEventListener("input", renderResponsibleOptions);
+      document.addEventListener("click", (event) => {
+        if (!responsibleFieldWrap.contains(event.target)) {
+          responsibleDropdown.hidden = true;
+        }
+      });
+    }
 
     function syncEndDateRequired() {
       if (!contractTypeInput || !endDateInput) {

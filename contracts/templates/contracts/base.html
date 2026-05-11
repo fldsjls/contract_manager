@@ -112,6 +112,37 @@
       width: auto;
       padding: 0;
     }
+    .memory-field-wrap {
+      position: relative;
+    }
+    .memory-dropdown {
+      position: absolute;
+      z-index: 30;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      max-height: 180px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid #cbd3df;
+      box-shadow: 0 8px 18px rgba(16, 24, 40, 0.12);
+    }
+    .memory-dropdown[hidden] {
+      display: none;
+    }
+    .memory-option {
+      width: 100%;
+      padding: 9px 10px;
+      border: 0;
+      border-bottom: 1px solid #eef1f5;
+      background: #fff;
+      text-align: left;
+      color: #101828;
+      cursor: pointer;
+    }
+    .memory-option:hover {
+      background: #eef4ff;
+    }
     .search-toolbar {
       display: grid;
       grid-template-columns: minmax(280px, 1fr) auto auto;
@@ -119,7 +150,55 @@
       align-items: center;
       margin-bottom: 14px;
     }
+    .search-preview-wrap {
+      position: relative;
+      min-width: 0;
+    }
     .search-input { width: 100%; }
+    .search-preview {
+      position: absolute;
+      z-index: 25;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      max-height: 240px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid #cbd3df;
+      box-shadow: 0 8px 18px rgba(16, 24, 40, 0.12);
+    }
+    .search-preview[hidden] {
+      display: none;
+    }
+    .search-preview-item {
+      width: 100%;
+      padding: 9px 10px;
+      border: 0;
+      border-bottom: 1px solid #eef1f5;
+      background: #fff;
+      text-align: left;
+      color: #101828;
+      cursor: pointer;
+    }
+    .search-preview-item:hover {
+      background: #eef4ff;
+    }
+    .search-preview-title {
+      display: block;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .search-preview-meta {
+      display: block;
+      margin-top: 3px;
+      color: #667085;
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .action-toolbar {
       display: flex;
       gap: 10px;

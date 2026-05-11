@@ -77,4 +77,4 @@ class MaintenanceRecordAdmin(admin.ModelAdmin):
 @admin.register(AppSetting)
 class AppSettingAdmin(admin.ModelAdmin):
     # 后台显示文件上传相关开关和更新时间。
-    list_display = ("delete_source_file", "updated_at")
+    list_display = ("delete_source_file", "image_root_path", "updated_at")

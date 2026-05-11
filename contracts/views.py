@@ -1105,9 +1105,30 @@ def xlsx_number_cell(row_index: int, column_index: int, value, style: int | None
     return f'<c r="{xlsx_cell_ref(row_index, column_index)}"{style_attr}><v>{number}</v></c>'
 
 
+def text_display_width(value) -> int:
+    # 中文字符在 Excel 中通常占用约两个英文字符宽度，用这个估算列宽更接近实际显示。
+    width = 0
+    for char in str(value or ""):
+        width += 2 if ord(char) > 127 else 1
+    return width
+
+
+def contract_export_column_widths(headers, rows) -> list[int]:
+    # 按标题和实际内容动态计算列宽，日期列设置最低宽度，保证中文日期完整显示。
+    min_widths = [8, 18, 18, 10, 18, 12, 10, 18, 18, 12, 10, 10]
+    max_widths = [10, 42, 22, 14, 34, 16, 12, 22, 22, 22, 12, 12]
+    widths = []
+    for column_index, header in enumerate(headers):
+        candidates = [header]
+        candidates.extend(row[column_index] for row in rows if column_index < len(row))
+        content_width = max(text_display_width(value) for value in candidates) + 2
+        widths.append(max(min_widths[column_index], min(content_width, max_widths[column_index])))
+    return widths
+
+
 def build_contract_list_xlsx(headers, rows) -> bytes:
     # 使用标准库拼装最小 XLSX 包，避免依赖用户虚拟环境中未安装的 openpyxl。
-    column_widths = [8, 30, 18, 12, 24, 14, 12, 14, 14, 16, 12, 12]
+    column_widths = contract_export_column_widths(headers, rows)
     cols = "".join(
         f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
         for index, width in enumerate(column_widths, start=1)

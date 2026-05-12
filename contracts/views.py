@@ -1233,6 +1233,7 @@ def contracts_for_list_request(request):
     filter_invoice_status = request.GET.get("invoice_status", "").strip()
     filter_status = request.GET.get("status", "").strip()
     filter_responsible_person = request.GET.get("responsible_person", "").strip()
+    explicit_sort = "sort" in request.GET
     sort = request.GET.get("sort", "contract_number").strip()
     direction = request.GET.get("direction", "desc").strip()
     if direction not in ("asc", "desc"):
@@ -1284,7 +1285,10 @@ def contracts_for_list_request(request):
     if filter_status in status_choices:
         contracts = [contract for contract in contracts if contract.status == filter_status]
     if sort == "contract_number":
-        contracts.sort(key=lambda item: item.contract_number_sort_key, reverse=True)
+        if explicit_sort:
+            contracts.sort(key=lambda item: item.contract_number_sort_key, reverse=True)
+        else:
+            contracts.sort(key=lambda item: item.contract_number, reverse=True)
     if sort == "payment_rate":
         contracts.sort(key=lambda item: item.payment_rate, reverse=direction == "desc")
     return contracts
@@ -1417,6 +1421,7 @@ def contract_list(request):
     filter_invoice_status = request.GET.get("invoice_status", "").strip()
     filter_status = request.GET.get("status", "").strip()
     filter_responsible_person = request.GET.get("responsible_person", "").strip()
+    explicit_sort = "sort" in request.GET
     sort = request.GET.get("sort", "contract_number").strip()
     direction = request.GET.get("direction", "desc").strip()
     if direction not in ("asc", "desc"):
@@ -1476,7 +1481,10 @@ def contract_list(request):
     active_total_amount = sum((contract.amount for contract in active_contracts), Decimal("0"))
     expired_total_amount = sum((contract.amount for contract in expired_contracts), Decimal("0"))
     if sort == "contract_number":
-        contracts.sort(key=lambda item: item.contract_number_sort_key, reverse=True)
+        if explicit_sort:
+            contracts.sort(key=lambda item: item.contract_number_sort_key, reverse=True)
+        else:
+            contracts.sort(key=lambda item: item.contract_number, reverse=True)
     if sort == "payment_rate":
         contracts.sort(key=lambda item: item.payment_rate, reverse=direction == "desc")
     query_params = request.GET.copy()
@@ -1489,6 +1497,7 @@ def contract_list(request):
             "keyword": keyword,
             "sort": sort,
             "direction": direction,
+            "show_sort_indicator": explicit_sort,
             "total_amount": total_amount,
             "contract_count": contract_count,
             "active_contract_count": len(active_contracts),

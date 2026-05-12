@@ -22,6 +22,19 @@
         {% if field.name == "original_contract_folder" or field.name == "original_contract_inner_number" or field.name == "archive_years" %}
         {% else %}
         <div class="form-row {% if field.name == 'remark' %}full{% endif %}">
+          {% if field.name == "responsible_person" %}
+            <div class="responsible-archive-row">
+              <div class="paired-field responsible-field">
+                <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+              </div>
+              <div class="paired-field archive-field">
+                <label class="field-label" for="{{ form.archive_years.id_for_label }}">{{ form.archive_years.label }}</label>
+                {{ form.archive_years }}
+              </div>
+            </div>
+            {{ form.archive_years.errors }}
+          {% else %}
           <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
           {% if field.name == "contract_number" %}
             <div class="field-control-row contract-number-row">
@@ -37,19 +50,9 @@
               {{ field }}
               <button class="button icon-button" id="copySignDate" type="button" title="复制签订日期">⇦</button>
             </div>
-          {% elif field.name == "responsible_person" %}
-            <div class="field-control-row responsible-archive-row">
-              <div class="responsible-field">
-                {{ field }}
-              </div>
-              <div class="archive-field">
-                <label class="field-label compact" for="{{ form.archive_years.id_for_label }}">{{ form.archive_years.label }}</label>
-                {{ form.archive_years }}
-              </div>
-            </div>
-            {{ form.archive_years.errors }}
           {% else %}
             {{ field }}
+          {% endif %}
           {% endif %}
           {{ field.errors }}
         </div>

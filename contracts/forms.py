@@ -73,6 +73,28 @@ class ContractForm(forms.ModelForm):
         end_date = cleaned_data.get("end_date")
         if contract_type == "维保" and not end_date:
             self.add_error("end_date", "维保合同必须填写截止日期。")
+
+        folder = str(cleaned_data.get("original_contract_folder") or "").strip()
+        file_number = str(cleaned_data.get("original_contract_inner_number") or "").strip()
+        if folder and file_number:
+            base_date = cleaned_data.get("sign_date") or cleaned_data.get("start_date") or timezone.localdate()
+            display_contract_number = (
+                f"{base_date.year}"
+                f"{folder.zfill(2)}"
+                f"{file_number.zfill(4)}"
+                f"{Contract.CONTRACT_TYPE_CODES.get(contract_type, '06')}"
+            )
+            candidates = Contract.objects.filter(
+                original_contract_folder__gt="",
+                original_contract_inner_number__gt="",
+            )
+            if self.instance and self.instance.pk:
+                candidates = candidates.exclude(pk=self.instance.pk)
+            if any(contract.display_contract_number == display_contract_number for contract in candidates):
+                self.add_error(
+                    "original_contract_inner_number",
+                    f"显示合同编号 {display_contract_number} 已存在，不能重复。",
+                )
         return cleaned_data
 
 

@@ -619,23 +619,17 @@
       flex: 1;
     }
     .responsible-archive-row {
-      align-items: flex-end;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 12px;
     }
-    .responsible-field {
-      flex: 1 1 50%;
-      min-width: 0;
-    }
-    .archive-field {
+    .paired-field {
       display: grid;
-      flex: 1 1 50%;
-      min-width: 0;
       gap: 6px;
+      min-width: 0;
     }
-    .archive-field .field-label.compact {
-      margin: 0;
-      font-size: 14px;
-      line-height: 1;
+    .paired-field .field-label {
+      margin-bottom: 0;
     }
     .contract-number-row input {
       flex: 1 1 120px;

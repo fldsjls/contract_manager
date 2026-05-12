@@ -3,6 +3,7 @@ from decimal import Decimal
 from pathlib import PurePath
 import re
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -20,6 +21,11 @@ def safe_text_folder_name(value: str, fallback: str = "未分类") -> str:
     # 合同类型也会进入文件路径，和合同名称使用同一套 Windows 文件夹名清理规则。
     safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value or "").strip(" ._")
     return safe_name or fallback
+
+
+# 获取默认文件预览根目录，通常就是项目 media 文件夹。
+def default_preview_root_path() -> str:
+    return str(settings.MEDIA_ROOT)
 
 
 # 获取上传对象所属合同。
@@ -66,6 +72,10 @@ class Contract(models.Model):
         ("待开票", "待开票"),
         ("票已结", "票已结"),
     ]
+    CONTRACT_TYPE_CODES = {
+        value: f"{index:02d}"
+        for index, (value, _label) in enumerate(CONTRACT_TYPES, start=1)
+    }
 
     # 合同基础字段会映射成数据库 contracts_contract 表中的列。
     contract_name = models.CharField("合同名称", max_length=200)
@@ -102,12 +112,26 @@ class Contract(models.Model):
     # 函数说明：封装可复用的业务处理。
     @property
     def display_contract_number(self) -> str:
-        # 页面显示时隐藏自动生成的时间编号，只展示原合同文件夹和文件夹内编号。
-        parts = [
-            self.original_contract_folder,
-            self.original_contract_inner_number,
-        ]
-        return "-".join(part for part in parts if part) or self.contract_number
+        # 列表显示编号由签订年份、文件编号、文件编号和合同类型编码组成。
+        if self.uses_default_display_contract_number:
+            return self.contract_number
+        year = str((self.sign_date or self.start_date or self.created_at).year)
+        folder = str(self.original_contract_folder).strip().zfill(2)
+        inner_number = str(self.original_contract_inner_number).strip().zfill(4)
+        type_code = self.CONTRACT_TYPE_CODES.get(self.contract_type, "06")
+        return f"{year}{folder}{inner_number}{type_code}"
+
+    # 函数说明：封装可复用的业务处理。
+    @property
+    def uses_default_display_contract_number(self) -> bool:
+        # 文件编号或文件编号任一缺失时，列表回退显示默认自动编号。
+        return not (self.original_contract_folder and self.original_contract_inner_number)
+
+    # 函数说明：封装可复用的业务处理。
+    @property
+    def contract_number_sort_key(self) -> tuple[int, str]:
+        # 默认编号排在最前，其余按显示编号降序。
+        return (1 if self.uses_default_display_contract_number else 0, self.display_contract_number)
 
     # 函数说明：封装可复用的业务处理。
     @property
@@ -313,6 +337,12 @@ class AppSetting(models.Model):
         "图片保存位置",
         max_length=500,
         default=r"C:\Users\YF\Desktop\ocr_image_renamer\整理后图片",
+        blank=True,
+    )
+    preview_root_path = models.CharField(
+        "文件预览位置",
+        max_length=500,
+        default=default_preview_root_path,
         blank=True,
     )
     updated_at = models.DateTimeField("更新时间", auto_now=True)

@@ -26,7 +26,7 @@
     <!-- 行操作按钮默认禁用，选中合同后由脚本启用。 -->
     <div class="action-toolbar" aria-label="合同操作" data-keep-selection>
       {% if can_manage %}
-        <a class="button primary" href="{% url 'contracts:contract_create' %}">新增合同</a>
+      <a class="button primary" id="newContractButton" href="{% url 'contracts:contract_create' %}">新增合同</a>
       {% else %}
         <a class="button muted" href="{% url 'contracts:login' %}">登录后新增</a>
       {% endif %}
@@ -89,7 +89,7 @@
             <tr>
               <th>序号</th>
               <th><a class="sort-link {% if sort == 'contract_name' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_name&direction={% if sort == 'contract_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">{{ labels.contract_name }}</a></th>
-              <th><a class="sort-link {% if sort == 'contract_number' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_number&direction={% if sort == 'contract_number' and direction == 'asc' %}desc{% else %}asc{% endif %}">{{ labels.contract_number }}</a></th>
+              <th><a class="sort-link {% if sort == 'contract_number' %}active desc{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_number&direction=desc">{{ labels.contract_number }}</a></th>
               <th><a class="sort-link {% if sort == 'contract_type' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_type&direction={% if sort == 'contract_type' and direction == 'asc' %}desc{% else %}asc{% endif %}">{{ labels.contract_type }}</a></th>
               <th><a class="sort-link {% if sort == 'party_name' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=party_name&direction={% if sort == 'party_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">{{ labels.party_name }}</a></th>
               <th><a class="sort-link {% if sort == 'amount' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=amount&direction={% if sort == 'amount' and direction == 'asc' %}desc{% else %}asc{% endif %}">{{ labels.contract_amount }}</a></th>
@@ -121,7 +121,10 @@
               >
                 <td>{{ forloop.counter }}</td>
                 <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
-                <td title="{{ contract.display_contract_number }}">{{ contract.display_contract_number }}</td>
+                <td
+                  class="{% if contract.uses_default_display_contract_number %}default-contract-number{% endif %}"
+                  title="{{ contract.display_contract_number }}"
+                >{{ contract.display_contract_number }}</td>
                 <td>{{ contract.contract_type }}</td>
                 <td class="party" title="{{ contract.party_name }}">{{ contract.party_name }}</td>
                 <td>¥ {{ contract.amount|floatformat:2 }}</td>
@@ -256,6 +259,8 @@
   <script src="{% static 'contracts/vendor/echarts.min.js' %}"></script>
   <script>
     const table = document.querySelector("#contractTable");
+    const listScrollContainer = document.querySelector(".contract-list-page .table-wrap.fill");
+    const newContractButton = document.querySelector("#newContractButton");
     const contractSearchInput = document.querySelector("#contractSearchInput");
     const searchPreview = document.querySelector("#searchPreview");
     const rowButtons = document.querySelectorAll(".row-action");
@@ -306,6 +311,19 @@
     // 函数说明：处理页面交互和数据展示逻辑。
     function urlFor(button, id) {
       return button.dataset.urlTemplate.replace("/0/", `/${id}/`);
+    }
+
+    // 函数说明：进入列表子页面前记录当前列表位置，保存或返回后可回到原来的浏览位置。
+    function urlWithListState(rawUrl, id = "") {
+      const url = new URL(rawUrl, window.location.origin);
+      url.searchParams.set("next", window.location.pathname + window.location.search);
+      if (id) {
+        url.searchParams.set("return_id", id);
+      }
+      if (listScrollContainer) {
+        url.searchParams.set("scroll", String(Math.round(listScrollContainer.scrollTop)));
+      }
+      return url.pathname + url.search;
     }
 
     // 函数说明：处理页面交互和数据展示逻辑。
@@ -378,7 +396,10 @@
       const id = row.dataset.contractId;
       rowButtons.forEach((button) => {
         if (button.dataset.urlTemplate) {
-          button.dataset.currentUrl = urlFor(button, id);
+          const rawUrl = urlFor(button, id);
+          button.dataset.currentUrl = button.id === "imageFolderButton" || button.id === "deleteButton"
+            ? rawUrl
+            : urlWithListState(rawUrl, id);
           if (button.tagName.toLowerCase() === "a") {
             button.href = button.dataset.currentUrl;
           }
@@ -387,7 +408,7 @@
       });
 
       if (fileButton && row.dataset.fileUrl) {
-        fileButton.href = row.dataset.fileUrl;
+        fileButton.href = urlWithListState(row.dataset.fileUrl, id);
         setDisabled(fileButton, false);
       } else if (fileButton) {
         fileButton.removeAttribute("href");
@@ -399,7 +420,7 @@
         const template = invoiceStatus === "开收据"
           ? moneyRecordButton.dataset.receiptUrlTemplate
           : moneyRecordButton.dataset.invoiceUrlTemplate;
-        moneyRecordButton.href = template.replace("/0/", `/${id}/`);
+        moneyRecordButton.href = urlWithListState(template.replace("/0/", `/${id}/`), id);
         moneyRecordButton.textContent = invoiceStatus === "开收据" ? "添加收据" : "添加发票";
         setDisabled(moneyRecordButton, false);
       }
@@ -427,6 +448,40 @@
         }
 
         selectContractRow(row);
+      });
+    }
+
+    // 函数说明：编辑保存回到列表后恢复表格滚动位置和选中合同。
+    function restoreListState() {
+      const params = new URLSearchParams(window.location.search);
+      const restoreScroll = params.get("restore_scroll");
+      const returnId = params.get("return_id");
+      if (listScrollContainer && restoreScroll !== null) {
+        listScrollContainer.scrollTop = Number.parseInt(restoreScroll, 10) || 0;
+      }
+      if (returnId) {
+        const row = document.querySelector(`.selectable-row[data-contract-id="${returnId}"]`);
+        if (row) {
+          selectContractRow(row);
+          if (restoreScroll === null) {
+            row.scrollIntoView({ block: "center" });
+          }
+        }
+      }
+      if (restoreScroll !== null || returnId) {
+        params.delete("restore_scroll");
+        params.delete("return_id");
+        const cleanQuery = params.toString();
+        const cleanUrl = `${window.location.pathname}${cleanQuery ? `?${cleanQuery}` : ""}${window.location.hash}`;
+        window.history.replaceState({}, "", cleanUrl);
+      }
+    }
+
+    requestAnimationFrame(restoreListState);
+
+    if (newContractButton) {
+      newContractButton.addEventListener("click", () => {
+        newContractButton.href = urlWithListState(newContractButton.getAttribute("href"));
       });
     }
 

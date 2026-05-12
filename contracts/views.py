@@ -8,12 +8,14 @@ import os
 from pathlib import Path
 import re
 import socket
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import zipfile
 
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.forms import PasswordChangeForm
+from django.conf import settings
 from django.db.models import Q, Sum
-from django.http import HttpResponse, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -34,6 +36,7 @@ from .models import (
     PaymentRecord,
     SettlementFile,
     safe_project_folder_name,
+    safe_text_folder_name,
 )
 
 
@@ -48,6 +51,43 @@ TYPE_SIDE = {
     "收票": "expense",
     "收据": "expense",
 }
+
+
+# 保留内部返回地址，避免保存后丢失列表筛选、排序和滚动恢复参数。
+def safe_internal_path(value: str, fallback: str) -> str:
+    return value if value and value.startswith("/") and not value.startswith("//") else fallback
+
+
+# 给已有 URL 合并查询参数，用于返回列表时恢复选中行和滚动位置。
+def merge_query_params(url: str, params: dict[str, str]) -> str:
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query.update({key: value for key, value in params.items() if value})
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+# 从列表进入子页面时统一读取返回状态，供保存、取消和返回按钮复用。
+def list_return_state(request, contract_id: int | str | None = None) -> dict:
+    fallback_url = reverse("contracts:contract_list")
+    next_url = request.POST.get("next") or request.GET.get("next") or ""
+    scroll_position = request.POST.get("scroll") or request.GET.get("scroll") or ""
+    return_id = request.POST.get("return_id") or request.GET.get("return_id") or str(contract_id or "")
+    return_url = merge_query_params(
+        safe_internal_path(next_url, fallback_url),
+        {"restore_scroll": scroll_position, "return_id": return_id},
+    )
+    return {
+        "next_url": next_url,
+        "scroll_position": scroll_position,
+        "return_id": return_id,
+        "return_url": return_url,
+    }
+
+
+# 重定向到另一个合同子页面时保留来源列表状态。
+def redirect_with_current_query(request, url: str):
+    query_string = request.GET.urlencode()
+    return redirect(f"{url}?{query_string}" if query_string else url)
 
 
 # 判断当前请求是否处于管理员模式。
@@ -165,6 +205,42 @@ def ensure_contract_image_folder(contract: Contract) -> Path:
     folder = contract_image_folder(contract)
     folder.mkdir(parents=True, exist_ok=True)
     return folder
+
+
+# 获取文件预览根目录；默认指向项目 media 文件夹。
+def preview_root_path() -> Path:
+    root_path = AppSetting.current().preview_root_path.strip() or str(settings.MEDIA_ROOT)
+    return Path(root_path)
+
+
+# 生成带合同类型目录的预览相对路径，保持和当前文件保存规则一致。
+def typed_preview_file_name(file_field) -> Path:
+    file_name = getattr(file_field, "name", "")
+    if not file_name:
+        return Path()
+
+    instance = getattr(file_field, "instance", None)
+    contract = getattr(instance, "contract", instance)
+    parts = Path(file_name).parts
+    if contract and len(parts) >= 2 and parts[0] == "contracts":
+        type_folder = safe_text_folder_name(getattr(contract, "contract_type", ""))
+        if parts[1] != type_folder:
+            return Path("contracts") / type_folder / Path(*parts[1:])
+    return Path(file_name)
+
+
+# 用设置中的预览根目录和强制补齐合同类型的相对路径拼出文件实际路径。
+def preview_file_path(file_field) -> Path:
+    relative_name = typed_preview_file_name(file_field)
+    return preview_root_path() / relative_name
+
+
+# 返回文件内容给预览页，避免预览地址固定死在 MEDIA_ROOT 上。
+def file_response_from_setting(file_field, download: bool = False):
+    file_path = preview_file_path(file_field)
+    if not file_field or not file_path.exists():
+        raise Http404("文件不存在或预览路径配置不正确。")
+    return FileResponse(open(file_path, "rb"), as_attachment=download, filename=Path(file_field.name).name)
 
 
 # 保存合同附件，必要时按系统设置替换旧文件。
@@ -883,12 +959,27 @@ def maintenance_record_data(request, pk: int):
 def contract_file_preview(request, pk: int):
     item = get_object_or_404(ContractFile, pk=pk, contract__is_deleted=False)
     return_from = request.GET.get("from")
+    return_state = list_return_state(request, item.contract_id)
     if return_from == "list":
-        return_url = reverse("contracts:contract_list")
+        return_url = return_state["return_url"]
     elif return_from == "edit":
-        return_url = reverse("contracts:contract_update", args=[item.contract.id])
+        return_url = merge_query_params(
+            reverse("contracts:contract_update", args=[item.contract.id]),
+            {
+                "next": return_state["next_url"],
+                "scroll": return_state["scroll_position"],
+                "return_id": return_state["return_id"],
+            },
+        )
     else:
-        return_url = reverse("contracts:contract_detail", args=[item.contract.id])
+        return_url = merge_query_params(
+            reverse("contracts:contract_detail", args=[item.contract.id]),
+            {
+                "next": return_state["next_url"],
+                "scroll": return_state["scroll_position"],
+                "return_id": return_state["return_id"],
+            },
+        )
     preview_type = preview_type_for_file(item.file.name)
     return render(
         request,
@@ -899,7 +990,8 @@ def contract_file_preview(request, pk: int):
                 "contract": item.contract,
                 "file_item": item,
                 "file_name": item.original_name or Path(item.file.name).name,
-                "file_url": item.file.url,
+                "file_url": reverse("contracts:configured_file_content", args=["contract", item.id]),
+                "download_url": f"{reverse('contracts:configured_file_content', args=['contract', item.id])}?download=1",
                 "preview_type": preview_type,
                 "return_url": return_url,
                 "delete_url": reverse("contracts:contract_file_delete", args=[item.id]),
@@ -918,6 +1010,9 @@ def contract_file_delete(request, pk: int):
     if request.method == "POST":
         delete_file_from_storage(item.file)
         item.delete()
+        next_url = request.POST.get("next", "")
+        if next_url.startswith("/") and not next_url.startswith("//"):
+            return redirect(next_url)
     return redirect("contracts:contract_detail", pk=contract_id)
 
 
@@ -928,12 +1023,27 @@ def legacy_contract_file_preview(request, pk: int):
     if not contract.file:
         return redirect("contracts:contract_detail", pk=contract.pk)
     return_from = request.GET.get("from")
+    return_state = list_return_state(request, contract.pk)
     if return_from == "list":
-        return_url = reverse("contracts:contract_list")
+        return_url = return_state["return_url"]
     elif return_from == "edit":
-        return_url = reverse("contracts:contract_update", args=[contract.id])
+        return_url = merge_query_params(
+            reverse("contracts:contract_update", args=[contract.id]),
+            {
+                "next": return_state["next_url"],
+                "scroll": return_state["scroll_position"],
+                "return_id": return_state["return_id"],
+            },
+        )
     else:
-        return_url = reverse("contracts:contract_detail", args=[contract.id])
+        return_url = merge_query_params(
+            reverse("contracts:contract_detail", args=[contract.id]),
+            {
+                "next": return_state["next_url"],
+                "scroll": return_state["scroll_position"],
+                "return_id": return_state["return_id"],
+            },
+        )
     preview_type = preview_type_for_file(contract.file.name)
     return render(
         request,
@@ -943,7 +1053,8 @@ def legacy_contract_file_preview(request, pk: int):
             {
                 "contract": contract,
                 "file_name": Path(contract.file.name).name,
-                "file_url": contract.file.url,
+                "file_url": reverse("contracts:configured_file_content", args=["legacy", contract.id]),
+                "download_url": f"{reverse('contracts:configured_file_content', args=['legacy', contract.id])}?download=1",
                 "preview_type": preview_type,
                 "return_url": return_url,
                 "delete_url": reverse("contracts:legacy_contract_file_delete", args=[contract.id]),
@@ -962,7 +1073,25 @@ def legacy_contract_file_delete(request, pk: int):
         delete_file_from_storage(contract.file)
         contract.file = None
         contract.save(update_fields=["file", "updated_at"])
+        next_url = request.POST.get("next", "")
+        if next_url.startswith("/") and not next_url.startswith("//"):
+            return redirect(next_url)
     return redirect("contracts:contract_detail", pk=contract.pk)
+
+
+# 按设置中的预览根目录读取文件内容，供 PDF、图片和下载使用。
+def configured_file_content(request, kind: str, pk: int):
+    download = request.GET.get("download") == "1"
+    if kind == "contract":
+        item = get_object_or_404(ContractFile, pk=pk, contract__is_deleted=False)
+        return file_response_from_setting(item.file, download)
+    if kind == "legacy":
+        contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+        return file_response_from_setting(contract.file, download)
+    if kind == "settlement":
+        item = get_object_or_404(SettlementFile, pk=pk, contract__is_deleted=False)
+        return file_response_from_setting(item.file, download)
+    raise Http404("文件类型不存在。")
 
 
 # 渲染统计总览页面。
@@ -1072,10 +1201,12 @@ def contracts_for_list_request(request):
     filter_invoice_status = request.GET.get("invoice_status", "").strip()
     filter_status = request.GET.get("status", "").strip()
     filter_responsible_person = request.GET.get("responsible_person", "").strip()
-    sort = request.GET.get("sort", "id").strip()
-    direction = request.GET.get("direction", "asc").strip()
+    sort = request.GET.get("sort", "contract_number").strip()
+    direction = request.GET.get("direction", "desc").strip()
     if direction not in ("asc", "desc"):
-        direction = "asc"
+        direction = "desc"
+    if sort == "contract_number":
+        direction = "desc"
 
     sort_fields = {
         "id": "id",
@@ -1119,11 +1250,13 @@ def contracts_for_list_request(request):
     elif filter_status == "进行中":
         contracts = contracts.filter(Q(end_date__isnull=True) | Q(end_date__gt=today + timedelta(days=30)))
 
-    if sort in sort_fields:
+    if sort in sort_fields and sort != "contract_number":
         prefix = "-" if direction == "desc" else ""
         contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
 
     contracts = list(contracts)
+    if sort == "contract_number":
+        contracts.sort(key=lambda item: item.contract_number_sort_key, reverse=True)
     if sort == "payment_rate":
         contracts.sort(key=lambda item: item.payment_rate, reverse=direction == "desc")
     return contracts
@@ -1256,10 +1389,12 @@ def contract_list(request):
     filter_invoice_status = request.GET.get("invoice_status", "").strip()
     filter_status = request.GET.get("status", "").strip()
     filter_responsible_person = request.GET.get("responsible_person", "").strip()
-    sort = request.GET.get("sort", "id").strip()
-    direction = request.GET.get("direction", "asc").strip()
+    sort = request.GET.get("sort", "contract_number").strip()
+    direction = request.GET.get("direction", "desc").strip()
     if direction not in ("asc", "desc"):
-        direction = "asc"
+        direction = "desc"
+    if sort == "contract_number":
+        direction = "desc"
     sort_fields = {
         "id": "id",
         "contract_name": "contract_name",
@@ -1306,13 +1441,15 @@ def contract_list(request):
         contracts = contracts.filter(Q(end_date__isnull=True) | Q(end_date__gt=today + timedelta(days=30)))
     else:
         filter_status = ""
-    if sort in sort_fields:
+    if sort in sort_fields and sort != "contract_number":
         prefix = "-" if direction == "desc" else ""
         contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
 
     total_amount = contracts.aggregate(total=Sum("amount"))["total"] or 0
     contract_count = contracts.count()
     contracts = list(contracts)
+    if sort == "contract_number":
+        contracts.sort(key=lambda item: item.contract_number_sort_key, reverse=True)
     if sort == "payment_rate":
         contracts.sort(key=lambda item: item.payment_rate, reverse=direction == "desc")
     query_params = request.GET.copy()
@@ -1394,10 +1531,11 @@ def contract_list_export(request):
 def contract_detail(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if is_normal_mode(request):
-        return redirect("contracts:maintenance_record_list", pk=contract.pk)
+        return redirect_with_current_query(request, reverse("contracts:maintenance_record_list", args=[contract.pk]))
     primary_file = contract.latest_file
     invoice_labels = invoice_mode_labels(contract.invoice_status)
     project_labels = project_record_labels(contract.contract_type)
+    return_state = list_return_state(request, contract.pk)
     context = context_with_auth(
         request,
         {
@@ -1409,6 +1547,7 @@ def contract_detail(request, pk: int):
             "payment_records": contract.paymentrecord_set.all(),
             "invoice_labels": invoice_labels,
             "project_record_labels": project_labels,
+            **return_state,
             "active_nav": "contracts",
         },
     )
@@ -1525,6 +1664,7 @@ def maintenance_record_list(request, pk: int):
     # 所有合同类型的扩展记录共用 MaintenanceRecord 表和同一个列表模板。
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     project_labels = project_record_labels(contract.contract_type)
+    return_state = list_return_state(request, contract.pk)
     context = context_with_auth(
         request,
         {
@@ -1533,6 +1673,7 @@ def maintenance_record_list(request, pk: int):
             "project_record_labels": project_labels,
             "primary_file": contract.latest_file,
             "maintenance_records": contract.maintenancerecord_set.all(),
+            **return_state,
             "active_nav": "contracts",
         },
     )
@@ -1543,13 +1684,14 @@ def maintenance_record_list(request, pk: int):
 @admin_required
 # 新增合同并保存随表单上传的合同文件。
 def contract_create(request):
+    return_state = list_return_state(request)
     if request.method == "POST":
         form = ContractForm(request.POST, request.FILES)
         if form.is_valid():
             contract = form.save()
             ensure_contract_image_folder(contract)
             save_contract_files(contract, request.FILES.getlist("files"))
-            return redirect("contracts:contract_list")
+            return redirect(return_state["return_url"])
     else:
         today = timezone.localdate()
         form = ContractForm(
@@ -1570,6 +1712,8 @@ def contract_create(request):
                 "title": "新增合同",
                 "contract_files": [],
                 "default_contract_number": default_contract_number(),
+                **return_state,
+                "cancel_url": return_state["return_url"],
                 "active_nav": "contracts",
             },
         ),
@@ -1594,15 +1738,34 @@ def contract_image_folder_open(request, pk: int):
 @admin_required
 def settlement_file_list(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    return_state = list_return_state(request, contract.pk)
     if request.method == "POST":
         if request.POST.get("action") == "delete_files":
             for item in SettlementFile.objects.filter(id__in=request.POST.getlist("delete_files"), contract=contract):
                 delete_file_from_storage(item.file)
                 item.delete()
-            return redirect("contracts:settlement_file_list", pk=contract.pk)
+            return redirect(
+                merge_query_params(
+                    reverse("contracts:settlement_file_list", args=[contract.pk]),
+                    {
+                        "next": return_state["next_url"],
+                        "scroll": return_state["scroll_position"],
+                        "return_id": return_state["return_id"],
+                    },
+                )
+            )
         for item in request.FILES.getlist("files"):
             SettlementFile.objects.create(contract=contract, file=item, original_name=item.name)
-        return redirect("contracts:settlement_file_list", pk=contract.pk)
+        return redirect(
+            merge_query_params(
+                reverse("contracts:settlement_file_list", args=[contract.pk]),
+                {
+                    "next": return_state["next_url"],
+                    "scroll": return_state["scroll_position"],
+                    "return_id": return_state["return_id"],
+                },
+            )
+        )
     return render(
         request,
         "contracts/settlement_files.html",
@@ -1611,6 +1774,7 @@ def settlement_file_list(request, pk: int):
             {
                 "contract": contract,
                 "settlement_files": contract.settlement_files.all(),
+                **return_state,
                 "active_nav": "contracts",
             },
         ),
@@ -1621,6 +1785,15 @@ def settlement_file_list(request, pk: int):
 @admin_required
 def settlement_file_preview(request, pk: int):
     item = get_object_or_404(SettlementFile, pk=pk, contract__is_deleted=False)
+    return_state = list_return_state(request, item.contract_id)
+    settlement_return_url = merge_query_params(
+        reverse("contracts:settlement_file_list", args=[item.contract_id]),
+        {
+            "next": return_state["next_url"],
+            "scroll": return_state["scroll_position"],
+            "return_id": return_state["return_id"],
+        },
+    )
     return render(
         request,
         "contracts/file_preview.html",
@@ -1629,9 +1802,10 @@ def settlement_file_preview(request, pk: int):
             {
                 "contract": item.contract,
                 "file_name": item.original_name or Path(item.file.name).name,
-                "file_url": item.file.url,
+                "file_url": reverse("contracts:configured_file_content", args=["settlement", item.id]),
+                "download_url": f"{reverse('contracts:configured_file_content', args=['settlement', item.id])}?download=1",
                 "preview_type": preview_type_for_file(item.file.name),
-                "return_url": reverse("contracts:settlement_file_list", args=[item.contract_id]),
+                "return_url": settlement_return_url,
                 "delete_url": reverse("contracts:settlement_file_delete", args=[item.id]),
                 "active_nav": "contracts",
             },
@@ -1647,6 +1821,9 @@ def settlement_file_delete(request, pk: int):
     if request.method == "POST":
         delete_file_from_storage(item.file)
         item.delete()
+        next_url = request.POST.get("next", "")
+        if next_url.startswith("/") and not next_url.startswith("//"):
+            return redirect(next_url)
     return redirect("contracts:settlement_file_list", pk=contract_id)
 
 
@@ -1702,10 +1879,17 @@ def contract_file_reorder(request, pk: int):
 def contract_update(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     old_file = contract.file
+    next_url = request.POST.get("next") or request.GET.get("next") or ""
+    scroll_position = request.POST.get("scroll") or request.GET.get("scroll") or ""
+    return_id = request.POST.get("return_id") or request.GET.get("return_id") or str(contract.pk)
     if request.method == "POST":
         if request.POST.get("action") == "delete_files":
             delete_contract_files(request.POST.getlist("delete_files"))
-            return redirect("contracts:contract_update", pk=contract.pk)
+            edit_url = merge_query_params(
+                reverse("contracts:contract_update", args=[contract.pk]),
+                {"next": next_url, "scroll": scroll_position, "return_id": return_id},
+            )
+            return redirect(edit_url)
 
         form = ContractForm(request.POST, request.FILES, instance=contract)
         if form.is_valid():
@@ -1713,9 +1897,19 @@ def contract_update(request, pk: int):
             if "file" in request.FILES and old_file and old_file != updated.file:
                 delete_file_from_storage(old_file)
             save_contract_files(updated, request.FILES.getlist("files"))
-            return redirect("contracts:contract_list")
+            fallback_url = reverse("contracts:contract_list")
+            target_url = safe_internal_path(next_url, fallback_url)
+            target_url = merge_query_params(
+                target_url,
+                {"restore_scroll": scroll_position, "return_id": return_id},
+            )
+            return redirect(target_url)
     else:
         form = ContractForm(instance=contract)
+    cancel_url = merge_query_params(
+        safe_internal_path(next_url, reverse("contracts:contract_list")),
+        {"restore_scroll": scroll_position, "return_id": return_id},
+    )
     return render(
         request,
         "contracts/contract_form.html",
@@ -1728,6 +1922,10 @@ def contract_update(request, pk: int):
                 "contract_files": contract.files.all(),
                 "default_contract_number": default_contract_number(),
                 "active_nav": "contracts",
+                "next_url": next_url,
+                "scroll_position": scroll_position,
+                "return_id": return_id,
+                "cancel_url": cancel_url,
             },
         ),
     )
@@ -1754,7 +1952,7 @@ def contract_delete(request, pk: int):
 def record_add(request, pk: int):
     # 现在“添加记录”只负责进入合同类型扩展记录表单。
     get_object_or_404(Contract, pk=pk, is_deleted=False)
-    return redirect("contracts:maintenance_record_create", pk=pk)
+    return redirect_with_current_query(request, reverse("contracts:maintenance_record_create", args=[pk]))
 
 
 # 函数说明：封装可复用的业务处理。
@@ -1762,13 +1960,14 @@ def record_add(request, pk: int):
 # 新增一批开票记录。
 def invoice_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    return_state = list_return_state(request, contract.pk)
     if contract.invoice_status == "开收据":
-        return redirect("contracts:contract_list")
+        return redirect(return_state["return_url"])
     mode_labels = invoice_mode_labels(contract.invoice_status)
 
     if request.method == "POST":
         if save_typed_records_from_request(request, contract, {"开票": InvoiceRecord, "收票": PaymentRecord}):
-            return redirect("contracts:contract_list")
+            return redirect(return_state["return_url"])
     return render(
         request,
         "contracts/record_form.html",
@@ -1782,6 +1981,7 @@ def invoice_record_create(request, pk: int):
                 "amount_label": UI_LABELS["face_amount"],
                 "actual_amount_field": True,
                 "file_label": mode_labels["income_file"],
+                **return_state,
                 "active_nav": "contracts",
             },
         ),
@@ -1793,12 +1993,13 @@ def invoice_record_create(request, pk: int):
 # 新增一批收票记录。
 def payment_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    return_state = list_return_state(request, contract.pk)
     if contract.invoice_status != "开收据":
-        return redirect("contracts:record_add", pk=pk)
+        return redirect_with_current_query(request, reverse("contracts:record_add", args=[pk]))
     mode_labels = invoice_mode_labels(contract.invoice_status)
     if request.method == "POST":
         if save_typed_records_from_request(request, contract, {"开据": PaymentRecord, "收据": PaymentRecord}):
-            return redirect("contracts:contract_list")
+            return redirect(return_state["return_url"])
     return render(
         request,
         "contracts/record_form.html",
@@ -1812,6 +2013,7 @@ def payment_record_create(request, pk: int):
                 "amount_label": UI_LABELS["face_amount"],
                 "actual_amount_field": True,
                 "file_label": mode_labels["expense_file"],
+                **return_state,
                 "active_nav": "contracts",
             },
         ),
@@ -1823,10 +2025,14 @@ def payment_record_create(request, pk: int):
 # 新增一批维护保养记录。
 def maintenance_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    return_state = list_return_state(request, contract.pk)
     if request.method == "POST":
         if save_maintenance_records_from_request(request, contract):
-            return redirect("contracts:contract_list")
+            return redirect(return_state["return_url"])
     project_labels = project_record_labels(contract.contract_type)
+    record_inner_number = str(contract.original_contract_inner_number or "").strip().zfill(4)
+    record_type_code = Contract.CONTRACT_TYPE_CODES.get(contract.contract_type, "06")
+    record_sign_year = (contract.sign_date or contract.start_date or timezone.localdate()).year
     return render(
         request,
         "contracts/record_form.html",
@@ -1839,7 +2045,11 @@ def maintenance_record_create(request, pk: int):
                 "month_field": True,
                 "form_kind": "maintenance",
                 "current_month": timezone.localdate().strftime("%Y-%m"),
+                "record_inner_number": record_inner_number,
+                "record_type_code": record_type_code,
+                "record_sign_year": record_sign_year,
                 "file_label": project_labels["file"],
+                **return_state,
                 "active_nav": "contracts",
             },
         ),

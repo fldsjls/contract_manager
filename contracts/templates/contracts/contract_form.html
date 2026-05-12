@@ -9,6 +9,9 @@
   <!-- multipart 表单用于同时提交合同字段和上传文件。 -->
   <form class="panel" method="post" enctype="multipart/form-data">
     {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <input type="hidden" name="scroll" value="{{ scroll_position }}">
+    <input type="hidden" name="return_id" value="{{ return_id }}">
     {% if form.non_field_errors %}
       {{ form.non_field_errors }}
     {% endif %}
@@ -64,7 +67,7 @@
               <input type="checkbox" name="delete_files" value="{{ item.id }}">
               <span class="file-name" title="{{ item.original_name|default:item.file.name }}">{{ item.original_name|default:item.file.name }}</span>
               <div class="file-actions">
-                <a class="button" href="{% url 'contracts:contract_file_preview' item.id %}?from=edit">预览</a>
+                <a class="button" href="{% url 'contracts:contract_file_preview' item.id %}?from=edit&next={{ next_url|urlencode }}&scroll={{ scroll_position }}&return_id={{ return_id }}">预览</a>
                 <a class="button" href="{{ item.file.url }}" download>下载</a>
               </div>
             </div>
@@ -73,7 +76,7 @@
           <div class="file-item legacy-file-item">
             <span class="file-name" title="{{ contract.file.name }}">{{ contract.file.name }}</span>
             <div class="file-actions">
-              <a class="button" href="{% url 'contracts:legacy_contract_file_preview' contract.id %}?from=edit">预览</a>
+              <a class="button" href="{% url 'contracts:legacy_contract_file_preview' contract.id %}?from=edit&next={{ next_url|urlencode }}&scroll={{ scroll_position }}&return_id={{ return_id }}">预览</a>
               <a class="button" href="{{ contract.file.url }}" download>下载</a>
             </div>
           </div>
@@ -88,7 +91,11 @@
       {% if contract %}
         <button class="button danger" type="submit" name="action" value="delete_files">删除</button>
       {% endif %}
-      <a class="button" href="{% url 'contracts:contract_list' %}">取消</a>
+      {% if cancel_url %}
+        <a class="button" href="{{ cancel_url }}">取消</a>
+      {% else %}
+        <a class="button" href="{% url 'contracts:contract_list' %}">取消</a>
+      {% endif %}
     </div>
   </form>
 

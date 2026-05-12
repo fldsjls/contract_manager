@@ -28,6 +28,7 @@ urlpatterns = [
     path("contracts/<int:pk>/image-folder/open/", views.contract_image_folder_open, name="contract_image_folder_open"),
     path("files/<int:pk>/preview/", views.contract_file_preview, name="contract_file_preview"),
     path("files/<int:pk>/delete/", views.contract_file_delete, name="contract_file_delete"),
+    path("configured-files/<str:kind>/<int:pk>/", views.configured_file_content, name="configured_file_content"),
     path("contracts/<int:pk>/legacy-file/preview/", views.legacy_contract_file_preview, name="legacy_contract_file_preview"),
     path("contracts/<int:pk>/legacy-file/delete/", views.legacy_contract_file_delete, name="legacy_contract_file_delete"),
     path("contracts/<int:pk>/files/upload/", views.contract_file_upload, name="contract_file_upload"),

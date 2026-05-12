@@ -4,14 +4,13 @@
 
 {% block content %}
   <!-- 系统设置页面，管理全局文件上传开关。 -->
-  <div class="page-content">
-    <h1 class="page-title">系统设置</h1>
-
+  <div class="page-content settings-page">
     <!-- 设置表单横跨多个独立栏目，视觉分组清晰，底部按钮统一保存。 -->
     <form id="settingsForm" method="post">
         {% csrf_token %}
         {{ form.non_field_errors }}
       <section class="panel">
+        <h2 class="settings-compact-title">上传设置</h2>
         <label style="display: flex; gap: 10px; align-items: center;">
           {{ form.delete_source_file }}
           <span>上传时是否删除原文件</span>
@@ -23,7 +22,6 @@
 
       <!-- 图片保存位置独立成块，避免和上传删除开关混在同一组设置里。 -->
       <section class="panel">
-        <h2 style="margin-top: 0;">图片保存位置</h2>
         <div style="max-width: 950px;">
           <label class="field-label" for="{{ form.image_root_path.id_for_label }}">保存目录</label>
           {{ form.image_root_path }}
@@ -33,11 +31,24 @@
           </p>
         </div>
       </section>
+
+      <!-- 文件预览位置独立成块，控制合同文件、结算文件等预览时从哪里读取。 -->
+      <section class="panel">
+        <div style="max-width: 950px;">
+          <label class="field-label" for="{{ form.preview_root_path.id_for_label }}">预览根目录</label>
+          {{ form.preview_root_path }}
+          {{ form.preview_root_path.errors }}
+          <p style="color: #667085; line-height: 1.8;">
+            说明：上传文件保存的是相对路径，例如 <code>contracts/合同类型/合同名称/合同文件/文件名</code>。
+            预览时会用这里的根目录加上该相对路径读取文件；留空则默认使用项目 <code>media</code> 文件夹。
+          </p>
+        </div>
+      </section>
     </form>
 
     <!-- 局域网访问说明，供同一网络内其他用户打开系统。 -->
     <section class="panel">
-      <h2 style="margin-top: 0;">局域网访问说明</h2>
+      <h2 class="settings-compact-title">局域网访问说明</h2>
       <p style="color: #667085; line-height: 1.8;">
         其他用户需要和本机处在同一局域网内，并访问以下地址：
         <strong>{{ lan_url }}</strong>
@@ -49,7 +60,7 @@
     </section>
 
     <!-- 管理员辅助入口固定在设置页底部，管理后台单独靠右放置。 -->
-    <div class="toolbar" style="margin-top: auto;">
+    <div class="toolbar settings-actions" style="margin-top: auto;">
       <button class="button primary" type="submit" form="settingsForm">保存设置</button>
       {% if is_admin_mode %}
         <a class="button" href="{% url 'contracts:password_change' %}">修改密码</a>

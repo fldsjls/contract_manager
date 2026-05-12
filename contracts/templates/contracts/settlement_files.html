@@ -15,6 +15,9 @@
     <!-- 选择文件即上传，保持和合同文件列表相同的操作方式。 -->
     <form id="settlementUploadForm" method="post" enctype="multipart/form-data">
       {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <input type="hidden" name="scroll" value="{{ scroll_position }}">
+      <input type="hidden" name="return_id" value="{{ return_id }}">
       <div class="file-list-header">
         <span class="field-label">结算文件</span>
         <label class="button" for="settlementFiles">添加文件</label>
@@ -25,6 +28,9 @@
     <!-- 已上传结算文件支持多选删除、预览和下载。 -->
     <form method="post" style="margin-top: 10px;">
       {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <input type="hidden" name="scroll" value="{{ scroll_position }}">
+      <input type="hidden" name="return_id" value="{{ return_id }}">
       <div class="file-list">
       {% if settlement_files %}
         {% for item in settlement_files %}
@@ -32,7 +38,7 @@
             <input type="checkbox" name="delete_files" value="{{ item.id }}">
             <span class="file-name" title="{{ item.original_name|default:item.file.name }}">{{ item.original_name|default:item.file.name }}</span>
             <div class="file-actions">
-              <a class="button" href="{% url 'contracts:settlement_file_preview' item.id %}">预览</a>
+              <a class="button" href="{% url 'contracts:settlement_file_preview' item.id %}?next={{ next_url|urlencode }}&scroll={{ scroll_position }}&return_id={{ return_id }}">预览</a>
               <a class="button" href="{{ item.file.url }}" download>下载</a>
             </div>
           </div>
@@ -44,7 +50,7 @@
 
       <div class="toolbar" style="margin-top: 18px;">
         <button class="button danger" type="submit" name="action" value="delete_files">删除</button>
-        <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
+        <a class="button" href="{{ return_url }}">返回列表</a>
       </div>
     </form>
   </section>

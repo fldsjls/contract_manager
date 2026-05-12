@@ -16,6 +16,9 @@
     <!-- 上传附件时必须使用 multipart 表单。 -->
     <form method="post" enctype="multipart/form-data">
       {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <input type="hidden" name="scroll" value="{{ scroll_position }}">
+      <input type="hidden" name="return_id" value="{{ return_id }}">
       <div class="table-wrap record-table-wrap">
         <table class="batch-record-table {% if month_field %}maintenance-record-table{% else %}money-record-table{% endif %}" id="recordTable">
           <thead>
@@ -63,7 +66,7 @@
       <div class="toolbar" style="margin-top: 18px;">
         <button class="button" type="button" id="addRecordRow">新增一行</button>
         <button class="button primary" type="submit">保存</button>
-        <a class="button" href="{% url 'contracts:contract_list' %}">取消</a>
+        <a class="button" href="{{ return_url }}">取消</a>
       </div>
     </form>
   </section>

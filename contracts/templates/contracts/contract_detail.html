@@ -8,11 +8,11 @@
 
     <!-- 详情页顶部操作区：返回列表、编辑合同以及进入当前合同类型的记录页。 -->
     <div class="toolbar detail-toolbar">
-      <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
+      <a class="button" href="{{ return_url }}">返回列表</a>
       {% if can_manage %}
-        <a class="button primary" href="{% url 'contracts:contract_update' contract.id %}">编辑合同</a>
+        <a class="button primary" href="{% url 'contracts:contract_update' contract.id %}?next={{ request.get_full_path|urlencode }}&return_id={{ contract.id }}">编辑合同</a>
       {% endif %}
-      <a class="button success detail-maintenance-link" href="{% url 'contracts:maintenance_record_list' contract.id %}">{{ project_record_labels.button }}</a>
+      <a class="button success detail-maintenance-link" href="{% url 'contracts:maintenance_record_list' contract.id %}?next={{ next_url|urlencode }}&scroll={{ scroll_position }}&return_id={{ return_id }}">{{ project_record_labels.button }}</a>
     </div>
 
     <div class="detail-scroll">

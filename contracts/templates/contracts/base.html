@@ -509,17 +509,47 @@
     .contract-table th:nth-child(6),
     .contract-table td:nth-child(6) { width: 8.5%; }
     .contract-table th:nth-child(7),
-    .contract-table td:nth-child(7) { width: 7%; }
+    .contract-table td:nth-child(7) { width: 5.5%; }
     .contract-table th:nth-child(8),
-    .contract-table td:nth-child(8) { width: 10.5%; }
+    .contract-table td:nth-child(8) { width: 11.25%; }
     .contract-table th:nth-child(9),
-    .contract-table td:nth-child(9) { width: 10.5%; }
+    .contract-table td:nth-child(9) { width: 11.25%; }
     .contract-table th:nth-child(10),
     .contract-table td:nth-child(10) { width: 6%; }
     .contract-table th:nth-child(11),
     .contract-table td:nth-child(11) { width: 5.5%; }
     .contract-table th:nth-child(12),
     .contract-table td:nth-child(12) { width: 4.5%; }
+    .inline-invoice-status {
+      width: 100%;
+      min-width: 0;
+      padding: 4px 5px;
+      font-size: 13px;
+      border-color: transparent;
+      background-color: transparent;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      text-align: center;
+      text-align-last: center;
+    }
+    .inline-invoice-status:hover,
+    .inline-invoice-status:focus {
+      border-color: #b9c3d1;
+      background-color: #fff;
+    }
+    .inline-invoice-status.invoice-receipt {
+      color: #b45309;
+      font-weight: 700;
+    }
+    .inline-invoice-status.invoice-pending {
+      color: #15803d;
+      font-weight: 700;
+    }
+    .inline-invoice-status.invoice-done {
+      color: #dc2626;
+      font-weight: 700;
+    }
     .status {
       font-weight: 700;
     }

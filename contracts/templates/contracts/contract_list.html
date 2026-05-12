@@ -123,9 +123,23 @@
                 <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
                 <td title="{{ contract.display_contract_number }}">{{ contract.display_contract_number }}</td>
                 <td>{{ contract.contract_type }}</td>
-                <td class="party">{{ contract.party_name }}</td>
+                <td class="party" title="{{ contract.party_name }}">{{ contract.party_name }}</td>
                 <td>¥ {{ contract.amount|floatformat:2 }}</td>
-                <td>{{ contract.invoice_status }}</td>
+                <td>
+                  {% if can_manage %}
+                    <select
+                      class="inline-invoice-status {% if contract.invoice_status == '开收据' %}invoice-receipt{% elif contract.invoice_status == '待开票' %}invoice-pending{% elif contract.invoice_status == '票已结' %}invoice-done{% endif %}"
+                      data-update-url="{% url 'contracts:contract_invoice_status_update' contract.id %}"
+                      aria-label="修改{{ labels.invoice_status }}"
+                    >
+                      {% for value, label in invoice_status_choices %}
+                        <option value="{{ value }}" {% if contract.invoice_status == value %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  {% else %}
+                    {{ contract.invoice_status }}
+                  {% endif %}
+                </td>
                 <td>{{ contract.start_date|default:"" }}</td>
                 <td>{{ contract.end_date|default:"" }}</td>
                 <td>{{ contract.responsible_person|default:"" }}</td>
@@ -382,11 +396,11 @@
 
       const invoiceStatus = row.dataset.invoiceStatus || "";
       if (moneyRecordButton) {
-        const template = invoiceStatus === "不开票"
+        const template = invoiceStatus === "开收据"
           ? moneyRecordButton.dataset.receiptUrlTemplate
           : moneyRecordButton.dataset.invoiceUrlTemplate;
         moneyRecordButton.href = template.replace("/0/", `/${id}/`);
-        moneyRecordButton.textContent = invoiceStatus === "不开票" ? "添加收据" : "添加发票";
+        moneyRecordButton.textContent = invoiceStatus === "开收据" ? "添加收据" : "添加发票";
         setDisabled(moneyRecordButton, false);
       }
 
@@ -403,6 +417,9 @@
 
     if (table) {
       table.addEventListener("click", (event) => {
+        if (event.target.closest(".inline-invoice-status")) {
+          return;
+        }
         const row = event.target.closest(".selectable-row");
         if (!row) {
           clearSelection();
@@ -412,6 +429,58 @@
         selectContractRow(row);
       });
     }
+
+    document.querySelectorAll(".inline-invoice-status").forEach((select) => {
+      function updateInvoiceStatusColor() {
+        select.classList.remove("invoice-receipt", "invoice-pending", "invoice-done");
+        if (select.value === "开收据") {
+          select.classList.add("invoice-receipt");
+        } else if (select.value === "待开票") {
+          select.classList.add("invoice-pending");
+        } else if (select.value === "票已结") {
+          select.classList.add("invoice-done");
+        }
+      }
+
+      let previousValue = select.value;
+      updateInvoiceStatusColor();
+      select.addEventListener("focus", () => {
+        previousValue = select.value;
+      });
+      select.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+      select.addEventListener("change", async () => {
+        const formData = new FormData();
+        formData.append("invoice_status", select.value);
+        try {
+          const response = await fetch(select.dataset.updateUrl, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "X-CSRFToken": document.querySelector("input[name='csrfmiddlewaretoken']").value,
+              "X-Requested-With": "XMLHttpRequest",
+            },
+            body: formData,
+          });
+          if (!response.ok) {
+            throw new Error("更新失败");
+          }
+          const data = await response.json();
+          const row = select.closest(".selectable-row");
+          row.dataset.invoiceStatus = data.invoice_status;
+          previousValue = data.invoice_status;
+          updateInvoiceStatusColor();
+          if (row.classList.contains("selected")) {
+            selectRow(row);
+          }
+        } catch (error) {
+          select.value = previousValue;
+          updateInvoiceStatusColor();
+          alert("是否开票更新失败，请稍后重试。");
+        }
+      });
+    });
 
     // 函数说明：处理页面交互和数据展示逻辑。
     function contractRows() {

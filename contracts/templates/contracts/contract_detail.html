@@ -92,7 +92,7 @@
                 <button class="button danger record-delete-button" type="submit">删除</button>
               {% endif %}
             </div>
-            {% if contract.invoice_status == "不开票" %}
+            {% if contract.invoice_status == "开收据" %}
               <div class="empty">{{ invoice_labels.disabled_income_message }}</div>
             {% elif invoice_records %}
               <div class="table-wrap">

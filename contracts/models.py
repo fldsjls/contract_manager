@@ -32,7 +32,7 @@ def upload_contract_for(instance):
 def project_file_upload_path(instance, filename: str) -> str:
     contract = upload_contract_for(instance)
     safe_filename = PurePath(filename).name
-    if instance.__class__.__name__ == "PaymentRecord" and contract.invoice_status == "不开票":
+    if instance.__class__.__name__ == "PaymentRecord" and contract.invoice_status == "开收据":
         subfolder = "收据文件"
     else:
         folder_map = {
@@ -60,10 +60,11 @@ class Contract(models.Model):
         ("新建", "新建"),
         ("其他", "其他"),
     ]
-    # 是否开票用于控制开票记录是否可用。
+    # 票据状态用于控制发票记录或收据记录入口。
     INVOICE_STATUS = [
-        ("不开票", "不开票"),
-        ("开票", "开票"),
+        ("开收据", "开收据"),
+        ("待开票", "待开票"),
+        ("票已结", "票已结"),
     ]
 
     # 合同基础字段会映射成数据库 contracts_contract 表中的列。
@@ -74,7 +75,7 @@ class Contract(models.Model):
     contract_type = models.CharField("合同类型", max_length=20, choices=CONTRACT_TYPES, default="维保")
     party_name = models.CharField("甲方名称", max_length=200)
     amount = models.DecimalField("金额", max_digits=14, decimal_places=2, default=0)
-    invoice_status = models.CharField("是否开票", max_length=20, choices=INVOICE_STATUS, default="不开票")
+    invoice_status = models.CharField("是否开票", max_length=20, choices=INVOICE_STATUS, default="开收据")
     sign_date = models.DateField("签订日期", null=True, blank=True)
     start_date = models.DateField("开始日期", null=True, blank=True)
     end_date = models.DateField("截止日期", null=True, blank=True)

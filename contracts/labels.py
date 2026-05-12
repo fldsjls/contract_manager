@@ -30,23 +30,23 @@ UI_LABELS = {
 }
 
 
-# 合同是否开票决定票据标题使用“发票/收票”还是“开据/收据”。
+# 票据状态决定记录标题使用“发票/收票”还是“开据/收据”。
 INVOICE_MODE_LABELS = {
-    "开票": {
+    "发票": {
         "income_record_title": "开票记录",
         "expense_record_title": "收票记录",
         "income_file": "发票文件",
         "expense_file": "发票文件",
-        "disabled_income_message": "该合同设置为不开票，开票记录不可用。",
+        "disabled_income_message": "该合同设置为开收据，开票记录不可用。",
         "empty_income_message": "暂无开票记录",
         "empty_expense_message": "暂无收票记录",
     },
-    "不开票": {
+    "收据": {
         "income_record_title": "开据记录",
         "expense_record_title": "收据记录",
         "income_file": "发票文件",
         "expense_file": "收据文件",
-        "disabled_income_message": "该合同设置为不开票，开票记录不可用。",
+        "disabled_income_message": "该合同设置为开收据，开票记录不可用。",
         "empty_income_message": "暂无开据记录",
         "empty_expense_message": "暂无收据记录",
     },
@@ -102,7 +102,7 @@ PROJECT_RECORD_LABELS = {
 
 # 函数说明：根据是否开票返回票据记录文案。
 def invoice_mode_labels(invoice_status: str) -> dict:
-    return INVOICE_MODE_LABELS["不开票" if invoice_status == "不开票" else "开票"]
+    return INVOICE_MODE_LABELS["收据" if invoice_status == "开收据" else "发票"]
 
 
 # 函数说明：根据合同类型返回扩展项目记录文案。

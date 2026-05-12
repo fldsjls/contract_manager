@@ -348,8 +348,8 @@ def add_income_expense(target: dict, record) -> None:
 
 # 函数说明：封装可复用的业务处理。
 def project_mode_labels(contract: Contract) -> dict:
-    # 不开发票的合同把“开票/收票”文案替换成“开据/收据”。
-    has_invoice = contract.invoice_status != "不开票"
+    # 开收据的合同把“开票/收票”文案替换成“开据/收据”。
+    has_invoice = contract.invoice_status != "开收据"
     return {
         "invoice_primary": "开票金额" if has_invoice else "开据金额",
         "invoice_secondary": "收款金额" if has_invoice else "收款金额",
@@ -1427,6 +1427,21 @@ def contract_remark_update(request, pk: int):
     return redirect(next_url)
 
 
+# 函数说明：在合同列表中即时更新票据状态。
+@admin_required
+def contract_invoice_status_update(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    if request.method != "POST":
+        return JsonResponse({"error": "只允许保存票据状态。"}, status=405)
+    invoice_status = request.POST.get("invoice_status", "").strip()
+    valid_statuses = {value for value, _ in Contract.INVOICE_STATUS}
+    if invoice_status not in valid_statuses:
+        return JsonResponse({"error": "票据状态不正确。"}, status=400)
+    contract.invoice_status = invoice_status
+    contract.save(update_fields=["invoice_status", "updated_at"])
+    return JsonResponse({"ok": True, "invoice_status": contract.invoice_status})
+
+
 RECORD_MODEL_MAP = {
     "invoice": InvoiceRecord,
     "payment": PaymentRecord,
@@ -1747,7 +1762,7 @@ def record_add(request, pk: int):
 # 新增一批开票记录。
 def invoice_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
-    if contract.invoice_status == "不开票":
+    if contract.invoice_status == "开收据":
         return redirect("contracts:contract_list")
     mode_labels = invoice_mode_labels(contract.invoice_status)
 
@@ -1778,7 +1793,7 @@ def invoice_record_create(request, pk: int):
 # 新增一批收票记录。
 def payment_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
-    if contract.invoice_status != "不开票":
+    if contract.invoice_status != "开收据":
         return redirect("contracts:record_add", pk=pk)
     mode_labels = invoice_mode_labels(contract.invoice_status)
     if request.method == "POST":

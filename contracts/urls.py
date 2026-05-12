@@ -22,6 +22,7 @@ urlpatterns = [
     path("contracts/new/", views.contract_create, name="contract_create"),
     path("contracts/<int:pk>/", views.contract_detail, name="contract_detail"),
     path("contracts/<int:pk>/remark/", views.contract_remark_update, name="contract_remark_update"),
+    path("contracts/<int:pk>/invoice-status/", views.contract_invoice_status_update, name="contract_invoice_status_update"),
     path("contracts/<int:pk>/stats-data/", views.contract_stats_data, name="contract_stats_data"),
     path("contracts/<int:pk>/maintenance-data/", views.maintenance_record_data, name="maintenance_record_data"),
     path("contracts/<int:pk>/image-folder/open/", views.contract_image_folder_open, name="contract_image_folder_open"),

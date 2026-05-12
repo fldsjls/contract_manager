@@ -15,7 +15,7 @@
 
     <div class="toolbar">
       {% if can_add_money_records %}
-        {% if contract.invoice_status != "不开票" %}
+        {% if contract.invoice_status != "开收据" %}
           <a class="button primary" href="{% url 'contracts:invoice_record_create' contract.id %}">添加发票</a>
         {% else %}
           <a class="button primary" href="{% url 'contracts:payment_record_create' contract.id %}">添加收据</a>

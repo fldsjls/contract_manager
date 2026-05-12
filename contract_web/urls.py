@@ -4,6 +4,8 @@ from django.contrib import admin
 from django.urls import include, path
 
 
+admin.site.site_url = "/operation-logs/"
+
 # 项目总路由，把后台和合同应用路由挂到根路径。
 urlpatterns = [
     path("admin/", admin.site.urls),

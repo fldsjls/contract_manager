@@ -13,6 +13,7 @@ urlpatterns = [
     path("guest/", views.guest_login_view, name="guest_login"),
     path("normal/", views.normal_login_view, name="normal_login"),
     path("logout/", views.logout_view, name="logout"),
+    path("operation-logs/", views.operation_log_list, name="operation_log_list"),
     path("settings/", views.settings_view, name="settings"),
     path("settings/password/", views.password_change, name="password_change"),
     path("trash/", views.trash_list, name="trash"),

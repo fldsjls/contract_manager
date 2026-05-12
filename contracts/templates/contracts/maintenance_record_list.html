@@ -35,7 +35,7 @@
             </tr>
             <tr>
               <th>{{ labels.invoice_status }}</th>
-              <td>{{ contract.invoice_status }}</td>
+              <td><span class="invoice-status {% if contract.invoice_status == '开收据' %}invoice-receipt{% endif %}">{{ contract.invoice_status }}</span></td>
               <th>{{ labels.file }}</th>
               <td class="file-cell">
                 {% if primary_file %}
@@ -55,13 +55,13 @@
             </tr>
             <tr>
               <th>签订日期</th>
-              <td>{{ contract.sign_date|default:"" }}</td>
+              <td>{{ contract.sign_date|date:"Y-m-d" }}</td>
               <th>{{ labels.start_date }}</th>
-              <td>{{ contract.start_date|default:"" }}</td>
+              <td>{{ contract.start_date|date:"Y-m-d" }}</td>
             </tr>
             <tr>
               <th>{{ labels.end_date }}</th>
-              <td>{{ contract.end_date|default:"" }}</td>
+              <td>{{ contract.end_date|date:"Y-m-d" }}</td>
               <th>{{ labels.remark }}</th>
               <td>
                 {% if can_manage %}
@@ -116,7 +116,7 @@
                   <tbody>
                     {% for record in maintenance_records %}
                       <tr>
-                        <td>{{ record.record_date }}</td>
+                        <td>{{ record.record_date|date:"Y-m-d" }}</td>
                         <td>{{ record.record_number }}</td>
                         <td class="remark">
                           {% if can_manage %}

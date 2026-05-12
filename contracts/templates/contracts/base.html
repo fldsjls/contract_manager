@@ -27,13 +27,14 @@
       overflow: hidden;
     }
     .sidebar {
-      width: 156px;
-      flex: 0 0 156px;
+      width: 132px;
+      flex: 0 0 132px;
       background: #eef1f5;
       border-right: 1px solid #d9dee7;
       padding: 16px 10px;
       display: flex;
       flex-direction: column;
+      user-select: none;
     }
     .brand {
       font-weight: 700;
@@ -53,6 +54,48 @@
       background: #fff;
       border-color: #d9dee7;
       font-weight: 700;
+    }
+    .nav-group {
+      margin-bottom: 8px;
+    }
+    .nav-group summary {
+      display: block;
+      position: relative;
+      padding: 10px 12px;
+      padding-right: 30px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: #1f2937;
+      cursor: pointer;
+      list-style: none;
+    }
+    .nav-group summary::-webkit-details-marker {
+      display: none;
+    }
+    .nav-group summary::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: 14px;
+      width: 7px;
+      height: 7px;
+      border-right: 2px solid #667085;
+      border-bottom: 2px solid #667085;
+      transform: translateY(-60%) rotate(45deg);
+      transition: transform 0.16s ease;
+    }
+    .nav-group[open] summary::after {
+      transform: translateY(-20%) rotate(225deg);
+    }
+    .nav-group summary:hover {
+      background: #fff;
+      border-color: #d9dee7;
+      font-weight: 700;
+    }
+    .nav-group .nav-link {
+      margin: 6px 0 0 10px;
+      padding: 8px 10px;
+      font-size: 14px;
     }
     .auth-box {
       margin-top: auto;
@@ -171,6 +214,9 @@
       gap: 10px;
       align-items: center;
       margin-bottom: 14px;
+    }
+    .operation-log-toolbar {
+      grid-template-columns: minmax(280px, 1fr) 120px auto auto;
     }
     .search-preview-wrap {
       position: relative;
@@ -545,6 +591,74 @@
     .contract-table td:nth-child(11) { width: 5.5%; }
     .contract-table th:nth-child(12),
     .contract-table td:nth-child(12) { width: 4.5%; }
+    .archive-table th,
+    .archive-table td {
+      padding: 7px 6px;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .archive-table th:nth-child(1),
+    .archive-table td:nth-child(1) { width: 4%; }
+    .archive-table th:nth-child(2),
+    .archive-table td:nth-child(2) { width: 15%; }
+    .archive-table th:nth-child(3),
+    .archive-table td:nth-child(3) { width: 12%; }
+    .archive-table th:nth-child(4),
+    .archive-table td:nth-child(4) { width: 15%; }
+    .archive-table th:nth-child(5),
+    .archive-table td:nth-child(5) { width: 11%; }
+    .archive-table th:nth-child(6),
+    .archive-table td:nth-child(6) { width: 11%; }
+    .archive-table th:nth-child(7),
+    .archive-table td:nth-child(7) { width: 7%; }
+    .archive-table th:nth-child(8),
+    .archive-table td:nth-child(8) { width: 14%; }
+    .archive-table th:nth-child(9),
+    .archive-table td:nth-child(9) { width: 11%; }
+    .archive-table td:nth-child(2),
+    .archive-table td:nth-child(4) {
+      cursor: help;
+    }
+    .archive-table .button {
+      max-width: 100%;
+      padding: 7px 9px;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .operation-log-table th,
+    .operation-log-table td {
+      padding: 7px 6px;
+      font-size: 12px;
+      overflow: visible;
+      text-overflow: clip;
+    }
+    .operation-log-table th:nth-child(1),
+    .operation-log-table td:nth-child(1) { width: 12%; }
+    .operation-log-table th:nth-child(2),
+    .operation-log-table td:nth-child(2) { width: 8%; }
+    .operation-log-table th:nth-child(3),
+    .operation-log-table td:nth-child(3) { width: 11%; }
+    .operation-log-table th:nth-child(4),
+    .operation-log-table td:nth-child(4) { width: 7%; }
+    .operation-log-table th:nth-child(5),
+    .operation-log-table td:nth-child(5) { width: 9%; }
+    .operation-log-table th:nth-child(6),
+    .operation-log-table td:nth-child(6) { width: 28%; }
+    .operation-log-table th:nth-child(7),
+    .operation-log-table td:nth-child(7) { width: 25%; }
+    .operation-log-table .log-object-name {
+      cursor: help;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .operation-log-table .log-detail {
+      cursor: help;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .inline-invoice-status {
       width: 100%;
       min-width: 0;
@@ -563,8 +677,9 @@
       border-color: #b9c3d1;
       background-color: #fff;
     }
-    .inline-invoice-status.invoice-receipt {
-      color: #b45309;
+    .inline-invoice-status.invoice-receipt,
+    .invoice-status.invoice-receipt {
+      color: #ca8a04;
       font-weight: 700;
     }
     .inline-invoice-status.invoice-pending {
@@ -580,7 +695,7 @@
     }
     .status.active { color: #15803d; }
     .status.archived { color: #2563eb; }
-    .status.expiring { color: #a16207; }
+    .status.expiring { color: #ca8a04; }
     .status.expired { color: #dc2626; }
     .status.archiving { color: #7c3aed; }
     .empty {
@@ -1398,11 +1513,22 @@
       {% if is_admin_mode %}
         <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'contracts:dashboard' %}">统计总览</a>
       {% endif %}
-      <a class="nav-link {% if active_nav == 'contracts' %}active{% endif %}" href="{% url 'contracts:contract_list' %}">合同列表</a>
-      {% if not is_guest_mode %}
-        <a class="nav-link {% if active_nav == 'archive' %}active{% endif %}" href="{% url 'contracts:archive_list' %}">归档项目</a>
+      {% if is_super_admin_mode %}
+        <details class="nav-group" id="managementNavGroup" {% if active_nav == 'dashboard' or active_nav == 'contracts' or active_nav == 'archive' or active_nav == 'trash' %}open{% endif %}>
+          <summary>管理系统</summary>
+          <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'contracts:dashboard' %}">合同总览</a>
+          <a class="nav-link {% if active_nav == 'contracts' %}active{% endif %}" href="{% url 'contracts:contract_list' %}">合同列表</a>
+          <a class="nav-link {% if active_nav == 'archive' %}active{% endif %}" href="{% url 'contracts:archive_list' %}">归档项目</a>
+          <a class="nav-link {% if active_nav == 'trash' %}active{% endif %}" href="{% url 'contracts:trash' %}">回收站</a>
+        </details>
+        <a class="nav-link {% if active_nav == 'operation_logs' %}active{% endif %}" href="{% url 'contracts:operation_log_list' %}">操作日志</a>
+      {% else %}
+        <a class="nav-link {% if active_nav == 'contracts' %}active{% endif %}" href="{% url 'contracts:contract_list' %}">合同列表</a>
+        {% if not is_guest_mode %}
+          <a class="nav-link {% if active_nav == 'archive' %}active{% endif %}" href="{% url 'contracts:archive_list' %}">归档项目</a>
+        {% endif %}
+        <a class="nav-link {% if active_nav == 'trash' %}active{% endif %}" href="{% url 'contracts:trash' %}">回收站</a>
       {% endif %}
-      <a class="nav-link {% if active_nav == 'trash' %}active{% endif %}" href="{% url 'contracts:trash' %}">回收站</a>
       {% if not is_guest_mode %}
         <a
           class="nav-link {% if active_nav == 'settings' %}active{% endif %} {% if not can_manage %}requires-admin-login{% endif %}"
@@ -1410,8 +1536,11 @@
         >设置</a>
       {% endif %}
       <div class="auth-box">
-        {% if is_admin_mode %}
-          <strong>管理员模式</strong>
+        {% if is_super_admin_mode %}
+          <strong>超级管理员</strong>
+          <a href="{% url 'contracts:logout' %}">退出登录</a>
+        {% elif is_admin_mode %}
+          <strong>管理员</strong>
           <a href="{% url 'contracts:logout' %}">退出登录</a>
         {% elif is_normal_mode %}
           <strong>普通用户</strong>
@@ -1587,6 +1716,19 @@
         closeAdminLoginModal();
       }
     });
+
+    const managementNavGroup = document.querySelector("#managementNavGroup");
+    if (managementNavGroup) {
+      const storedManagementNavOpen = localStorage.getItem("managementNavOpen");
+      if (storedManagementNavOpen === "true") {
+        managementNavGroup.open = true;
+      } else if (storedManagementNavOpen === "false") {
+        managementNavGroup.open = false;
+      }
+      managementNavGroup.addEventListener("toggle", () => {
+        localStorage.setItem("managementNavOpen", managementNavGroup.open ? "true" : "false");
+      });
+    }
 
     // 函数说明：处理页面交互和数据展示逻辑。
     function clearInteractiveSelection() {

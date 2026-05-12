@@ -11,10 +11,10 @@
     </div>
 
     <div class="table-wrap fill">
-      <table>
+      <table class="archive-table">
         <thead>
           <tr>
-            <th style="width: 70px;">序号</th>
+            <th>序号</th>
             <th>合同名称</th>
             <th>合同编号</th>
             <th>甲方名称</th>
@@ -22,18 +22,18 @@
             <th>截止日期</th>
             <th>状态</th>
             <th>归档时间</th>
-            <th style="width: 120px;">操作</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
           {% for contract in contracts %}
             <tr>
               <td>{{ forloop.counter }}</td>
-              <td class="name">{{ contract.contract_name }}</td>
+              <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
               <td>{{ contract.display_contract_number }}</td>
-              <td class="party">{{ contract.party_name }}</td>
+              <td class="party" title="{{ contract.party_name }}">{{ contract.party_name }}</td>
               <td>¥ {{ contract.amount|floatformat:2 }}</td>
-              <td>{{ contract.end_date }}</td>
+              <td>{{ contract.end_date|date:"Y-m-d" }}</td>
               <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
               <td>{{ contract.archived_at|date:"Y-m-d H:i" }}</td>
               <td>

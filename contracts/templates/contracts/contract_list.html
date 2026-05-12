@@ -82,7 +82,7 @@
           {% for contract in expiring_contracts %}
             <a class="expiring-item" href="{% url 'contracts:contract_detail' contract.id %}">
               <span class="expiring-name">{{ contract.contract_name }}</span>
-              <span class="expiring-date">{{ contract.end_date }}</span>
+              <span class="expiring-date">{{ contract.end_date|date:"Y-m-d" }}</span>
             </a>
           {% endfor %}
         </div>
@@ -149,11 +149,11 @@
                       {% endfor %}
                     </select>
                   {% else %}
-                    {{ contract.invoice_status }}
+                    <span class="invoice-status {% if contract.invoice_status == '开收据' %}invoice-receipt{% endif %}">{{ contract.invoice_status }}</span>
                   {% endif %}
                 </td>
-                <td>{{ contract.start_date|default:"" }}</td>
-                <td>{{ contract.end_date|default:"" }}</td>
+                <td>{{ contract.start_date|date:"Y-m-d" }}</td>
+                <td>{{ contract.end_date|date:"Y-m-d" }}</td>
                 <td>{{ contract.responsible_person|default:"" }}</td>
                 <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
                 <td>{% if contract.latest_file or contract.file %}已上传{% else %}未上传{% endif %}</td>

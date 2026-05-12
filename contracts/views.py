@@ -11,8 +11,9 @@ import socket
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import zipfile
 
-from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
+from django.contrib.auth import authenticate, get_user_model, login, logout, update_session_auth_hash
 from django.contrib.auth.forms import PasswordChangeForm
+from django.contrib.auth.models import Group, Permission
 from django.conf import settings
 from django.db.models import Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
@@ -33,6 +34,7 @@ from .models import (
     ContractFile,
     InvoiceRecord,
     MaintenanceRecord,
+    OperationLog,
     PaymentRecord,
     SettlementFile,
     safe_project_folder_name,
@@ -42,6 +44,14 @@ from .models import (
 
 # 回收站内合同默认保留 7 天。
 TRASH_RETENTION_DAYS = 7
+SUPER_ADMIN_USERNAME = "superuser"
+SUPER_ADMIN_PASSWORD = "superuser123"
+ROLE_GROUPS = {
+    "管理员": "对应项目中的超级管理员：拥有合同应用和账号权限，实际后台入口仍只允许 superuser 进入。",
+    "财务": "对应项目中的管理员：可维护合同、票据、收付款、结算和设置等业务数据。",
+    "资料": "对应项目中的普通用户：可维护合同、合同文件、结算文件和项目记录，不分配财务记录权限。",
+    "职员": "对应项目中的游客：只读查看合同、文件和项目记录。",
+}
 # 记录类型到收入/支出方向的映射，统计图和总览卡片都依赖这里归类。
 INCOME_TYPES = {"开票", "开据"}
 EXPENSE_TYPES = {"收票", "收据"}
@@ -96,6 +106,19 @@ def is_admin_mode(request) -> bool:
     return bool(
         request.user.is_authenticated
         and request.user.is_staff
+        and request.user.username != SUPER_ADMIN_USERNAME
+        and not request.session.get("guest_mode", False)
+        and not request.session.get("normal_mode", False)
+    )
+
+
+def is_super_admin_mode(request) -> bool:
+    return bool(
+        request.user.is_authenticated
+        and request.user.is_staff
+        and request.user.is_superuser
+        and request.user.username == SUPER_ADMIN_USERNAME
+        and request.session.get("super_admin_mode", False)
         and not request.session.get("guest_mode", False)
         and not request.session.get("normal_mode", False)
     )
@@ -114,12 +137,12 @@ def is_normal_mode(request) -> bool:
 
 # 普通用户继承管理员的大部分操作，只屏蔽发票/收据类新增入口。
 def can_manage(request) -> bool:
-    return is_admin_mode(request) or is_normal_mode(request)
+    return is_admin_mode(request) or is_normal_mode(request) or is_super_admin_mode(request)
 
 
 # 函数说明：封装可复用的业务处理。
 def can_add_money_records(request) -> bool:
-    return is_admin_mode(request)
+    return is_admin_mode(request) or is_super_admin_mode(request)
 
 
 # 限制只有管理员或普通用户模式才能访问写入类页面。
@@ -152,7 +175,7 @@ def true_admin_required(view_func):
     # 内部函数：在调用原视图前执行权限检查。
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
-        if is_admin_mode(request):
+        if is_admin_mode(request) or is_super_admin_mode(request):
             return view_func(request, *args, **kwargs)
         return redirect("contracts:login")
 
@@ -164,11 +187,104 @@ def true_admin_required(view_func):
 def context_with_auth(request, context: dict | None = None) -> dict:
     data = context or {}
     data["is_admin_mode"] = is_admin_mode(request)
+    data["is_super_admin_mode"] = is_super_admin_mode(request)
     data["is_normal_mode"] = is_normal_mode(request)
     data["is_guest_mode"] = bool(request.session.get("guest_mode", False))
     data["can_manage"] = can_manage(request)
     data["can_add_money_records"] = can_add_money_records(request)
     return data
+
+
+def role_label_for_request(request) -> str:
+    if is_super_admin_mode(request):
+        return "超级管理员"
+    if is_admin_mode(request):
+        return "管理员"
+    if is_normal_mode(request):
+        return "普通用户"
+    if request.session.get("guest_mode", False):
+        return "游客"
+    return "未登录"
+
+
+def client_ip_address(request) -> str | None:
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    return request.META.get("REMOTE_ADDR") or None
+
+
+def log_operation(request, action: str, obj=None, object_type: str = "", object_name: str = "", detail: str = "") -> None:
+    user = request.user if request.user.is_authenticated else None
+    object_id = ""
+    if obj is not None:
+        object_type = object_type or getattr(getattr(obj, "_meta", None), "verbose_name", obj.__class__.__name__)
+        object_name = object_name or str(obj)
+        object_id = str(getattr(obj, "pk", "") or "")
+    OperationLog.objects.create(
+        user=user,
+        username=getattr(user, "username", "") if user else "游客",
+        role=role_label_for_request(request),
+        action=action,
+        object_type=object_type,
+        object_name=object_name[:255],
+        object_id=object_id,
+        detail=detail,
+        ip_address=client_ip_address(request),
+    )
+
+
+def permissions_for_models(codenames: list[str], actions: list[str]):
+    permission_codenames = [
+        f"{action}_{model_codename}"
+        for model_codename in codenames
+        for action in actions
+    ]
+    return Permission.objects.filter(
+        content_type__app_label="contracts",
+        content_type__model__in=codenames,
+        codename__in=permission_codenames,
+    )
+
+
+def ensure_role_groups():
+    document_models = ["contract", "contractfile", "maintenancerecord", "settlementfile"]
+    finance_models = ["contract", "contractfile", "invoicerecord", "paymentrecord", "settlementfile", "appsetting"]
+    view_models = ["contract", "contractfile", "maintenancerecord", "settlementfile"]
+    role_permissions = {
+        "管理员": Permission.objects.filter(content_type__app_label__in=["auth", "contracts"]),
+        "财务": permissions_for_models(finance_models, ["add", "change", "delete", "view"]),
+        "资料": permissions_for_models(document_models, ["add", "change", "delete", "view"]),
+        "职员": permissions_for_models(view_models, ["view"]),
+    }
+    for group_name in ROLE_GROUPS:
+        group, _created = Group.objects.get_or_create(name=group_name)
+        group.permissions.set(role_permissions[group_name])
+
+
+def ensure_special_superuser():
+    ensure_role_groups()
+    User = get_user_model()
+    user, _created = User.objects.get_or_create(username=SUPER_ADMIN_USERNAME)
+    changed_fields = []
+    if not user.is_staff:
+        user.is_staff = True
+        changed_fields.append("is_staff")
+    if not user.is_superuser:
+        user.is_superuser = True
+        changed_fields.append("is_superuser")
+    if not user.is_active:
+        user.is_active = True
+        changed_fields.append("is_active")
+    if not user.check_password(SUPER_ADMIN_PASSWORD):
+        user.set_password(SUPER_ADMIN_PASSWORD)
+        changed_fields.append("password")
+    if changed_fields:
+        user.save(update_fields=changed_fields)
+    admin_group = Group.objects.filter(name="管理员").first()
+    if admin_group and not user.groups.filter(pk=admin_group.pk).exists():
+        user.groups.add(admin_group)
+    return user
 
 
 # 从磁盘上删除上传文件。
@@ -492,7 +608,7 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
             month = record_date[:7]
         if "-" in month:
             year_text, month_text = month.split("-", 1)
-            month = f"{year_text}年{int(month_text)}月"
+            month = f"{year_text}年{int(month_text):02d}月"
         MaintenanceRecord.objects.create(
             contract=contract,
             record_date=record_date,
@@ -968,7 +1084,7 @@ def maintenance_record_data(request, pk: int):
     for record in records:
         grouped_records.setdefault(record.record_date.month, []).append(
             {
-                "date": f"{record.record_date.year}年{record.record_date.month}月{record.record_date.day}日",
+                "date": record.record_date.strftime("%Y-%m-%d"),
                 "record_number": maintenance_record_number(contract, record.record_date),
                 "month": record.month,
                 "remark": record.remark,
@@ -983,7 +1099,7 @@ def maintenance_record_data(request, pk: int):
             "months": [
                 {
                     "month": month,
-                    "label": f"{month}月",
+                    "label": f"{month:02d}月",
                     "has_records": month in grouped_records,
                     "records": grouped_records.get(month, []),
                 }
@@ -1047,8 +1163,11 @@ def contract_file_delete(request, pk: int):
     item = get_object_or_404(ContractFile, pk=pk, contract__is_deleted=False)
     contract_id = item.contract_id
     if request.method == "POST":
+        object_name = item.original_name or Path(item.file.name).name
+        contract_name = item.contract.contract_name
         delete_file_from_storage(item.file)
         item.delete()
+        log_operation(request, "删除", object_type="合同文件", object_name=object_name, object_id=str(pk), detail=f"contract: {contract_name}")
         next_url = request.POST.get("next", "")
         if next_url.startswith("/") and not next_url.startswith("//"):
             return redirect(next_url)
@@ -1109,9 +1228,11 @@ def legacy_contract_file_preview(request, pk: int):
 def legacy_contract_file_delete(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if request.method == "POST" and contract.file:
+        object_name = Path(contract.file.name).name
         delete_file_from_storage(contract.file)
         contract.file = None
         contract.save(update_fields=["file", "updated_at"])
+        log_operation(request, "删除", contract, object_type="合同文件", object_name=object_name, detail=f"contract: {contract.contract_name}")
         next_url = request.POST.get("next", "")
         if next_url.startswith("/") and not next_url.startswith("//"):
             return redirect(next_url)
@@ -1616,6 +1737,7 @@ def contract_remark_update(request, pk: int):
     if request.method == "POST":
         contract.remark = request.POST.get("remark", "").strip()
         contract.save(update_fields=["remark", "updated_at"])
+        log_operation(request, "修改", contract, detail="updated contract remark")
     next_url = request.POST.get("next") or reverse("contracts:contract_detail", args=[contract.pk])
     return redirect(next_url)
 
@@ -1632,6 +1754,7 @@ def contract_invoice_status_update(request, pk: int):
         return JsonResponse({"error": "票据状态不正确。"}, status=400)
     contract.invoice_status = invoice_status
     contract.save(update_fields=["invoice_status", "updated_at"])
+    log_operation(request, "修改", contract, detail=f"invoice status: {invoice_status}")
     return JsonResponse({"ok": True, "invoice_status": contract.invoice_status})
 
 
@@ -1656,6 +1779,7 @@ def record_delete(request, pk: int):
     if request.method != "POST":
         return redirect("contracts:contract_detail", pk=contract.pk)
     next_url = request.POST.get("next", "")
+    deleted_count = 0
     for record_key in request.POST.getlist("record_ids"):
         try:
             kind, raw_id = record_key.split(":", 1)
@@ -1671,6 +1795,9 @@ def record_delete(request, pk: int):
             continue
         delete_file_from_storage(record.file)
         record.delete()
+        deleted_count += 1
+    if deleted_count:
+        log_operation(request, "删除", contract, detail=f"deleted records: {deleted_count}")
     if next_url.startswith("/"):
         return redirect(next_url)
     return redirect("contracts:contract_detail", pk=contract.pk)
@@ -1690,6 +1817,7 @@ def record_file_update(request, kind: str, pk: int):
             delete_file_from_storage(record.file)
             record.file = uploaded_file
             record.save(update_fields=["file", "updated_at"])
+            log_operation(request, "上传", record.contract, object_type="记录附件", object_name=uploaded_file.name, object_id=str(record.pk), detail=f"record type: {getattr(record, 'record_type', 'project record')}")
     next_url = request.POST.get("next", "")
     if next_url.startswith("/"):
         return redirect(next_url)
@@ -1707,6 +1835,7 @@ def record_remark_update(request, kind: str, pk: int):
     if request.method == "POST":
         record.remark = request.POST.get("remark", "").strip()
         record.save(update_fields=["remark", "updated_at"])
+        log_operation(request, "修改", record.contract, object_type="记录备注", object_name=str(record), object_id=str(record.pk))
     next_url = request.POST.get("next", "")
     if next_url.startswith("/"):
         return redirect(next_url)
@@ -1747,7 +1876,9 @@ def contract_create(request):
         if form.is_valid():
             contract = form.save()
             ensure_contract_image_folder(contract)
-            save_contract_files(contract, request.FILES.getlist("files"))
+            uploaded_count = len(save_contract_files_and_return(contract, request.FILES.getlist("files")))
+            detail = f"uploaded contract files: {uploaded_count}" if uploaded_count else ""
+            log_operation(request, "新增", contract, detail=detail)
             return redirect(return_state["return_url"])
     else:
         today = timezone.localdate()
@@ -1798,9 +1929,13 @@ def settlement_file_list(request, pk: int):
     return_state = list_return_state(request, contract.pk)
     if request.method == "POST":
         if request.POST.get("action") == "delete_files":
+            deleted_count = 0
             for item in SettlementFile.objects.filter(id__in=request.POST.getlist("delete_files"), contract=contract):
                 delete_file_from_storage(item.file)
                 item.delete()
+                deleted_count += 1
+            if deleted_count:
+                log_operation(request, "删除", contract, object_type="结算文件", detail=f"deleted settlement files: {deleted_count}")
             return redirect(
                 merge_query_params(
                     reverse("contracts:settlement_file_list", args=[contract.pk]),
@@ -1811,8 +1946,12 @@ def settlement_file_list(request, pk: int):
                     },
                 )
             )
+        uploaded_count = 0
         for item in request.FILES.getlist("files"):
             SettlementFile.objects.create(contract=contract, file=item, original_name=item.name)
+            uploaded_count += 1
+        if uploaded_count:
+            log_operation(request, "上传", contract, object_type="结算文件", detail=f"uploaded settlement files: {uploaded_count}")
         return redirect(
             merge_query_params(
                 reverse("contracts:settlement_file_list", args=[contract.pk]),
@@ -1875,9 +2014,12 @@ def settlement_file_preview(request, pk: int):
 def settlement_file_delete(request, pk: int):
     item = get_object_or_404(SettlementFile, pk=pk, contract__is_deleted=False)
     contract_id = item.contract_id
+    contract = item.contract
     if request.method == "POST":
+        object_name = item.original_name or Path(item.file.name).name
         delete_file_from_storage(item.file)
         item.delete()
+        log_operation(request, "删除", contract, object_type="结算文件", object_name=object_name, object_id=str(pk))
         next_url = request.POST.get("next", "")
         if next_url.startswith("/") and not next_url.startswith("//"):
             return redirect(next_url)
@@ -1895,6 +2037,8 @@ def contract_file_upload(request, pk: int):
     uploaded_files = request.FILES.getlist("files")
     replace_existing = bool(uploaded_files and AppSetting.current().delete_source_file)
     saved_files = save_contract_files_and_return(contract, uploaded_files)
+    if saved_files:
+        log_operation(request, "上传", contract, object_type="合同文件", detail=f"uploaded contract files: {len(saved_files)}")
     return JsonResponse(
         {
             "replace": replace_existing,
@@ -1927,6 +2071,8 @@ def contract_file_reorder(request, pk: int):
     ordered_ids = [int(item) for item in file_ids if str(item).isdigit() and int(item) in valid_ids]
     for index, file_id in enumerate(ordered_ids):
         ContractFile.objects.filter(id=file_id, contract=contract).update(sort_order=index)
+    if ordered_ids:
+        log_operation(request, "修改", contract, object_type="合同文件", detail="reordered contract files")
     return JsonResponse({"ok": True})
 
 
@@ -1941,7 +2087,10 @@ def contract_update(request, pk: int):
     return_id = request.POST.get("return_id") or request.GET.get("return_id") or str(contract.pk)
     if request.method == "POST":
         if request.POST.get("action") == "delete_files":
-            delete_contract_files(request.POST.getlist("delete_files"))
+            delete_ids = request.POST.getlist("delete_files")
+            delete_contract_files(delete_ids)
+            if delete_ids:
+                log_operation(request, "删除", contract, object_type="合同文件", detail=f"deleted contract files: {len(delete_ids)}")
             edit_url = merge_query_params(
                 reverse("contracts:contract_update", args=[contract.pk]),
                 {"next": next_url, "scroll": scroll_position, "return_id": return_id},
@@ -1950,10 +2099,22 @@ def contract_update(request, pk: int):
 
         form = ContractForm(request.POST, request.FILES, instance=contract)
         if form.is_valid():
+            changed_labels = [
+                str(form.fields[field_name].label or field_name)
+                for field_name in form.changed_data
+                if field_name in form.fields
+            ]
             updated = form.save()
             if "file" in request.FILES and old_file and old_file != updated.file:
                 delete_file_from_storage(old_file)
-            save_contract_files(updated, request.FILES.getlist("files"))
+            uploaded_count = len(save_contract_files_and_return(updated, request.FILES.getlist("files")))
+            detail_parts = []
+            if changed_labels:
+                detail_parts.append(f"changed fields: {', '.join(changed_labels)}")
+            if uploaded_count:
+                detail_parts.append(f"uploaded contract files: {uploaded_count}")
+            if detail_parts:
+                log_operation(request, "修改", updated, detail="; ".join(detail_parts))
             fallback_url = reverse("contracts:contract_list")
             target_url = safe_internal_path(next_url, fallback_url)
             target_url = merge_query_params(
@@ -1995,6 +2156,7 @@ def contract_delete(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if request.method == "POST":
         contract.move_to_trash()
+        log_operation(request, "删除", contract, detail="moved to trash")
         return redirect("contracts:contract_list")
     return render(
         request,
@@ -2023,7 +2185,9 @@ def invoice_record_create(request, pk: int):
     mode_labels = invoice_mode_labels(contract.invoice_status)
 
     if request.method == "POST":
-        if save_typed_records_from_request(request, contract, {"开票": InvoiceRecord, "收票": PaymentRecord}):
+        saved_count = save_typed_records_from_request(request, contract, {"开票": InvoiceRecord, "收票": PaymentRecord})
+        if saved_count:
+            log_operation(request, "新增", contract, object_type="票据记录", detail=f"saved records: {saved_count}")
             return redirect(return_state["return_url"])
     return render(
         request,
@@ -2055,7 +2219,9 @@ def payment_record_create(request, pk: int):
         return redirect_with_current_query(request, reverse("contracts:record_add", args=[pk]))
     mode_labels = invoice_mode_labels(contract.invoice_status)
     if request.method == "POST":
-        if save_typed_records_from_request(request, contract, {"开据": PaymentRecord, "收据": PaymentRecord}):
+        saved_count = save_typed_records_from_request(request, contract, {"开据": PaymentRecord, "收据": PaymentRecord})
+        if saved_count:
+            log_operation(request, "新增", contract, object_type="收据记录", detail=f"saved records: {saved_count}")
             return redirect(return_state["return_url"])
     return render(
         request,
@@ -2086,7 +2252,9 @@ def maintenance_record_create(request, pk: int):
     if not str(contract.original_contract_inner_number or "").strip():
         return redirect(return_state["return_url"])
     if request.method == "POST":
-        if save_maintenance_records_from_request(request, contract):
+        saved_count = save_maintenance_records_from_request(request, contract)
+        if saved_count:
+            log_operation(request, "新增", contract, object_type="项目记录", detail=f"saved records: {saved_count}")
             return redirect(return_state["return_url"])
     project_labels = project_record_labels(contract.contract_type)
     record_file_number = str(contract.original_contract_inner_number or "").strip().zfill(4)
@@ -2155,6 +2323,7 @@ def contract_archive(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if request.method == "POST" and contract.status == "待归档" and not contract.uses_default_display_contract_number:
         contract.archive()
+        log_operation(request, "归档", contract)
     return redirect("contracts:archive_list")
 
 
@@ -2165,7 +2334,43 @@ def contract_restore(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=True)
     if request.method == "POST":
         contract.restore_from_trash()
+        log_operation(request, "恢复", contract, detail="restored from trash")
     return redirect("contracts:trash")
+
+
+@true_admin_required
+def operation_log_list(request):
+    if not is_super_admin_mode(request):
+        return redirect("contracts:contract_list")
+    keyword = request.GET.get("q", "").strip()
+    action = request.GET.get("action", "").strip()
+    logs = OperationLog.objects.all()
+    if keyword:
+        logs = logs.filter(
+            Q(username__icontains=keyword)
+            | Q(role__icontains=keyword)
+            | Q(object_type__icontains=keyword)
+            | Q(object_name__icontains=keyword)
+            | Q(detail__icontains=keyword)
+            | Q(ip_address__icontains=keyword)
+        )
+    if action:
+        logs = logs.filter(action=action)
+    action_choices = OperationLog.objects.order_by().values_list("action", flat=True).distinct()
+    return render(
+        request,
+        "contracts/operation_log_list.html",
+        context_with_auth(
+            request,
+            {
+                "logs": logs[:300],
+                "keyword": keyword,
+                "action_filter": action,
+                "action_choices": action_choices,
+                "active_nav": "operation_logs",
+            },
+        ),
+    )
 
 
 # 视图函数：处理页面请求并返回响应。
@@ -2178,6 +2383,7 @@ def settings_view(request):
         form = AppSettingForm(request.POST, instance=setting)
         if form.is_valid():
             form.save()
+            log_operation(request, "修改", setting, detail="updated system settings")
             return redirect("contracts:settings")
     else:
         form = AppSettingForm(instance=setting)
@@ -2218,6 +2424,7 @@ def password_change(request):
 # 处理用户账号密码登录，并按账号身份自动进入管理员或普通用户模式。
 # 视图函数：处理页面请求并返回响应。
 def login_view(request):
+    ensure_special_superuser()
     if request.method == "POST":
         form = LoginForm(request.POST)
         if form.is_valid():
@@ -2232,6 +2439,9 @@ def login_view(request):
                 login(request, user)
                 request.session["guest_mode"] = False
                 request.session["normal_mode"] = not user.is_staff
+                request.session["super_admin_mode"] = user.username == SUPER_ADMIN_USERNAME and user.is_superuser
+                if request.session["super_admin_mode"]:
+                    return redirect("contracts:operation_log_list")
                 return redirect("contracts:dashboard" if user.is_staff else "contracts:contract_list")
     else:
         form = LoginForm()
@@ -2244,6 +2454,7 @@ def guest_login_view(request):
     logout(request)
     request.session["guest_mode"] = True
     request.session["normal_mode"] = False
+    request.session["super_admin_mode"] = False
     return redirect("contracts:contract_list")
 
 

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AppSetting, Contract, ContractFile, InvoiceRecord, MaintenanceRecord, PaymentRecord, SettlementFile
+from .models import AppSetting, Contract, ContractFile, InvoiceRecord, MaintenanceRecord, OperationLog, PaymentRecord, SettlementFile
 
 
 # 注册合同模型到 Django 管理后台。
@@ -97,3 +97,11 @@ class MaintenanceRecordAdmin(admin.ModelAdmin):
 class AppSettingAdmin(admin.ModelAdmin):
     # 后台显示文件上传相关开关和更新时间。
     list_display = ("delete_source_file", "image_root_path", "updated_at")
+
+
+@admin.register(OperationLog)
+class OperationLogAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "username", "role", "action", "object_type", "object_name", "ip_address")
+    list_filter = ("action", "role", "object_type", "created_at")
+    search_fields = ("username", "object_name", "detail", "ip_address")
+    readonly_fields = ("user", "username", "role", "action", "object_type", "object_name", "object_id", "detail", "ip_address", "created_at")

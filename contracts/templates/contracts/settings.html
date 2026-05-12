@@ -62,8 +62,7 @@
     <!-- 管理员辅助入口固定在设置页底部，管理后台单独靠右放置。 -->
     <div class="toolbar settings-actions" style="margin-top: auto;">
       <button class="button primary" type="submit" form="settingsForm">保存设置</button>
-      {% if is_admin_mode %}
-        <a class="button" href="{% url 'contracts:password_change' %}">修改密码</a>
+      {% if is_super_admin_mode %}
         <span class="toolbar-spacer"></span>
         <a class="button" href="/admin/">管理后台</a>
       {% endif %}

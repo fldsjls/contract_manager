@@ -388,3 +388,30 @@ class AppSetting(models.Model):
         # 获取唯一的系统设置记录，首次访问时自动创建。
         setting, _ = cls.objects.get_or_create(pk=1)
         return setting
+
+
+class OperationLog(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name="操作用户",
+    )
+    username = models.CharField("用户名", max_length=150, blank=True)
+    role = models.CharField("角色", max_length=50, blank=True)
+    action = models.CharField("动作", max_length=50)
+    object_type = models.CharField("对象类型", max_length=100, blank=True)
+    object_name = models.CharField("对象名称", max_length=255, blank=True)
+    object_id = models.CharField("对象ID", max_length=50, blank=True)
+    detail = models.TextField("详情", blank=True)
+    ip_address = models.GenericIPAddressField("IP地址", null=True, blank=True)
+    created_at = models.DateTimeField("操作时间", default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "操作日志"
+        verbose_name_plural = "操作日志"
+
+    def __str__(self) -> str:
+        return f"{self.created_at:%Y-%m-%d %H:%M} {self.username} {self.action}"

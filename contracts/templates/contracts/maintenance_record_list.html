@@ -13,7 +13,7 @@
         <a class="button primary" href="{% url 'contracts:contract_update' contract.id %}">编辑合同</a>
       {% endif %}
       {% if not is_normal_mode %}
-        <a class="button success detail-maintenance-link" href="{% url 'contracts:contract_detail' contract.id %}">票据记录</a>
+        <a class="button success detail-maintenance-link" href="{% url 'contracts:contract_detail' contract.id %}">{{ labels.ticket_records }}</a>
       {% endif %}
     </div>
 
@@ -21,22 +21,22 @@
       <!-- 复用合同详情信息表，便于在记录页确认当前合同。 -->
       <section class="panel">
         <div class="summary">
-          <span>合同编号：{{ contract.display_contract_number }}</span>
-          <span>合同类型：{{ contract.contract_type }}</span>
-          <span>状态：<span class="status {{ contract.status_class }}">{{ contract.status }}</span></span>
+          <span>{{ labels.contract_number }}：{{ contract.display_contract_number }}</span>
+          <span>{{ labels.contract_type }}：{{ contract.contract_type }}</span>
+          <span>{{ labels.status }}：<span class="status {{ contract.status_class }}">{{ contract.status }}</span></span>
         </div>
         <table>
           <tbody>
             <tr>
-              <th>甲方名称</th>
+              <th>{{ labels.party_name }}</th>
               <td class="party">{{ contract.party_name }}</td>
-              <th>合同金额</th>
+              <th>{{ labels.contract_amount }}</th>
               <td>¥ {{ contract.amount|floatformat:2 }}</td>
             </tr>
             <tr>
-              <th>是否开票</th>
+              <th>{{ labels.invoice_status }}</th>
               <td>{{ contract.invoice_status }}</td>
-              <th>文件</th>
+              <th>{{ labels.file }}</th>
               <td class="file-cell">
                 {% if primary_file %}
                   <a class="button file-preview-button" href="{% url 'contracts:contract_file_preview' primary_file.id %}">
@@ -56,17 +56,17 @@
             <tr>
               <th>签订日期</th>
               <td>{{ contract.sign_date|default:"" }}</td>
-              <th>开始日期</th>
+              <th>{{ labels.start_date }}</th>
               <td>{{ contract.start_date|default:"" }}</td>
             </tr>
             <tr>
-              <th>截止日期</th>
+              <th>{{ labels.end_date }}</th>
               <td>{{ contract.end_date|default:"" }}</td>
-              <th>备注</th>
+              <th>{{ labels.remark }}</th>
               <td>
                 {% if can_manage %}
                   <div class="inline-remark-editor">
-                    <span class="inline-remark-display {% if not contract.remark %}empty{% endif %}" title="{{ contract.remark|default:'' }}">{{ contract.remark|default:"点击添加备注" }}</span>
+                    <span class="inline-remark-display {% if not contract.remark %}empty{% endif %}" title="{{ contract.remark|default:'' }}">{{ contract.remark|default:labels.empty_remark }}</span>
                     <div class="inline-remark-form" data-action="{% url 'contracts:contract_remark_update' contract.id %}" hidden>
                       {% csrf_token %}
                       <input type="hidden" name="next" value="{{ request.path }}">
@@ -106,10 +106,10 @@
                   </colgroup>
                   <thead>
                     <tr>
-                      <th>日期</th>
-                      <th>月份</th>
-                      <th>备注</th>
-                      <th>维保文件</th>
+                      <th>{{ labels.date }}</th>
+                      <th>{{ labels.month }}</th>
+                      <th>{{ labels.remark }}</th>
+                      <th>{{ project_record_labels.file }}</th>
                       {% if can_manage %}<th class="select-col"><input type="checkbox" data-record-select-all></th>{% endif %}
                     </tr>
                   </thead>
@@ -121,7 +121,7 @@
                         <td class="remark">
                           {% if can_manage %}
                             <div class="inline-remark-editor">
-                              <span class="inline-remark-display {% if not record.remark %}empty{% endif %}" title="{{ record.remark }}">{{ record.remark|default:"点击添加备注" }}</span>
+                              <span class="inline-remark-display {% if not record.remark %}empty{% endif %}" title="{{ record.remark }}">{{ record.remark|default:labels.empty_remark }}</span>
                               <div class="inline-remark-form" data-action="{% url 'contracts:record_remark_update' 'maintenance' record.id %}" hidden>
                                 {% csrf_token %}
                                 <input type="hidden" name="next" value="{{ request.path }}">
@@ -148,7 +148,7 @@
                 </table>
               </div>
             {% else %}
-              <div class="empty">暂无维护保养记录</div>
+              <div class="empty">{{ project_record_labels.empty }}</div>
             {% endif %}
           </form>
         </div>
@@ -159,16 +159,16 @@
   <!-- 单条类型记录的附件弹窗，上传新文件会覆盖旧文件。 -->
   <div class="modal-backdrop" id="recordFileModal" hidden>
     <div class="modal-card record-file-modal-card" role="dialog" aria-modal="true" aria-labelledby="recordFileModalTitle">
-      <div class="modal-header" id="recordFileModalTitle">记录文件</div>
+      <div class="modal-header" id="recordFileModalTitle">{{ labels.record_file }}</div>
       <form id="recordFileUploadForm" method="post" enctype="multipart/form-data">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.path }}">
         <input id="recordFileInput" name="file" type="file" hidden>
         <div class="modal-actions record-file-actions">
           {% if can_manage %}
-            <label class="button primary" for="recordFileInput">上传文件</label>
+            <label class="button primary" for="recordFileInput">{{ labels.upload_file }}</label>
           {% endif %}
-          <a class="button" id="recordFileDownload" href="#" download>下载文件</a>
+          <a class="button" id="recordFileDownload" href="#" download>{{ labels.download_file }}</a>
           <button class="button" id="recordFileCancel" type="button">取消</button>
         </div>
       </form>

@@ -24,6 +24,7 @@ from .forms import (
     LoginForm,
     default_contract_number,
 )
+from .labels import UI_LABELS, invoice_mode_labels, project_record_labels
 from .models import (
     AppSetting,
     Contract,
@@ -1349,17 +1350,17 @@ def contract_list_export(request):
     contracts = contracts_for_list_request(request)
     headers = [
         "序号",
-        "合同名称",
-        "合同编号",
-        "合同类型",
-        "甲方名称",
-        "合同金额",
-        "是否开票",
-        "开始日期",
-        "截止日期",
-        "负责人",
-        "状态",
-        "文件",
+        UI_LABELS["contract_name"],
+        UI_LABELS["contract_number"],
+        UI_LABELS["contract_type"],
+        UI_LABELS["party_name"],
+        UI_LABELS["contract_amount"],
+        UI_LABELS["invoice_status"],
+        UI_LABELS["start_date"],
+        UI_LABELS["end_date"],
+        UI_LABELS["responsible_person"],
+        UI_LABELS["status"],
+        UI_LABELS["file"],
     ]
     rows = []
     for index, contract in enumerate(contracts, start=1):
@@ -1395,6 +1396,8 @@ def contract_detail(request, pk: int):
     if is_normal_mode(request):
         return redirect("contracts:maintenance_record_list", pk=contract.pk)
     primary_file = contract.latest_file
+    invoice_labels = invoice_mode_labels(contract.invoice_status)
+    project_labels = project_record_labels(contract.contract_type)
     context = context_with_auth(
         request,
         {
@@ -1404,6 +1407,8 @@ def contract_detail(request, pk: int):
             "maintenance_records": contract.maintenancerecord_set.all(),
             "invoice_records": contract.invoicerecord_set.all(),
             "payment_records": contract.paymentrecord_set.all(),
+            "invoice_labels": invoice_labels,
+            "project_record_labels": project_labels,
             "active_nav": "contracts",
         },
     )
@@ -1504,12 +1509,13 @@ def record_remark_update(request, kind: str, pk: int):
 def maintenance_record_list(request, pk: int):
     # 所有合同类型的扩展记录共用 MaintenanceRecord 表和同一个列表模板。
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
-    record_label = f"{contract.contract_type}记录"
+    project_labels = project_record_labels(contract.contract_type)
     context = context_with_auth(
         request,
         {
             "contract": contract,
-            "record_label": record_label,
+            "record_label": project_labels["list_title"],
+            "project_record_labels": project_labels,
             "primary_file": contract.latest_file,
             "maintenance_records": contract.maintenancerecord_set.all(),
             "active_nav": "contracts",
@@ -1743,6 +1749,7 @@ def invoice_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if contract.invoice_status == "不开票":
         return redirect("contracts:contract_list")
+    mode_labels = invoice_mode_labels(contract.invoice_status)
 
     if request.method == "POST":
         if save_typed_records_from_request(request, contract, {"开票": InvoiceRecord, "收票": PaymentRecord}):
@@ -1757,9 +1764,9 @@ def invoice_record_create(request, pk: int):
                 "title": "新增发票记录",
                 "today": timezone.localdate(),
                 "record_type_options": ["开票", "收票"],
-                "amount_label": "票面金额",
+                "amount_label": UI_LABELS["face_amount"],
                 "actual_amount_field": True,
-                "file_label": "发票文件",
+                "file_label": mode_labels["income_file"],
                 "active_nav": "contracts",
             },
         ),
@@ -1773,6 +1780,7 @@ def payment_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if contract.invoice_status != "不开票":
         return redirect("contracts:record_add", pk=pk)
+    mode_labels = invoice_mode_labels(contract.invoice_status)
     if request.method == "POST":
         if save_typed_records_from_request(request, contract, {"开据": PaymentRecord, "收据": PaymentRecord}):
             return redirect("contracts:contract_list")
@@ -1786,9 +1794,9 @@ def payment_record_create(request, pk: int):
                 "title": "新增收据记录",
                 "today": timezone.localdate(),
                 "record_type_options": ["开据", "收据"],
-                "amount_label": "票面金额",
+                "amount_label": UI_LABELS["face_amount"],
                 "actual_amount_field": True,
-                "file_label": "收据文件",
+                "file_label": mode_labels["expense_file"],
                 "active_nav": "contracts",
             },
         ),
@@ -1803,14 +1811,7 @@ def maintenance_record_create(request, pk: int):
     if request.method == "POST":
         if save_maintenance_records_from_request(request, contract):
             return redirect("contracts:contract_list")
-    record_titles = {
-        "维保": "新增维保记录",
-        "评估": "新增评估记录",
-        "检测": "新增检测记录",
-        "改造": "新增改造记录",
-        "新建": "新增新建记录",
-        "其他": "新增其他记录",
-    }
+    project_labels = project_record_labels(contract.contract_type)
     return render(
         request,
         "contracts/record_form.html",
@@ -1818,12 +1819,12 @@ def maintenance_record_create(request, pk: int):
             request,
             {
                 "contract": contract,
-                "title": record_titles.get(contract.contract_type, f"新增{contract.contract_type}记录"),
+                "title": project_labels["new_title"],
                 "today": timezone.localdate(),
                 "month_field": True,
                 "form_kind": "maintenance",
                 "current_month": timezone.localdate().strftime("%Y-%m"),
-                "file_label": f"{contract.contract_type}文件",
+                "file_label": project_labels["file"],
                 "active_nav": "contracts",
             },
         ),

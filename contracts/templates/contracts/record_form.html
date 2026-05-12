@@ -10,7 +10,7 @@
   <section class="panel">
     <div class="summary">
       <span>所属合同：{{ contract.contract_name }}</span>
-      <span>合同编号：{{ contract.display_contract_number }}</span>
+      <span>{{ labels.contract_number }}：{{ contract.display_contract_number }}</span>
     </div>
 
     <!-- 上传附件时必须使用 multipart 表单。 -->
@@ -20,11 +20,11 @@
         <table class="batch-record-table {% if month_field %}maintenance-record-table{% else %}money-record-table{% endif %}" id="recordTable">
           <thead>
             <tr>
-              <th>日期</th>
+              <th>{{ labels.date }}</th>
               {% if record_type_options %}<th>类型</th>{% endif %}
-              <th>{% if month_field %}月份{% else %}{{ amount_label|default:"合同金额" }}{% endif %}</th>
-              {% if actual_amount_field %}<th>实际金额</th>{% endif %}
-              <th>备注</th>
+              <th>{% if month_field %}{{ labels.month }}{% else %}{{ amount_label|default:labels.contract_amount }}{% endif %}</th>
+              {% if actual_amount_field %}<th>{{ labels.actual_amount }}</th>{% endif %}
+              <th>{{ labels.remark }}</th>
               <th>{{ file_label|default:"附件" }}</th>
             </tr>
           </thead>
@@ -52,7 +52,7 @@
               {% endif %}
               <td><input name="remark" type="text"></td>
               <td>
-                <label class="button" for="recordFile0">上传文件</label>
+                <label class="button" for="recordFile0">{{ labels.upload_file }}</label>
                 <input class="hidden-file-input" id="recordFile0" name="file_0" type="file">
               </td>
             </tr>
@@ -101,7 +101,7 @@
         {% endif %}
         <td><input name="remark" type="text"></td>
         <td>
-          <label class="button" for="recordFile_${index}">上传文件</label>
+          <label class="button" for="recordFile_${index}">{{ labels.upload_file }}</label>
           <input class="hidden-file-input" id="recordFile_${index}" name="file_${index}" type="file">
         </td>
       `;

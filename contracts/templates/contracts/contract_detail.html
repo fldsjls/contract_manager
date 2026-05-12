@@ -12,29 +12,29 @@
       {% if can_manage %}
         <a class="button primary" href="{% url 'contracts:contract_update' contract.id %}">编辑合同</a>
       {% endif %}
-      <a class="button success detail-maintenance-link" href="{% url 'contracts:maintenance_record_list' contract.id %}">{{ contract.contract_type }}记录</a>
+      <a class="button success detail-maintenance-link" href="{% url 'contracts:maintenance_record_list' contract.id %}">{{ project_record_labels.button }}</a>
     </div>
 
     <div class="detail-scroll">
       <!-- 合同基础信息表，文件名和备注使用省略显示并保留悬停完整内容。 -->
       <section class="panel">
         <div class="summary">
-          <span>合同编号：{{ contract.full_display_contract_number }}</span>
-          <span>合同类型：{{ contract.contract_type }}</span>
-          <span>状态：<span class="status {{ contract.status_class }}">{{ contract.status }}</span></span>
+          <span>{{ labels.contract_number }}：{{ contract.full_display_contract_number }}</span>
+          <span>{{ labels.contract_type }}：{{ contract.contract_type }}</span>
+          <span>{{ labels.status }}：<span class="status {{ contract.status_class }}">{{ contract.status }}</span></span>
         </div>
         <table>
           <tbody>
             <tr>
-              <th>甲方名称</th>
+              <th>{{ labels.party_name }}</th>
               <td class="party">{{ contract.party_name }}</td>
-              <th>合同金额</th>
+              <th>{{ labels.contract_amount }}</th>
               <td>¥ {{ contract.amount|floatformat:2 }}</td>
             </tr>
             <tr>
-              <th>是否开票</th>
+              <th>{{ labels.invoice_status }}</th>
               <td>{{ contract.invoice_status }}</td>
-              <th>文件</th>
+              <th>{{ labels.file }}</th>
               <td class="file-cell">
                 {% if primary_file %}
                   <a class="button file-preview-button" href="{% url 'contracts:contract_file_preview' primary_file.id %}">
@@ -54,17 +54,17 @@
             <tr>
               <th>签订日期</th>
               <td>{{ contract.sign_date|default:"" }}</td>
-              <th>开始日期</th>
+              <th>{{ labels.start_date }}</th>
               <td>{{ contract.start_date|default:"" }}</td>
             </tr>
             <tr>
-              <th>截止日期</th>
+              <th>{{ labels.end_date }}</th>
               <td>{{ contract.end_date|default:"" }}</td>
-              <th>备注</th>
+              <th>{{ labels.remark }}</th>
               <td>
                 {% if can_manage %}
                   <div class="inline-remark-editor">
-                    <span class="inline-remark-display {% if not contract.remark %}empty{% endif %}" title="{{ contract.remark|default:'' }}">{{ contract.remark|default:"点击添加备注" }}</span>
+                    <span class="inline-remark-display {% if not contract.remark %}empty{% endif %}" title="{{ contract.remark|default:'' }}">{{ contract.remark|default:labels.empty_remark }}</span>
                     <div class="inline-remark-form" data-action="{% url 'contracts:contract_remark_update' contract.id %}" hidden>
                       {% csrf_token %}
                       <input type="hidden" name="next" value="{{ request.path }}">
@@ -87,13 +87,13 @@
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.path }}">
             <div class="record-panel-title">
-              <h2>{% if contract.invoice_status == "不开票" %}开据记录{% else %}开票记录{% endif %}</h2>
+              <h2>{{ invoice_labels.income_record_title }}</h2>
               {% if can_manage and invoice_records %}
                 <button class="button danger record-delete-button" type="submit">删除</button>
               {% endif %}
             </div>
             {% if contract.invoice_status == "不开票" %}
-              <div class="empty">该合同设置为不开票，开票记录不可用。</div>
+              <div class="empty">{{ invoice_labels.disabled_income_message }}</div>
             {% elif invoice_records %}
               <div class="table-wrap">
                 <table class="record-table detail-record-table standard-record-table">
@@ -107,11 +107,11 @@
                   </colgroup>
                   <thead>
                     <tr>
-                      <th>日期</th>
-                      <th>票面金额</th>
-                      <th>实际金额</th>
-                      <th>备注</th>
-                      <th>发票文件</th>
+                      <th>{{ labels.date }}</th>
+                      <th>{{ labels.face_amount }}</th>
+                      <th>{{ labels.actual_amount }}</th>
+                      <th>{{ labels.remark }}</th>
+                      <th>{{ invoice_labels.income_file }}</th>
                       {% if can_manage %}<th class="select-col"><input type="checkbox" data-record-select-all></th>{% endif %}
                     </tr>
                   </thead>
@@ -124,7 +124,7 @@
                         <td class="remark">
                           {% if can_manage %}
                             <div class="inline-remark-editor">
-                              <span class="inline-remark-display {% if not record.remark %}empty{% endif %}" title="{{ record.remark }}">{{ record.remark|default:"点击添加备注" }}</span>
+                              <span class="inline-remark-display {% if not record.remark %}empty{% endif %}" title="{{ record.remark }}">{{ record.remark|default:labels.empty_remark }}</span>
                               <div class="inline-remark-form" data-action="{% url 'contracts:record_remark_update' 'invoice' record.id %}" hidden>
                                 {% csrf_token %}
                                 <input type="hidden" name="next" value="{{ request.path }}">
@@ -151,7 +151,7 @@
                 </table>
               </div>
             {% else %}
-              <div class="empty">暂无开票记录</div>
+              <div class="empty">{{ invoice_labels.empty_income_message }}</div>
             {% endif %}
           </form>
         </div>
@@ -161,7 +161,7 @@
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.path }}">
             <div class="record-panel-title">
-              <h2>{% if contract.invoice_status == "不开票" %}收据记录{% else %}收票记录{% endif %}</h2>
+              <h2>{{ invoice_labels.expense_record_title }}</h2>
               {% if can_manage and payment_records %}
                 <button class="button danger record-delete-button" type="submit">删除</button>
               {% endif %}
@@ -179,11 +179,11 @@
                   </colgroup>
                   <thead>
                     <tr>
-                      <th>日期</th>
-                      <th>票面金额</th>
-                      <th>实际金额</th>
-                      <th>备注</th>
-                      <th>{% if contract.invoice_status == "不开票" %}收据文件{% else %}发票文件{% endif %}</th>
+                      <th>{{ labels.date }}</th>
+                      <th>{{ labels.face_amount }}</th>
+                      <th>{{ labels.actual_amount }}</th>
+                      <th>{{ labels.remark }}</th>
+                      <th>{{ invoice_labels.expense_file }}</th>
                       {% if can_manage %}<th class="select-col"><input type="checkbox" data-record-select-all></th>{% endif %}
                     </tr>
                   </thead>
@@ -196,7 +196,7 @@
                         <td class="remark">
                           {% if can_manage %}
                             <div class="inline-remark-editor">
-                              <span class="inline-remark-display {% if not record.remark %}empty{% endif %}" title="{{ record.remark }}">{{ record.remark|default:"点击添加备注" }}</span>
+                              <span class="inline-remark-display {% if not record.remark %}empty{% endif %}" title="{{ record.remark }}">{{ record.remark|default:labels.empty_remark }}</span>
                               <div class="inline-remark-form" data-action="{% url 'contracts:record_remark_update' 'payment' record.id %}" hidden>
                                 {% csrf_token %}
                                 <input type="hidden" name="next" value="{{ request.path }}">
@@ -223,7 +223,7 @@
                 </table>
               </div>
             {% else %}
-              <div class="empty">暂无{% if contract.invoice_status == "不开票" %}收据{% else %}收票{% endif %}记录</div>
+              <div class="empty">{{ invoice_labels.empty_expense_message }}</div>
             {% endif %}
           </form>
         </div>
@@ -234,16 +234,16 @@
   {# 记录附件弹窗只保留三个动作；上传按钮触发隐藏文件框并自动提交覆盖旧文件。 #}
   <div class="modal-backdrop" id="recordFileModal" hidden>
     <div class="modal-card record-file-modal-card" role="dialog" aria-modal="true" aria-labelledby="recordFileModalTitle">
-      <div class="modal-header" id="recordFileModalTitle">记录文件</div>
+      <div class="modal-header" id="recordFileModalTitle">{{ labels.record_file }}</div>
       <form id="recordFileUploadForm" method="post" enctype="multipart/form-data">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.path }}">
         <input id="recordFileInput" name="file" type="file" hidden>
         <div class="modal-actions record-file-actions">
           {% if can_manage %}
-            <label class="button primary" for="recordFileInput">上传文件</label>
+            <label class="button primary" for="recordFileInput">{{ labels.upload_file }}</label>
           {% endif %}
-          <a class="button" id="recordFileDownload" href="#" download>下载文件</a>
+          <a class="button" id="recordFileDownload" href="#" download>{{ labels.download_file }}</a>
           <button class="button" id="recordFileCancel" type="button">取消</button>
         </div>
       </form>

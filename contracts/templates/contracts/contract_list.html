@@ -41,8 +41,10 @@
         <a class="button row-action" id="editButton" href="#" data-url-template="{% url 'contracts:contract_update' 0 %}" aria-disabled="true">编辑合同</a>
       {% endif %}
       <a class="button row-action" id="fileButton" href="#" aria-disabled="true">预览合同</a>
-      <button class="button row-action" id="statsButton" type="button" aria-disabled="true">统计</button>
-      {% if can_manage %}
+      {% if not is_guest_mode %}
+        <button class="button row-action" id="statsButton" type="button" aria-disabled="true">统计</button>
+      {% endif %}
+      {% if is_admin_mode %}
         <a class="button row-action" id="settlementButton" href="#" data-url-template="{% url 'contracts:settlement_file_list' 0 %}" aria-disabled="true">结算</a>
       {% endif %}
       <span class="toolbar-spacer"></span>
@@ -61,16 +63,16 @@
     </form>
 
     <!-- 当前列表的数量和金额汇总。 -->
-    <div class="summary">
-      <span>共 {{ contract_count }} 份合同</span>
-      <span>总金额：¥ {{ total_amount|floatformat:2 }}</span>
-      {% if can_manage %}
+    {% if is_admin_mode %}
+      <div class="summary">
+        <span>共 {{ contract_count }} 份合同</span>
+        <span>总金额：¥ {{ total_amount|floatformat:2 }}</span>
         <span>进行中：{{ active_contract_count }} 份</span>
         <span>进行中金额：¥ {{ active_total_amount|floatformat:2 }}</span>
         <span>到期：{{ expired_contract_count }} 份</span>
         <span>到期金额：¥ {{ expired_total_amount|floatformat:2 }}</span>
-      {% endif %}
-    </div>
+      </div>
+    {% endif %}
 
     <!-- 到期提醒只展示近期需要关注的合同。 -->
     {% if expiring_contracts %}

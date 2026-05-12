@@ -533,6 +533,14 @@ def archive_pending_contracts() -> list[Contract]:
     return [contract for contract in contracts if contract.status == "待归档"]
 
 
+# 查询归档页合同：待归档排前，已归档在后，各自按截止日期升序。
+def archive_contracts_for_page() -> list[Contract]:
+    contracts = Contract.objects.filter(is_deleted=False, end_date__isnull=False).order_by("end_date", "id")
+    pending = [contract for contract in contracts if contract.status == "待归档"]
+    archived = [contract for contract in contracts if contract.status == "已归档"]
+    return pending + archived
+
+
 # 把按日期汇总的数据转换成 SVG 折线图坐标。
 # 函数说明：封装可复用的业务处理。
 def chart_points(rows: list[dict], key: str, max_amount: Decimal) -> str:
@@ -1277,13 +1285,15 @@ def contracts_for_list_request(request):
     if filter_responsible_person:
         contracts = contracts.filter(responsible_person__icontains=filter_responsible_person)
 
-    status_choices = {"进行中", "即将到期", "已到期", "待归档"}
+    status_choices = {"进行中", "即将到期", "已到期", "待归档", "已归档"}
 
     if sort in sort_fields and sort != "contract_number":
         prefix = "-" if direction == "desc" else ""
         contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
 
     contracts = list(contracts)
+    if not keyword and filter_status not in {"待归档", "已归档"}:
+        contracts = [contract for contract in contracts if contract.status not in {"待归档", "已归档"}]
     if filter_status in status_choices:
         contracts = [contract for contract in contracts if contract.status == filter_status]
     if sort == "contract_number":
@@ -1456,7 +1466,7 @@ def contract_list(request):
         )
     valid_contract_types = {value for value, _ in Contract.CONTRACT_TYPES}
     valid_invoice_statuses = {value for value, _ in Contract.INVOICE_STATUS}
-    status_choices = ["进行中", "即将到期", "已到期", "待归档"]
+    status_choices = ["进行中", "即将到期", "已到期", "待归档", "已归档"]
     if filter_contract_type in valid_contract_types:
         contracts = contracts.filter(contract_type=filter_contract_type)
     else:
@@ -1474,6 +1484,8 @@ def contract_list(request):
         contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
 
     contracts = list(contracts)
+    if not keyword and filter_status not in {"待归档", "已归档"}:
+        contracts = [contract for contract in contracts if contract.status not in {"待归档", "已归档"}]
     if filter_status:
         contracts = [contract for contract in contracts if contract.status == filter_status]
     total_amount = sum((contract.amount for contract in contracts), Decimal("0"))
@@ -2122,6 +2134,30 @@ def trash_list(request):
     )
 
 
+@admin_required
+def archive_list(request):
+    contracts = archive_contracts_for_page()
+    return render(
+        request,
+        "contracts/archive_list.html",
+        context_with_auth(
+            request,
+            {
+                "contracts": contracts,
+                "active_nav": "archive",
+            },
+        ),
+    )
+
+
+@admin_required
+def contract_archive(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    if request.method == "POST" and contract.status == "待归档":
+        contract.archive()
+    return redirect("contracts:archive_list")
+
+
 # 视图函数：处理页面请求并返回响应。
 @admin_required
 # 从回收站恢复合同。
@@ -2196,7 +2232,7 @@ def login_view(request):
                 login(request, user)
                 request.session["guest_mode"] = False
                 request.session["normal_mode"] = not user.is_staff
-                return redirect("contracts:dashboard")
+                return redirect("contracts:dashboard" if user.is_staff else "contracts:contract_list")
     else:
         form = LoginForm()
     return render(request, "contracts/login.html", {"form": form})
@@ -2208,7 +2244,7 @@ def guest_login_view(request):
     logout(request)
     request.session["guest_mode"] = True
     request.session["normal_mode"] = False
-    return redirect("contracts:dashboard")
+    return redirect("contracts:contract_list")
 
 
 # 普通用户现在使用账号密码登录，保留旧地址用于回到登录页。

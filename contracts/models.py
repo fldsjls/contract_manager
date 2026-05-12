@@ -102,6 +102,8 @@ class Contract(models.Model):
     archive_years = models.PositiveSmallIntegerField("归档时间", default=3, validators=[MinValueValidator(1)])
     file = models.FileField("合同文件", upload_to=project_file_upload_path, null=True, blank=True)
     remark = models.TextField("备注", blank=True)
+    is_archived = models.BooleanField("是否归档", default=False)
+    archived_at = models.DateTimeField("归档时间", null=True, blank=True)
     is_deleted = models.BooleanField("是否删除", default=False)
     deleted_at = models.DateTimeField("删除时间", null=True, blank=True)
     created_at = models.DateTimeField("创建时间", default=timezone.now)
@@ -158,6 +160,8 @@ class Contract(models.Model):
     @property
     def status(self) -> str:
         # 根据截止日期实时计算合同状态。
+        if self.is_archived:
+            return "已归档"
         if not self.end_date:
             return "进行中"
 
@@ -175,6 +179,7 @@ class Contract(models.Model):
     def status_class(self) -> str:
         # 把中文状态转换成页面样式类名。
         return {
+            "已归档": "archived",
             "待归档": "archiving",
             "已到期": "expired",
             "即将到期": "expiring",
@@ -232,6 +237,13 @@ class Contract(models.Model):
         self.is_deleted = False
         self.deleted_at = None
         self.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
+
+    # 函数说明：封装可复用的业务处理。
+    def archive(self) -> None:
+        # 将达到归档条件的合同标记为已归档，保留在专门的归档项目页。
+        self.is_archived = True
+        self.archived_at = timezone.now()
+        self.save(update_fields=["is_archived", "archived_at", "updated_at"])
 
 
 # 保存合同可重复上传的附件文件。

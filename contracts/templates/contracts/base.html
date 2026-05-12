@@ -579,6 +579,7 @@
       font-weight: 700;
     }
     .status.active { color: #15803d; }
+    .status.archived { color: #2563eb; }
     .status.expiring { color: #a16207; }
     .status.expired { color: #dc2626; }
     .status.archiving { color: #7c3aed; }
@@ -1398,11 +1399,16 @@
         <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'contracts:dashboard' %}">统计总览</a>
       {% endif %}
       <a class="nav-link {% if active_nav == 'contracts' %}active{% endif %}" href="{% url 'contracts:contract_list' %}">合同列表</a>
+      {% if not is_guest_mode %}
+        <a class="nav-link {% if active_nav == 'archive' %}active{% endif %}" href="{% url 'contracts:archive_list' %}">归档项目</a>
+      {% endif %}
       <a class="nav-link {% if active_nav == 'trash' %}active{% endif %}" href="{% url 'contracts:trash' %}">回收站</a>
-      <a
-        class="nav-link {% if active_nav == 'settings' %}active{% endif %} {% if not can_manage %}requires-admin-login{% endif %}"
-        href="{% if not can_manage %}{% url 'contracts:login' %}{% else %}{% url 'contracts:settings' %}{% endif %}"
-      >设置</a>
+      {% if not is_guest_mode %}
+        <a
+          class="nav-link {% if active_nav == 'settings' %}active{% endif %} {% if not can_manage %}requires-admin-login{% endif %}"
+          href="{% if not can_manage %}{% url 'contracts:login' %}{% else %}{% url 'contracts:settings' %}{% endif %}"
+        >设置</a>
+      {% endif %}
       <div class="auth-box">
         {% if is_admin_mode %}
           <strong>管理员模式</strong>

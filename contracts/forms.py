@@ -24,10 +24,12 @@ class ContractForm(forms.ModelForm):
             "start_date",
             "end_date",
             "responsible_person",
+            "archive_years",
             "remark",
         ]
         widgets = {
             "amount": forms.TextInput(attrs={"inputmode": "decimal", "data-step": "1000"}),
+            "archive_years": forms.NumberInput(attrs={"min": 1, "step": 1}),
             "sign_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "start_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "end_date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
@@ -44,6 +46,7 @@ class ContractForm(forms.ModelForm):
             field.widget.attrs.setdefault("class", "form-control")
         self.fields["original_contract_folder"].label = "文件夹编号"
         self.fields["original_contract_inner_number"].label = "文件编号"
+        self.fields["archive_years"].label = "归档时间（年）"
         self.fields["original_contract_folder"].widget.attrs.setdefault("placeholder", "文件夹编号")
         self.fields["original_contract_inner_number"].widget.attrs.setdefault("placeholder", "文件编号")
 
@@ -53,6 +56,13 @@ class ContractForm(forms.ModelForm):
         value = self.cleaned_data["contract_number"].strip()
         if len(value) != 12 or not value.isdigit():
             raise forms.ValidationError("合同编号必须是 12 位数字。")
+        return value
+
+    # 方法说明：执行表单字段或整表校验。
+    def clean_archive_years(self):
+        value = self.cleaned_data["archive_years"]
+        if value < 1:
+            raise forms.ValidationError("归档时间至少为 1 年。")
         return value
 
     # 方法说明：执行表单字段或整表校验。

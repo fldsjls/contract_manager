@@ -485,8 +485,10 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
     for index, record_date in enumerate(dates):
         month = months[index] if index < len(months) else ""
         remark = remarks[index] if index < len(remarks) else ""
-        if not record_date or not month:
+        if not record_date:
             continue
+        if not month and "-" in record_date:
+            month = record_date[:7]
         if "-" in month:
             year_text, month_text = month.split("-", 1)
             month = f"{year_text}年{int(month_text)}月"
@@ -501,6 +503,16 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
     return saved_count
 
 
+# 生成合同类型扩展记录编号：文件编号 + 记录日期年份 + 周期序列 + 类型编号。
+def maintenance_record_number(contract: Contract, record_date) -> str:
+    record_year = record_date.year if hasattr(record_date, "year") else int(str(record_date)[:4])
+    sign_year = (contract.sign_date or contract.start_date or timezone.localdate()).year
+    file_number = str(contract.original_contract_inner_number or "").strip().zfill(4)
+    type_code = Contract.CONTRACT_TYPE_CODES.get(contract.contract_type, "06")
+    period_sequence = f"{record_year - sign_year + 1:02d}"
+    return f"{file_number}{record_year}{period_sequence}{type_code}"
+
+
 # 查询 30 天内即将到期的合同。
 # 函数说明：封装可复用的业务处理。
 def expiring_contract_queryset():
@@ -512,6 +524,12 @@ def expiring_contract_queryset():
         end_date__gte=today,
         end_date__lte=expiring_limit,
     ).order_by("end_date")
+
+
+# 查询已经到达归档期限的合同，和即将到期项目一样按截止日期排序。
+def archive_pending_contracts() -> list[Contract]:
+    contracts = Contract.objects.filter(is_deleted=False, end_date__isnull=False).order_by("end_date")
+    return [contract for contract in contracts if contract.status == "待归档"]
 
 
 # 把按日期汇总的数据转换成 SVG 折线图坐标。
@@ -657,6 +675,17 @@ def build_chart_rows(period: str, year: int, month: int) -> list[dict]:
         }
         for unit in units
     ]
+
+
+# 按签订年份汇总合同金额，仅用于年度总览趋势图。
+def yearly_signed_contract_amounts(year: int) -> list[float]:
+    start_year = year - 11
+    totals_by_year = {unit: Decimal("0") for unit in range(start_year, year + 1)}
+    for contract in Contract.objects.filter(is_deleted=False):
+        signed_year = (contract.sign_date or contract.start_date or contract.created_at).year
+        if start_year <= signed_year <= year:
+            totals_by_year[signed_year] += contract.amount
+    return [float(totals_by_year[unit]) for unit in range(start_year, year + 1)]
 
 
 # 获取当前主机的局域网 IP，用于设置页提示其他用户访问地址。
@@ -931,6 +960,7 @@ def maintenance_record_data(request, pk: int):
         grouped_records.setdefault(record.record_date.month, []).append(
             {
                 "date": f"{record.record_date.year}年{record.record_date.month}月{record.record_date.day}日",
+                "record_number": maintenance_record_number(contract, record.record_date),
                 "month": record.month,
                 "remark": record.remark,
                 "has_file": bool(record.file),
@@ -1117,6 +1147,8 @@ def dashboard(request):
     )
     chart_data = {
         "labels": [row["label"] for row in mode_chart_rows],
+        "show_contract_amount_line": chart_period == "year",
+        "contract_amounts": yearly_signed_contract_amounts(chart_year) if chart_period == "year" else [],
         "income": [float(row["income"]) for row in chart_rows],
         "expense": [float(row["expense"]) for row in chart_rows],
         "invoice": [float(row["income"]) for row in chart_rows],
@@ -1158,7 +1190,7 @@ def dashboard(request):
     ) or Decimal("1")
     chart_rows = enrich_chart_rows(chart_rows, max_amount)
 
-    recent_contracts = list(active_contracts.order_by("-created_at"))
+    recent_contracts = list(active_contracts.order_by("-contract_number", "-id")[:6])
     context = context_with_auth(
         request,
         {
@@ -1185,8 +1217,8 @@ def dashboard(request):
             "prev_range_params": prev_range_params,
             "next_range_params": next_range_params,
             "expiring_contracts": expiring_contract_queryset(),
+            "archive_pending_contracts": archive_pending_contracts(),
             "recent_contracts": recent_contracts,
-            "recent_blank_rows": range(max(0, 5 - len(recent_contracts))),
             "active_nav": "dashboard",
         },
     )
@@ -1242,19 +1274,15 @@ def contracts_for_list_request(request):
     if filter_responsible_person:
         contracts = contracts.filter(responsible_person__icontains=filter_responsible_person)
 
-    today = timezone.localdate()
-    if filter_status == "已到期":
-        contracts = contracts.filter(end_date__lt=today)
-    elif filter_status == "即将到期":
-        contracts = contracts.filter(end_date__gte=today, end_date__lte=today + timedelta(days=30))
-    elif filter_status == "进行中":
-        contracts = contracts.filter(Q(end_date__isnull=True) | Q(end_date__gt=today + timedelta(days=30)))
+    status_choices = {"进行中", "即将到期", "已到期", "待归档"}
 
     if sort in sort_fields and sort != "contract_number":
         prefix = "-" if direction == "desc" else ""
         contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
 
     contracts = list(contracts)
+    if filter_status in status_choices:
+        contracts = [contract for contract in contracts if contract.status == filter_status]
     if sort == "contract_number":
         contracts.sort(key=lambda item: item.contract_number_sort_key, reverse=True)
     if sort == "payment_rate":
@@ -1421,7 +1449,7 @@ def contract_list(request):
         )
     valid_contract_types = {value for value, _ in Contract.CONTRACT_TYPES}
     valid_invoice_statuses = {value for value, _ in Contract.INVOICE_STATUS}
-    status_choices = ["进行中", "即将到期", "已到期"]
+    status_choices = ["进行中", "即将到期", "已到期", "待归档"]
     if filter_contract_type in valid_contract_types:
         contracts = contracts.filter(contract_type=filter_contract_type)
     else:
@@ -1432,22 +1460,21 @@ def contract_list(request):
         filter_invoice_status = ""
     if filter_responsible_person:
         contracts = contracts.filter(responsible_person__icontains=filter_responsible_person)
-    today = timezone.localdate()
-    if filter_status == "已到期":
-        contracts = contracts.filter(end_date__lt=today)
-    elif filter_status == "即将到期":
-        contracts = contracts.filter(end_date__gte=today, end_date__lte=today + timedelta(days=30))
-    elif filter_status == "进行中":
-        contracts = contracts.filter(Q(end_date__isnull=True) | Q(end_date__gt=today + timedelta(days=30)))
-    else:
+    if filter_status not in status_choices:
         filter_status = ""
     if sort in sort_fields and sort != "contract_number":
         prefix = "-" if direction == "desc" else ""
         contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
 
-    total_amount = contracts.aggregate(total=Sum("amount"))["total"] or 0
-    contract_count = contracts.count()
     contracts = list(contracts)
+    if filter_status:
+        contracts = [contract for contract in contracts if contract.status == filter_status]
+    total_amount = sum((contract.amount for contract in contracts), Decimal("0"))
+    contract_count = len(contracts)
+    active_contracts = [contract for contract in contracts if contract.status == "进行中"]
+    expired_contracts = [contract for contract in contracts if contract.status == "已到期"]
+    active_total_amount = sum((contract.amount for contract in active_contracts), Decimal("0"))
+    expired_total_amount = sum((contract.amount for contract in expired_contracts), Decimal("0"))
     if sort == "contract_number":
         contracts.sort(key=lambda item: item.contract_number_sort_key, reverse=True)
     if sort == "payment_rate":
@@ -1464,6 +1491,10 @@ def contract_list(request):
             "direction": direction,
             "total_amount": total_amount,
             "contract_count": contract_count,
+            "active_contract_count": len(active_contracts),
+            "active_total_amount": active_total_amount,
+            "expired_contract_count": len(expired_contracts),
+            "expired_total_amount": expired_total_amount,
             "contract_type_filter": filter_contract_type,
             "invoice_status_filter": filter_invoice_status,
             "status_filter": filter_status,
@@ -1665,6 +1696,9 @@ def maintenance_record_list(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     project_labels = project_record_labels(contract.contract_type)
     return_state = list_return_state(request, contract.pk)
+    maintenance_records = list(contract.maintenancerecord_set.all())
+    for record in maintenance_records:
+        record.record_number = maintenance_record_number(contract, record.record_date)
     context = context_with_auth(
         request,
         {
@@ -1672,7 +1706,7 @@ def maintenance_record_list(request, pk: int):
             "record_label": project_labels["list_title"],
             "project_record_labels": project_labels,
             "primary_file": contract.latest_file,
-            "maintenance_records": contract.maintenancerecord_set.all(),
+            "maintenance_records": maintenance_records,
             **return_state,
             "active_nav": "contracts",
         },
@@ -2026,11 +2060,13 @@ def payment_record_create(request, pk: int):
 def maintenance_record_create(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     return_state = list_return_state(request, contract.pk)
+    if not str(contract.original_contract_inner_number or "").strip():
+        return redirect(return_state["return_url"])
     if request.method == "POST":
         if save_maintenance_records_from_request(request, contract):
             return redirect(return_state["return_url"])
     project_labels = project_record_labels(contract.contract_type)
-    record_inner_number = str(contract.original_contract_inner_number or "").strip().zfill(4)
+    record_file_number = str(contract.original_contract_inner_number or "").strip().zfill(4)
     record_type_code = Contract.CONTRACT_TYPE_CODES.get(contract.contract_type, "06")
     record_sign_year = (contract.sign_date or contract.start_date or timezone.localdate()).year
     return render(
@@ -2045,7 +2081,7 @@ def maintenance_record_create(request, pk: int):
                 "month_field": True,
                 "form_kind": "maintenance",
                 "current_month": timezone.localdate().strftime("%Y-%m"),
-                "record_inner_number": record_inner_number,
+                "record_file_number": record_file_number,
                 "record_type_code": record_type_code,
                 "record_sign_year": record_sign_year,
                 "file_label": project_labels["file"],

@@ -57,9 +57,37 @@
         </div>
 
         <div class="chart-area">
-          <h2>即将到期项目</h2>
-          {% if expiring_contracts %}
-            <div class="table-wrap">
+          <div class="dashboard-panel-title">
+            <h2 data-expiring-panel-title>即将到期项目</h2>
+            <button class="button" id="archiveToggleButton" type="button">待归档项目</button>
+          </div>
+          <div class="dashboard-expiring-panel" data-expiring-panel="expiring">
+            {% if expiring_contracts %}
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>合同</th>
+                      <th>截止日期</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for contract in expiring_contracts %}
+                      <tr>
+                        <td class="name">{{ contract.contract_name }}</td>
+                        <td>{{ contract.end_date }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="empty" style="flex: 1;">30 天内暂无即将到期项目</div>
+            {% endif %}
+          </div>
+          <div class="dashboard-expiring-panel" data-expiring-panel="archive" hidden>
+            {% if archive_pending_contracts %}
+              <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
@@ -68,7 +96,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {% for contract in expiring_contracts %}
+                  {% for contract in archive_pending_contracts %}
                     <tr>
                       <td class="name">{{ contract.contract_name }}</td>
                       <td>{{ contract.end_date }}</td>
@@ -76,10 +104,11 @@
                   {% endfor %}
                 </tbody>
               </table>
-            </div>
-          {% else %}
-            <div class="empty" style="flex: 1;">30 天内暂无即将到期项目</div>
-          {% endif %}
+              </div>
+            {% else %}
+              <div class="empty" style="flex: 1;">暂无待归档项目</div>
+            {% endif %}
+          </div>
         </div>
       </section>
 
@@ -96,7 +125,7 @@
                   <th>甲方名称</th>
                   <th>合同金额</th>
                   <th>状态</th>
-                  <th>创建时间</th>
+                  <th>默认编号</th>
                 </tr>
               </thead>
               <tbody>
@@ -109,7 +138,7 @@
                     <td class="party">{{ contract.party_name }}</td>
                     <td>¥ {{ contract.amount|floatformat:2 }}</td>
                     <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
-                    <td>{{ contract.created_at|date:"Y-m-d H:i" }}</td>
+                    <td>{{ contract.contract_number }}</td>
                   </tr>
                 {% endfor %}
               </tbody>
@@ -230,6 +259,21 @@
     const trendChartElement = document.querySelector("#trendChart");
     const trendChartDataElement = document.querySelector("#trendChartData");
     const dashboardModeToggle = document.querySelector("#dashboardModeToggle");
+    const archiveToggleButton = document.querySelector("#archiveToggleButton");
+    const expiringPanelTitle = document.querySelector("[data-expiring-panel-title]");
+    const expiringPanels = document.querySelectorAll("[data-expiring-panel]");
+
+    if (archiveToggleButton && expiringPanelTitle) {
+      let showingArchive = false;
+      archiveToggleButton.addEventListener("click", () => {
+        showingArchive = !showingArchive;
+        expiringPanelTitle.textContent = showingArchive ? "待归档项目" : "即将到期项目";
+        archiveToggleButton.textContent = showingArchive ? "即将到期项目" : "待归档项目";
+        expiringPanels.forEach((panel) => {
+          panel.hidden = panel.dataset.expiringPanel !== (showingArchive ? "archive" : "expiring");
+        });
+      });
+    }
 
     // 函数说明：处理页面交互和数据展示逻辑。
     function formatMoney(value) {
@@ -242,6 +286,7 @@
       const trendChart = echarts.init(trendChartElement);
       const visiblePointLimit = 12;
       const visibleEnd = 100;
+      const contractAmountLabel = "合同签订金额";
       const visibleStart = trendData.labels.length > visiblePointLimit
         ? Math.max(0, 100 - (visiblePointLimit / trendData.labels.length) * 100)
         : 0;
@@ -256,8 +301,82 @@
         }));
       }
 
+      function trendLineSeries(id, name, data, color, z) {
+        return {
+          id,
+          name,
+          type: "line",
+          data,
+          showSymbol: false,
+          z,
+          itemStyle: { color },
+          lineStyle: { width: 2.4, color },
+          label: { show: false },
+        };
+      }
+
+      function trendPointSeries(id, name, data, color, z, labelPosition) {
+        return {
+          id,
+          name,
+          type: "scatter",
+          data,
+          symbol: "circle",
+          symbolSize: 7,
+          z,
+          silent: true,
+          tooltip: { show: false },
+          itemStyle: { color },
+          label: {
+            show: true,
+            position: labelPosition,
+            distance: 8,
+            formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
+            color,
+            fontSize: 11,
+          },
+        };
+      }
+
+      function trendLegendData(modeData) {
+        const items = [modeData.labels.primary, modeData.labels.secondary];
+        if (trendData.show_contract_amount_line) {
+          items.push(contractAmountLabel);
+        }
+        return items;
+      }
+
+      function buildTrendSeries(modeData) {
+        const series = [
+          trendLineSeries("trend-secondary-line", modeData.labels.secondary, modeData.chart.secondary, "#14b8a6", 3),
+          trendLineSeries("trend-primary-line", modeData.labels.primary, modeData.chart.primary, "#2563eb", 4),
+        ];
+        if (trendData.show_contract_amount_line) {
+          series.push(trendLineSeries("trend-contract-amount-line", contractAmountLabel, trendData.contract_amounts, "#dc2626", 5));
+        }
+        series.push(
+          trendPointSeries("trend-primary-points", modeData.labels.primary, modeData.chart.primary, "#2563eb", 8, "top")
+        );
+        if (trendData.show_contract_amount_line) {
+          series.push(
+            trendPointSeries("trend-contract-amount-points", contractAmountLabel, trendData.contract_amounts, "#dc2626", 9, "top")
+          );
+        }
+        series.push(
+          trendPointSeries(
+            "trend-secondary-points",
+            modeData.labels.secondary,
+            trendSeriesData(modeData.chart.secondary, modeData.chart.primary, "bottom"),
+            "#14b8a6",
+            10,
+            "bottom"
+          )
+        );
+        return series;
+      }
+
       trendChart.setOption({
-        color: ["#2563eb", "#14b8a6"],
+        color: ["#2563eb", "#14b8a6", "#dc2626"],
         tooltip: {
           trigger: "axis",
           valueFormatter: (value) => `¥ ${Math.round(Number(value || 0)).toLocaleString("zh-CN")}`,
@@ -267,7 +386,7 @@
           left: 18,
           itemWidth: 18,
           itemHeight: 8,
-          data: ["总开票/开据金额", "总收款金额"],
+          data: trendLegendData(trendData.modes.invoice),
         },
         grid: {
           left: 32,
@@ -324,73 +443,7 @@
             brushSelect: false,
           },
         ],
-        series: [
-          {
-            id: "trend-primary-line",
-            name: "总开票/开据金额",
-            type: "line",
-            data: trendData.modes.invoice.chart.primary,
-            symbol: "circle",
-            symbolSize: 7,
-            z: 4,
-            itemStyle: { color: "#2563eb" },
-            lineStyle: { width: 2.4, color: "#2563eb" },
-            label: {
-              show: true,
-              position: "top",
-              distance: 8,
-              formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
-              color: "#2563eb",
-              fontSize: 11,
-            },
-            areaStyle: {
-              opacity: 0.18,
-              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: "#2563eb" },
-                { offset: 1, color: "rgba(37, 99, 235, 0)" },
-              ]),
-            },
-          },
-          {
-            id: "trend-secondary-line",
-            name: "总收款金额",
-            type: "line",
-            data: trendSeriesData(trendData.modes.invoice.chart.secondary, trendData.modes.invoice.chart.primary, "bottom"),
-            symbol: "circle",
-            symbolSize: 7,
-            z: 3,
-            itemStyle: { color: "#14b8a6" },
-            lineStyle: { width: 2.4, color: "#14b8a6" },
-            label: {
-              show: true,
-              position: "bottom",
-              distance: 8,
-              formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
-              color: "#0f9f8f",
-              fontSize: 11,
-            },
-            areaStyle: {
-              opacity: 0.16,
-              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: "#14b8a6" },
-                { offset: 1, color: "rgba(20, 184, 166, 0)" },
-              ]),
-            },
-          },
-          {
-            id: "trend-secondary-points",
-            name: "总收款金额",
-            type: "scatter",
-            data: trendData.modes.invoice.chart.secondary,
-            symbol: "circle",
-            symbolSize: 7,
-            z: 5,
-            silent: true,
-            tooltip: { show: false },
-            itemStyle: { color: "#14b8a6" },
-            label: { show: false },
-          },
-        ],
+        series: buildTrendSeries(trendData.modes.invoice),
       });
 
       // 切换总览模式时保持坐标轴、缩放条和交互状态不变。
@@ -405,28 +458,8 @@
         document.querySelector("[data-dashboard-metric-title='rate']").textContent = modeData.labels.rate;
         document.querySelector("[data-dashboard-metric-value='rate']").textContent = `${Number(modeData.rate || 0).toFixed(1)}%`;
         trendChart.setOption({
-          legend: { data: [modeData.labels.primary, modeData.labels.secondary] },
-          series: [
-            {
-              id: "trend-primary-line",
-              name: modeData.labels.primary,
-              data: modeData.chart.primary,
-              label: { position: "top", distance: 8 },
-            },
-            {
-              id: "trend-secondary-line",
-              name: modeData.labels.secondary,
-              data: trendSeriesData(modeData.chart.secondary, modeData.chart.primary, "bottom"),
-              itemStyle: { color: "#14b8a6" },
-              lineStyle: { color: "#14b8a6" },
-              label: { position: "bottom", distance: 8 },
-            },
-            {
-              id: "trend-secondary-points",
-              name: modeData.labels.secondary,
-              data: modeData.chart.secondary,
-            },
-          ],
+          legend: { data: trendLegendData(modeData) },
+          series: buildTrendSeries(modeData),
         });
       }
 

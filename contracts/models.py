@@ -4,6 +4,7 @@ from pathlib import PurePath
 import re
 
 from django.conf import settings
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -26,6 +27,14 @@ def safe_text_folder_name(value: str, fallback: str = "未分类") -> str:
 # 获取默认文件预览根目录，通常就是项目 media 文件夹。
 def default_preview_root_path() -> str:
     return str(settings.MEDIA_ROOT)
+
+
+# 按年份增加日期，用于合同归档期限计算；2 月 29 日遇到非闰年时落到 2 月 28 日。
+def add_years(value, years: int):
+    try:
+        return value.replace(year=value.year + years)
+    except ValueError:
+        return value.replace(month=2, day=28, year=value.year + years)
 
 
 # 获取上传对象所属合同。
@@ -81,7 +90,7 @@ class Contract(models.Model):
     contract_name = models.CharField("合同名称", max_length=200)
     contract_number = models.CharField("合同编号", max_length=50, unique=True)
     original_contract_folder = models.CharField("原合同文件夹", max_length=100, blank=True)
-    original_contract_inner_number = models.CharField("文件夹内编号", max_length=100, blank=True)
+    original_contract_inner_number = models.CharField("文件编号", max_length=100, blank=True)
     contract_type = models.CharField("合同类型", max_length=20, choices=CONTRACT_TYPES, default="维保")
     party_name = models.CharField("甲方名称", max_length=200)
     amount = models.DecimalField("金额", max_digits=14, decimal_places=2, default=0)
@@ -90,6 +99,7 @@ class Contract(models.Model):
     start_date = models.DateField("开始日期", null=True, blank=True)
     end_date = models.DateField("截止日期", null=True, blank=True)
     responsible_person = models.CharField("负责人", max_length=100, blank=True)
+    archive_years = models.PositiveSmallIntegerField("归档时间", default=3, validators=[MinValueValidator(1)])
     file = models.FileField("合同文件", upload_to=project_file_upload_path, null=True, blank=True)
     remark = models.TextField("备注", blank=True)
     is_deleted = models.BooleanField("是否删除", default=False)
@@ -136,7 +146,7 @@ class Contract(models.Model):
     # 函数说明：封装可复用的业务处理。
     @property
     def full_display_contract_number(self) -> str:
-        # 详情和导出保留自动编号，并追加原合同文件夹和文件夹内编号。
+        # 详情和导出保留自动编号，并追加原合同文件夹和文件编号。
         parts = [
             self.contract_number,
             self.original_contract_folder,
@@ -152,6 +162,8 @@ class Contract(models.Model):
             return "进行中"
 
         today = timezone.localdate()
+        if self.end_date <= add_years(today, -int(self.archive_years or 0)):
+            return "待归档"
         if self.end_date < today:
             return "已到期"
         if self.end_date <= today + timedelta(days=30):
@@ -163,6 +175,7 @@ class Contract(models.Model):
     def status_class(self) -> str:
         # 把中文状态转换成页面样式类名。
         return {
+            "待归档": "archiving",
             "已到期": "expired",
             "即将到期": "expiring",
             "进行中": "active",

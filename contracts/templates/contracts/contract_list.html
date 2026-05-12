@@ -64,6 +64,12 @@
     <div class="summary">
       <span>共 {{ contract_count }} 份合同</span>
       <span>总金额：¥ {{ total_amount|floatformat:2 }}</span>
+      {% if can_manage %}
+        <span>进行中：{{ active_contract_count }} 份</span>
+        <span>进行中金额：¥ {{ active_total_amount|floatformat:2 }}</span>
+        <span>到期：{{ expired_contract_count }} 份</span>
+        <span>到期金额：¥ {{ expired_total_amount|floatformat:2 }}</span>
+      {% endif %}
     </div>
 
     <!-- 到期提醒只展示近期需要关注的合同。 -->
@@ -109,6 +115,7 @@
                 data-contract-name="{{ contract.contract_name }}"
                 data-contract-number="{{ contract.display_contract_number }}"
                 data-contract-type="{{ contract.contract_type }}"
+                data-has-file-number="{% if contract.original_contract_inner_number %}true{% else %}false{% endif %}"
                 data-party-name="{{ contract.party_name }}"
                 data-responsible-person="{{ contract.responsible_person }}"
                 data-invoice-status="{{ contract.invoice_status }}"
@@ -264,6 +271,7 @@
     const contractSearchInput = document.querySelector("#contractSearchInput");
     const searchPreview = document.querySelector("#searchPreview");
     const rowButtons = document.querySelectorAll(".row-action");
+    const recordButton = document.querySelector("#recordButton");
     const fileButton = document.querySelector("#fileButton");
     const moneyRecordButton = document.querySelector("#moneyRecordButton");
     const imageFolderButton = document.querySelector("#imageFolderButton");
@@ -406,6 +414,12 @@
         }
         setDisabled(button, false);
       });
+
+      if (recordButton && row.dataset.hasFileNumber !== "true") {
+        recordButton.href = "#";
+        recordButton.dataset.currentUrl = "";
+        setDisabled(recordButton, true);
+      }
 
       if (fileButton && row.dataset.fileUrl) {
         fileButton.href = urlWithListState(row.dataset.fileUrl, id);
@@ -793,6 +807,7 @@
           return `
             <div class="maintenance-month-record">
               <span>日期: ${escapeHtml(record.date)}</span>
+              <span>编号: ${escapeHtml(record.record_number)}</span>
               <span title="${escapeHtml(record.remark)}">备注: ${escapeHtml(record.remark)}</span>
               <span>附件: ${attachment}</span>
             </div>

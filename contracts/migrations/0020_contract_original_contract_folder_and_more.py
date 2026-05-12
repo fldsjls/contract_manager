@@ -19,6 +19,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='contract',
             name='original_contract_inner_number',
-            field=models.CharField(blank=True, max_length=100, verbose_name='文件夹内编号'),
+            field=models.CharField(blank=True, max_length=100, verbose_name='文件编号'),
         ),
     ]

@@ -581,6 +581,7 @@
     .status.active { color: #15803d; }
     .status.expiring { color: #a16207; }
     .status.expired { color: #dc2626; }
+    .status.archiving { color: #7c3aed; }
     .empty {
       padding: 40px;
       text-align: center;
@@ -616,6 +617,25 @@
     .field-control-row select {
       min-width: 0;
       flex: 1;
+    }
+    .responsible-archive-row {
+      align-items: flex-end;
+      gap: 12px;
+    }
+    .responsible-field {
+      flex: 1 1 50%;
+      min-width: 0;
+    }
+    .archive-field {
+      display: grid;
+      flex: 1 1 50%;
+      min-width: 0;
+      gap: 6px;
+    }
+    .archive-field .field-label.compact {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1;
     }
     .contract-number-row input {
       flex: 1 1 120px;
@@ -992,6 +1012,18 @@
     .maintenance-record-table td:nth-child(3) { width: 52%; }
     .maintenance-record-table th:nth-child(4),
     .maintenance-record-table td:nth-child(4) { width: 12%; }
+    .record-number-output {
+      display: block;
+      width: 100%;
+      min-height: 38px;
+      padding: 8px 10px;
+      border: 1px solid #d0d5dd;
+      background: #f8fafc;
+      color: #101828;
+      line-height: 20px;
+      text-align: center;
+      white-space: nowrap;
+    }
     .dashboard-page {
       font-size: 14px;
       overflow: hidden;
@@ -1059,6 +1091,24 @@
       font-size: 20px;
       line-height: 1.2;
     }
+    .dashboard-panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .dashboard-panel-title h2 {
+      margin-bottom: 0;
+    }
+    .dashboard-expiring-panel {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+    .dashboard-expiring-panel[hidden] {
+      display: none;
+    }
     .dashboard-page .mini-chart.compact {
       flex: 1;
       min-height: 0;
@@ -1084,7 +1134,7 @@
     .dashboard-page .recent-panel .table-wrap {
       flex: 1;
       min-height: 0;
-      overflow: auto;
+      overflow: hidden;
     }
     /* 合同列表和详情页各自控制内部滚动，避免浏览器窗口出现多层横向滚动。 */
     .contract-list-page {

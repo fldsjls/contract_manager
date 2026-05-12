@@ -19,7 +19,7 @@
     <!-- 合同基础字段由 Django 表单自动渲染。 -->
     <div class="form-grid">
       {% for field in form %}
-        {% if field.name == "original_contract_folder" or field.name == "original_contract_inner_number" %}
+        {% if field.name == "original_contract_folder" or field.name == "original_contract_inner_number" or field.name == "archive_years" %}
         {% else %}
         <div class="form-row {% if field.name == 'remark' %}full{% endif %}">
           <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
@@ -37,6 +37,17 @@
               {{ field }}
               <button class="button icon-button" id="copySignDate" type="button" title="复制签订日期">⇦</button>
             </div>
+          {% elif field.name == "responsible_person" %}
+            <div class="field-control-row responsible-archive-row">
+              <div class="responsible-field">
+                {{ field }}
+              </div>
+              <div class="archive-field">
+                <label class="field-label compact" for="{{ form.archive_years.id_for_label }}">{{ form.archive_years.label }}</label>
+                {{ form.archive_years }}
+              </div>
+            </div>
+            {{ form.archive_years.errors }}
           {% else %}
             {{ field }}
           {% endif %}

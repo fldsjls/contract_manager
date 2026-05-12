@@ -2153,7 +2153,7 @@ def archive_list(request):
 @admin_required
 def contract_archive(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
-    if request.method == "POST" and contract.status == "待归档":
+    if request.method == "POST" and contract.status == "待归档" and not contract.uses_default_display_contract_number:
         contract.archive()
     return redirect("contracts:archive_list")
 

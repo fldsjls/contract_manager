@@ -37,11 +37,13 @@
               <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
               <td>{{ contract.archived_at|date:"Y-m-d H:i" }}</td>
               <td>
-                {% if contract.status == "待归档" %}
+                {% if contract.status == "待归档" and not contract.uses_default_display_contract_number %}
                   <form method="post" action="{% url 'contracts:contract_archive' contract.id %}">
                     {% csrf_token %}
                     <button class="button primary" type="submit">归档</button>
                   </form>
+                {% elif contract.status == "待归档" %}
+                  <span class="button muted">缺少文件编号</span>
                 {% else %}
                   <span class="button muted">已归档</span>
                 {% endif %}

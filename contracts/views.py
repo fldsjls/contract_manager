@@ -1095,6 +1095,8 @@ def contracts_for_list_request(request):
         contracts = contracts.filter(
             Q(contract_name__icontains=keyword)
             | Q(contract_number__icontains=keyword)
+            | Q(original_contract_folder__icontains=keyword)
+            | Q(original_contract_inner_number__icontains=keyword)
             | Q(party_name__icontains=keyword)
             | Q(responsible_person__icontains=keyword)
         )
@@ -1166,8 +1168,8 @@ def text_display_width(value) -> int:
 # 视图函数：处理页面请求并返回响应。
 def contract_export_column_widths(headers, rows) -> list[int]:
     # 按标题和实际内容动态计算列宽，日期列设置最低宽度，保证中文日期完整显示。
-    min_widths = [8, 18, 18, 10, 18, 12, 10, 18, 18, 12, 10, 10]
-    max_widths = [10, 42, 22, 14, 34, 16, 12, 22, 22, 22, 12, 12]
+    min_widths = [8, 18, 24, 10, 18, 12, 10, 18, 18, 12, 10, 10]
+    max_widths = [10, 42, 36, 14, 34, 16, 12, 22, 22, 22, 12, 12]
     widths = []
     for column_index, header in enumerate(headers):
         candidates = [header]
@@ -1276,6 +1278,8 @@ def contract_list(request):
         contracts = contracts.filter(
             Q(contract_name__icontains=keyword)
             | Q(contract_number__icontains=keyword)
+            | Q(original_contract_folder__icontains=keyword)
+            | Q(original_contract_inner_number__icontains=keyword)
             | Q(party_name__icontains=keyword)
             | Q(responsible_person__icontains=keyword)
         )
@@ -1363,7 +1367,7 @@ def contract_list_export(request):
             [
                 index,
                 contract.contract_name,
-                contract.contract_number,
+                contract.full_display_contract_number,
                 contract.contract_type,
                 contract.party_name,
                 float(contract.amount or 0),

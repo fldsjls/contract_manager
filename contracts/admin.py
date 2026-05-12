@@ -10,7 +10,7 @@ class ContractAdmin(admin.ModelAdmin):
     # 后台列表页显示的字段。
     list_display = (
         "contract_name",
-        "contract_number",
+        "display_contract_number",
         "contract_type",
         "party_name",
         "amount",
@@ -20,9 +20,21 @@ class ContractAdmin(admin.ModelAdmin):
         "deleted_at",
     )
     # 后台搜索支持合同名称、编号和甲方名称。
-    search_fields = ("contract_name", "contract_number", "party_name")
+    search_fields = (
+        "contract_name",
+        "contract_number",
+        "original_contract_folder",
+        "original_contract_inner_number",
+        "party_name",
+    )
     # 后台右侧筛选项。
     list_filter = ("contract_type", "invoice_status", "is_deleted", "end_date")
+
+    # 方法说明：在后台列表中显示组合后的合同编号。
+    def display_contract_number(self, obj):
+        return obj.display_contract_number
+
+    display_contract_number.short_description = "合同编号"
 
 
 # 注册合同附件模型到后台。

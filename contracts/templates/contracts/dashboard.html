@@ -105,7 +105,7 @@
                     <td class="name">
                       <a href="{% url 'contracts:contract_detail' contract.id %}">{{ contract.contract_name }}</a>
                     </td>
-                    <td>{{ contract.contract_number }}</td>
+                    <td>{{ contract.display_contract_number }}</td>
                     <td class="party">{{ contract.party_name }}</td>
                     <td>¥ {{ contract.amount|floatformat:2 }}</td>
                     <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>

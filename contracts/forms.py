@@ -14,6 +14,8 @@ class ContractForm(forms.ModelForm):
         fields = [
             "contract_name",
             "contract_number",
+            "original_contract_folder",
+            "original_contract_inner_number",
             "contract_type",
             "party_name",
             "amount",
@@ -40,6 +42,8 @@ class ContractForm(forms.ModelForm):
             self.fields[name].input_formats = ["%Y-%m-%d"]
         for field in self.fields.values():
             field.widget.attrs.setdefault("class", "form-control")
+        self.fields["original_contract_folder"].widget.attrs.setdefault("placeholder", "原合同文件夹")
+        self.fields["original_contract_inner_number"].widget.attrs.setdefault("placeholder", "文件夹内编号")
 
     # 方法说明：执行表单字段或整表校验。
     def clean_contract_number(self):

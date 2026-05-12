@@ -19,7 +19,7 @@
       <!-- 合同基础信息表，文件名和备注使用省略显示并保留悬停完整内容。 -->
       <section class="panel">
         <div class="summary">
-          <span>合同编号：{{ contract.contract_number }}</span>
+          <span>合同编号：{{ contract.full_display_contract_number }}</span>
           <span>合同类型：{{ contract.contract_type }}</span>
           <span>状态：<span class="status {{ contract.status_class }}">{{ contract.status }}</span></span>
         </div>

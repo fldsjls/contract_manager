@@ -10,7 +10,7 @@
   <form class="panel" method="post">
     {% csrf_token %}
     <p>确定要将以下合同移入回收站吗？一周内可恢复，超过后自动清理。</p>
-    <p><strong>{{ contract.contract_name }}</strong>（{{ contract.contract_number }}）</p>
+    <p><strong>{{ contract.contract_name }}</strong>（{{ contract.display_contract_number }}）</p>
 
     <div class="toolbar">
       <button class="button danger" type="submit">移入回收站</button>

@@ -16,13 +16,19 @@
     <!-- 合同基础字段由 Django 表单自动渲染。 -->
     <div class="form-grid">
       {% for field in form %}
+        {% if field.name == "original_contract_folder" or field.name == "original_contract_inner_number" %}
+        {% else %}
         <div class="form-row {% if field.name == 'remark' %}full{% endif %}">
           <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
           {% if field.name == "contract_number" %}
-            <div class="field-control-row">
+            <div class="field-control-row contract-number-row">
               {{ field }}
+              {{ form.original_contract_folder }}
+              {{ form.original_contract_inner_number }}
               <button class="button icon-button" id="resetContractNumber" type="button" title="恢复默认合同编号">默认</button>
             </div>
+            {{ form.original_contract_folder.errors }}
+            {{ form.original_contract_inner_number.errors }}
           {% elif field.name == "start_date" %}
             <div class="field-control-row">
               {{ field }}
@@ -33,6 +39,7 @@
           {% endif %}
           {{ field.errors }}
         </div>
+        {% endif %}
       {% endfor %}
       <!-- 合同文件区域支持多文件上传和选中后批量删除。 -->
       <div class="form-row full file-list" id="fileList">

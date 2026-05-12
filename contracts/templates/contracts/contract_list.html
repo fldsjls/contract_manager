@@ -12,7 +12,7 @@
     <!-- 搜索栏按合同名称、编号和甲方名称过滤列表。 -->
     <form class="search-toolbar" method="get" autocomplete="off">
       <div class="search-preview-wrap">
-        <input class="search-input" id="contractSearchInput" name="q" value="{{ keyword }}" placeholder="搜索合同名称、合同编号、甲方名称、负责人">
+        <input class="search-input" id="contractSearchInput" name="q" value="{{ keyword }}" placeholder="搜索合同名称、合同编号、原合同编号、甲方名称、负责人">
         <div class="search-preview" id="searchPreview" hidden></div>
       </div>
       <input name="contract_type" type="hidden" value="{{ contract_type_filter }}">
@@ -107,7 +107,7 @@
                 class="selectable-row"
                 data-contract-id="{{ contract.id }}"
                 data-contract-name="{{ contract.contract_name }}"
-                data-contract-number="{{ contract.contract_number }}"
+                data-contract-number="{{ contract.display_contract_number }}"
                 data-contract-type="{{ contract.contract_type }}"
                 data-party-name="{{ contract.party_name }}"
                 data-responsible-person="{{ contract.responsible_person }}"
@@ -121,7 +121,7 @@
               >
                 <td>{{ forloop.counter }}</td>
                 <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
-                <td>{{ contract.contract_number }}</td>
+                <td title="{{ contract.display_contract_number }}">{{ contract.display_contract_number }}</td>
                 <td>{{ contract.contract_type }}</td>
                 <td class="party">{{ contract.party_name }}</td>
                 <td>¥ {{ contract.amount|floatformat:2 }}</td>

@@ -69,6 +69,8 @@ class Contract(models.Model):
     # 合同基础字段会映射成数据库 contracts_contract 表中的列。
     contract_name = models.CharField("合同名称", max_length=200)
     contract_number = models.CharField("合同编号", max_length=50, unique=True)
+    original_contract_folder = models.CharField("原合同文件夹", max_length=100, blank=True)
+    original_contract_inner_number = models.CharField("文件夹内编号", max_length=100, blank=True)
     contract_type = models.CharField("合同类型", max_length=20, choices=CONTRACT_TYPES, default="维保")
     party_name = models.CharField("甲方名称", max_length=200)
     amount = models.DecimalField("金额", max_digits=14, decimal_places=2, default=0)
@@ -94,7 +96,28 @@ class Contract(models.Model):
     # 方法说明：返回对象的可读名称。
     def __str__(self) -> str:
         # 后台和调试输出中显示合同名称与编号。
-        return f"{self.contract_name}（{self.contract_number}）"
+        return f"{self.contract_name}（{self.display_contract_number}）"
+
+    # 函数说明：封装可复用的业务处理。
+    @property
+    def display_contract_number(self) -> str:
+        # 页面显示时隐藏自动生成的时间编号，只展示原合同文件夹和文件夹内编号。
+        parts = [
+            self.original_contract_folder,
+            self.original_contract_inner_number,
+        ]
+        return "-".join(part for part in parts if part) or self.contract_number
+
+    # 函数说明：封装可复用的业务处理。
+    @property
+    def full_display_contract_number(self) -> str:
+        # 详情和导出保留自动编号，并追加原合同文件夹和文件夹内编号。
+        parts = [
+            self.contract_number,
+            self.original_contract_folder,
+            self.original_contract_inner_number,
+        ]
+        return "-".join(part for part in parts if part)
 
     # 函数说明：封装可复用的业务处理。
     @property

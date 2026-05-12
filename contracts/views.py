@@ -193,10 +193,11 @@ def safe_folder_name(value: str, fallback: str = "未命名项目") -> str:
 
 # 视图函数：处理页面请求并返回响应。
 def contract_image_folder(contract: Contract) -> Path:
-    # 图片查看使用独立根目录，并按“合同类型/合同名称”分层存放。
+    # 图片查看使用独立根目录，并按“合同类型/显示合同编号”分层存放，避免同名合同冲突。
     root_path = AppSetting.current().image_root_path.strip() or AppSetting._meta.get_field("image_root_path").default
     contract_type_folder = safe_folder_name(contract.contract_type, "未分类")
-    return Path(root_path) / contract_type_folder / safe_project_folder_name(contract)
+    contract_number_folder = safe_folder_name(contract.display_contract_number, "未编号合同")
+    return Path(root_path) / contract_type_folder / contract_number_folder
 
 
 # 函数说明：封装可复用的业务处理。
@@ -1126,6 +1127,7 @@ def configured_file_content(request, kind: str, pk: int):
 
 # 渲染统计总览页面。
 # 视图函数：处理页面请求并返回响应。
+@true_admin_required
 def dashboard(request):
     purge_expired_trash()
     chart_period, chart_year, chart_month, prev_range_params, next_range_params, chart_range_label = chart_range_from_request(request)

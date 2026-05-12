@@ -1394,7 +1394,9 @@
     <!-- 左侧导航栏显示模块入口和当前登录模式。 -->
     <aside class="sidebar">
       <div class="brand">金达铭公司</div>
-      <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'contracts:dashboard' %}">统计总览</a>
+      {% if is_admin_mode %}
+        <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'contracts:dashboard' %}">统计总览</a>
+      {% endif %}
       <a class="nav-link {% if active_nav == 'contracts' %}active{% endif %}" href="{% url 'contracts:contract_list' %}">合同列表</a>
       <a class="nav-link {% if active_nav == 'trash' %}active{% endif %}" href="{% url 'contracts:trash' %}">回收站</a>
       <a

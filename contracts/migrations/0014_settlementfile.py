@@ -6,6 +6,7 @@ import contracts.models
 
 
 # 新增结算文件表，把结算附件从普通合同文件中单独分目录保存。
+# 迁移类：声明本次数据库结构变更和依赖关系。
 class Migration(migrations.Migration):
 
     # 结算文件依赖合同主表和统一上传路径函数。

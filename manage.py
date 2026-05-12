@@ -5,6 +5,7 @@ import sys
 
 
 # 执行 manage.py 后面的管理命令。
+# 函数说明：封装可复用的业务处理。
 def main() -> None:
     # 指定当前项目使用的 Django 配置模块。
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "contract_web.settings")

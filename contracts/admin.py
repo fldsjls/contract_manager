@@ -4,6 +4,7 @@ from .models import AppSetting, Contract, ContractFile, InvoiceRecord, Maintenan
 
 
 # 注册合同模型到 Django 管理后台。
+# 后台类：配置模型在 Django 管理后台的显示和筛选。
 @admin.register(Contract)
 class ContractAdmin(admin.ModelAdmin):
     # 后台列表页显示的字段。
@@ -25,6 +26,7 @@ class ContractAdmin(admin.ModelAdmin):
 
 
 # 注册合同附件模型到后台。
+# 后台类：配置模型在 Django 管理后台的显示和筛选。
 @admin.register(ContractFile)
 class ContractFileAdmin(admin.ModelAdmin):
     # 后台附件列表显示所属合同、原文件名和上传时间。
@@ -33,6 +35,7 @@ class ContractFileAdmin(admin.ModelAdmin):
     search_fields = ("contract__contract_name", "contract__contract_number", "original_name")
 
 
+# 后台类：配置模型在 Django 管理后台的显示和筛选。
 @admin.register(SettlementFile)
 class SettlementFileAdmin(admin.ModelAdmin):
     list_display = ("contract", "original_name", "created_at")
@@ -41,6 +44,7 @@ class SettlementFileAdmin(admin.ModelAdmin):
 
 
 # 注册开票记录模型到后台。
+# 后台类：配置模型在 Django 管理后台的显示和筛选。
 @admin.register(InvoiceRecord)
 class InvoiceRecordAdmin(admin.ModelAdmin):
     # 后台开票记录列表显示的字段。
@@ -52,6 +56,7 @@ class InvoiceRecordAdmin(admin.ModelAdmin):
 
 
 # 注册收票记录模型到后台。
+# 后台类：配置模型在 Django 管理后台的显示和筛选。
 @admin.register(PaymentRecord)
 class PaymentRecordAdmin(admin.ModelAdmin):
     # 后台收票记录列表显示的字段。
@@ -63,6 +68,7 @@ class PaymentRecordAdmin(admin.ModelAdmin):
 
 
 # 注册维护保养记录模型到后台。
+# 后台类：配置模型在 Django 管理后台的显示和筛选。
 @admin.register(MaintenanceRecord)
 class MaintenanceRecordAdmin(admin.ModelAdmin):
     # 后台维护保养记录列表显示的字段。
@@ -74,6 +80,7 @@ class MaintenanceRecordAdmin(admin.ModelAdmin):
 
 
 # 注册系统设置模型到后台。
+# 后台类：配置模型在 Django 管理后台的显示和筛选。
 @admin.register(AppSetting)
 class AppSettingAdmin(admin.ModelAdmin):
     # 后台显示文件上传相关开关和更新时间。

@@ -231,6 +231,7 @@
     const trendChartDataElement = document.querySelector("#trendChartData");
     const dashboardModeToggle = document.querySelector("#dashboardModeToggle");
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function formatMoney(value) {
       return `¥ ${Number(value || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
@@ -245,6 +246,7 @@
         ? Math.max(0, 100 - (visiblePointLimit / trendData.labels.length) * 100)
         : 0;
 
+      // 函数说明：处理页面交互和数据展示逻辑。
       function trendSeriesData(values, peerValues, defaultPosition) {
         return values.map((value, index) => ({
           value,

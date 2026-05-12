@@ -117,6 +117,7 @@
       responsibleFieldWrap.appendChild(responsiblePersonInput);
       responsibleFieldWrap.appendChild(responsibleDropdown);
 
+      // 函数说明：处理页面交互和数据展示逻辑。
       function renderResponsibleOptions() {
         const keyword = responsiblePersonInput.value.trim().toLowerCase();
         const matches = responsiblePeople.filter((value) => value.toLowerCase().includes(keyword));
@@ -139,6 +140,7 @@
         responsibleDropdown.hidden = matches.length === 0;
       }
 
+      // 函数说明：处理页面交互和数据展示逻辑。
       const saveResponsiblePerson = () => {
         const value = responsiblePersonInput.value.trim();
         if (!value) {
@@ -159,6 +161,7 @@
       });
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function syncEndDateRequired() {
       if (!contractTypeInput || !endDateInput) {
         return;
@@ -206,6 +209,7 @@
       });
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function appendFileRow(fileData, pendingText = "") {
       const emptyHint = document.querySelector("#fileEmptyHint");
       if (emptyHint) {
@@ -237,10 +241,12 @@
       bindSortableFile(row);
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function sortableRows() {
       return Array.from(fileList.querySelectorAll(".sortable-file"));
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     async function saveFileOrder() {
       if (!reorderUrl) {
         return;
@@ -256,6 +262,7 @@
       });
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function bindSortableFile(row) {
       row.addEventListener("dragstart", () => {
         row.classList.add("dragging");

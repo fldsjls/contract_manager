@@ -2,6 +2,7 @@ from django.apps import AppConfig
 
 
 # 合同应用的基础配置。
+# 类说明：封装相关数据和行为。
 class ContractsConfig(AppConfig):
     # 设置模型默认主键类型。
     default_auto_field = "django.db.models.BigAutoField"

@@ -3,6 +3,7 @@ import contracts.models
 from django.db import migrations, models
 
 
+# 迁移类：声明本次数据库结构变更和依赖关系。
 class Migration(migrations.Migration):
     dependencies = [
         ("contracts", "0008_alter_contract_contract_type_default"),

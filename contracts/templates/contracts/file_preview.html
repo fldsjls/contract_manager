@@ -47,6 +47,7 @@
       const viewer = document.querySelector("#pdfViewer");
       pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
 
+      // 函数说明：处理页面交互和数据展示逻辑。
       async function renderPdf() {
         try {
           const pdf = await pdfjsLib.getDocument(pdfUrl).promise;

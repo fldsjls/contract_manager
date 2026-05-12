@@ -8,12 +8,14 @@ from django.utils import timezone
 
 
 # 清理项目文件夹名称，避免 Windows 和 URL 路径中的非法字符。
+# 函数说明：封装可复用的业务处理。
 def safe_project_folder_name(contract: "Contract") -> str:
     raw_name = contract.contract_name or contract.contract_number or "未命名项目"
     safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_name).strip(" ._")
     return safe_name or "未命名项目"
 
 
+# 函数说明：封装可复用的业务处理。
 def safe_text_folder_name(value: str, fallback: str = "未分类") -> str:
     # 合同类型也会进入文件路径，和合同名称使用同一套 Windows 文件夹名清理规则。
     safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value or "").strip(" ._")
@@ -21,6 +23,7 @@ def safe_text_folder_name(value: str, fallback: str = "未分类") -> str:
 
 
 # 获取上传对象所属合同。
+# 函数说明：封装可复用的业务处理。
 def upload_contract_for(instance):
     return getattr(instance, "contract", instance)
 
@@ -46,6 +49,7 @@ def project_file_upload_path(instance, filename: str) -> str:
 
 
 # 定义合同主表、附件表、开票记录表、收票记录表、维护保养记录表和系统设置表。
+# 模型类：定义数据库字段和业务属性。
 class Contract(models.Model):
     # 合同类型用于表单下拉选择。
     CONTRACT_TYPES = [
@@ -80,16 +84,19 @@ class Contract(models.Model):
     created_at = models.DateTimeField("创建时间", default=timezone.now)
     updated_at = models.DateTimeField("更新时间", auto_now=True)
 
+    # 元数据类：配置字段、排序或显示名称。
     class Meta:
         # 默认按截止日期和编号排序，后台显示名称使用中文。
         ordering = ["end_date", "-id"]
         verbose_name = "合同"
         verbose_name_plural = "合同"
 
+    # 方法说明：返回对象的可读名称。
     def __str__(self) -> str:
         # 后台和调试输出中显示合同名称与编号。
         return f"{self.contract_name}（{self.contract_number}）"
 
+    # 函数说明：封装可复用的业务处理。
     @property
     def status(self) -> str:
         # 根据截止日期实时计算合同状态。
@@ -103,6 +110,7 @@ class Contract(models.Model):
             return "即将到期"
         return "进行中"
 
+    # 函数说明：封装可复用的业务处理。
     @property
     def status_class(self) -> str:
         # 把中文状态转换成页面样式类名。
@@ -112,11 +120,13 @@ class Contract(models.Model):
             "进行中": "active",
         }.get(self.status, "active")
 
+    # 函数说明：封装可复用的业务处理。
     @property
     def latest_file(self):
         # 取排序最靠前的一份合同文件供列表和详情页预览。
         return self.files.order_by("sort_order", "id").first()
 
+    # 函数说明：封装可复用的业务处理。
     @property
     def invoice_total(self) -> Decimal:
         # 兼容旧模板命名：这里返回项目收入。
@@ -129,6 +139,7 @@ class Contract(models.Model):
                 total += record.actual_amount if record.actual_amount is not None else record.amount
         return total
 
+    # 函数说明：封装可复用的业务处理。
     @property
     def payment_total(self) -> Decimal:
         # 兼容旧模板命名：这里返回项目支出。
@@ -141,17 +152,20 @@ class Contract(models.Model):
                 total += record.actual_amount if record.actual_amount is not None else record.amount
         return total
 
+    # 函数说明：封装可复用的业务处理。
     @property
     def payment_rate(self) -> Decimal:
         # 用收票金额除以合同金额，得到单个项目的收款率。
         return (self.payment_total / self.amount * Decimal("100")) if self.amount else Decimal("0")
 
+    # 函数说明：封装可复用的业务处理。
     def move_to_trash(self) -> None:
         # 将合同移入回收站，保留一周内可恢复。
         self.is_deleted = True
         self.deleted_at = timezone.now()
         self.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
 
+    # 函数说明：封装可复用的业务处理。
     def restore_from_trash(self) -> None:
         # 从回收站恢复合同，恢复后重新出现在合同列表和统计中。
         self.is_deleted = False
@@ -160,6 +174,7 @@ class Contract(models.Model):
 
 
 # 保存合同可重复上传的附件文件。
+# 模型类：定义数据库字段和业务属性。
 class ContractFile(models.Model):
     contract = models.ForeignKey(Contract, related_name="files", on_delete=models.CASCADE, verbose_name="所属合同")
     file = models.FileField("合同文件", upload_to=project_file_upload_path)
@@ -167,34 +182,40 @@ class ContractFile(models.Model):
     sort_order = models.PositiveIntegerField("排序", default=0)
     created_at = models.DateTimeField("上传时间", default=timezone.now)
 
+    # 元数据类：配置字段、排序或显示名称。
     class Meta:
         # 文件按用户调整的顺序显示。
         ordering = ["sort_order", "id"]
         verbose_name = "合同文件"
         verbose_name_plural = "合同文件"
 
+    # 方法说明：返回对象的可读名称。
     def __str__(self) -> str:
         # 优先显示原始文件名。
         return self.original_name or self.file.name
 
 
 # 保存合同结算文件，和合同正文、记录附件分目录归档。
+# 模型类：定义数据库字段和业务属性。
 class SettlementFile(models.Model):
     contract = models.ForeignKey(Contract, related_name="settlement_files", on_delete=models.CASCADE, verbose_name="所属合同")
     file = models.FileField("结算文件", upload_to=project_file_upload_path)
     original_name = models.CharField("原文件名", max_length=255, blank=True)
     created_at = models.DateTimeField("上传时间", default=timezone.now)
 
+    # 元数据类：配置字段、排序或显示名称。
     class Meta:
         ordering = ["-created_at", "-id"]
         verbose_name = "结算文件"
         verbose_name_plural = "结算文件"
 
+    # 方法说明：返回对象的可读名称。
     def __str__(self) -> str:
         return self.original_name or self.file.name
 
 
 # 开票和收票记录共用的抽象基础表。
+# 模型类：定义数据库字段和业务属性。
 class RecordBase(models.Model):
     contract = models.ForeignKey(Contract, on_delete=models.CASCADE, verbose_name="所属合同")
     record_date = models.DateField("日期")
@@ -206,31 +227,38 @@ class RecordBase(models.Model):
     created_at = models.DateTimeField("创建时间", default=timezone.now)
     updated_at = models.DateTimeField("更新时间", auto_now=True)
 
+    # 元数据类：配置字段、排序或显示名称。
     class Meta:
         # 抽象模型不单独建表，只给子类复用字段。
         abstract = True
         ordering = ["record_date", "id"]
 
+    # 方法说明：返回对象的可读名称。
     def __str__(self) -> str:
         # 后台中显示记录所属合同、日期和金额。
         return f"{self.contract.contract_name} - {self.record_date} - {self.amount}"
 
 
 # 开票记录表。
+# 模型类：定义数据库字段和业务属性。
 class InvoiceRecord(RecordBase):
+    # 元数据类：配置字段、排序或显示名称。
     class Meta(RecordBase.Meta):
         verbose_name = "开票记录"
         verbose_name_plural = "开票记录"
 
 
 # 收票记录表。
+# 模型类：定义数据库字段和业务属性。
 class PaymentRecord(RecordBase):
+    # 元数据类：配置字段、排序或显示名称。
     class Meta(RecordBase.Meta):
         verbose_name = "收票记录"
         verbose_name_plural = "收票记录"
 
 
 # 维护保养记录表。
+# 模型类：定义数据库字段和业务属性。
 class MaintenanceRecord(models.Model):
     contract = models.ForeignKey(Contract, on_delete=models.CASCADE, verbose_name="所属合同")
     record_date = models.DateField("日期")
@@ -240,18 +268,21 @@ class MaintenanceRecord(models.Model):
     created_at = models.DateTimeField("创建时间", default=timezone.now)
     updated_at = models.DateTimeField("更新时间", auto_now=True)
 
+    # 元数据类：配置字段、排序或显示名称。
     class Meta:
         # 维护保养记录按日期和创建顺序显示。
         ordering = ["record_date", "id"]
         verbose_name = "维护保养记录"
         verbose_name_plural = "维护保养记录"
 
+    # 方法说明：返回对象的可读名称。
     def __str__(self) -> str:
         # 后台中显示记录所属合同、日期和月份。
         return f"{self.contract.contract_name} - {self.record_date} - {self.month}"
 
 
 # 保存系统级开关配置。
+# 模型类：定义数据库字段和业务属性。
 class AppSetting(models.Model):
     delete_source_file = models.BooleanField("上传时是否删除原文件", default=False)
     image_root_path = models.CharField(
@@ -262,14 +293,17 @@ class AppSetting(models.Model):
     )
     updated_at = models.DateTimeField("更新时间", auto_now=True)
 
+    # 元数据类：配置字段、排序或显示名称。
     class Meta:
         verbose_name = "系统设置"
         verbose_name_plural = "系统设置"
 
+    # 方法说明：返回对象的可读名称。
     def __str__(self) -> str:
         # 后台中显示固定的系统设置名称。
         return "系统设置"
 
+    # 函数说明：封装可复用的业务处理。
     @classmethod
     def current(cls) -> "AppSetting":
         # 获取唯一的系统设置记录，首次访问时自动创建。

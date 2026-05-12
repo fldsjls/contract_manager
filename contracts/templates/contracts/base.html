@@ -1335,6 +1335,7 @@
     const adminLoginConfirm = document.querySelector("#adminLoginConfirm");
     const adminOnlyLinks = document.querySelectorAll(".requires-admin-login");
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function closeInlineRemarkEditor(editor) {
       const display = editor.querySelector(".inline-remark-display");
       const panel = editor.querySelector(".inline-remark-form");
@@ -1347,6 +1348,7 @@
       }
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function openInlineRemarkEditor(editor) {
       const display = editor.querySelector(".inline-remark-display");
       const panel = editor.querySelector(".inline-remark-form");
@@ -1359,11 +1361,13 @@
       }
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function getInlineRemarkToken(editor) {
       const tokenInput = editor.querySelector("input[name='csrfmiddlewaretoken']");
       return tokenInput ? tokenInput.value : "";
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     async function saveInlineRemarkEditor(editor) {
       const display = editor.querySelector(".inline-remark-display");
       const panel = editor.querySelector(".inline-remark-form");
@@ -1397,6 +1401,7 @@
       closeInlineRemarkEditor(editor);
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function initInlineRemarkEditors() {
       document.querySelectorAll(".inline-remark-editor").forEach((editor) => {
         const display = editor.querySelector(".inline-remark-display");
@@ -1447,6 +1452,7 @@
       });
     }, true);
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function closeAdminLoginModal() {
       adminLoginModal.hidden = true;
     }
@@ -1469,6 +1475,7 @@
       }
     });
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function clearInteractiveSelection() {
       document.querySelectorAll(".selectable-row.selected").forEach((row) => {
         row.classList.remove("selected");

@@ -284,14 +284,17 @@
       enabled: false,
     };
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function setDisabled(button, disabled) {
       button.setAttribute("aria-disabled", disabled ? "true" : "false");
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function urlFor(button, id) {
       return button.dataset.urlTemplate.replace("/0/", `/${id}/`);
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function escapeHtml(value) {
       return String(value || "")
         .replaceAll("&", "&amp;")
@@ -300,6 +303,7 @@
         .replaceAll('"', "&quot;");
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function closeCenterModal() {
       centerModal.hidden = true;
       centerModalCard.classList.remove("wide");
@@ -310,6 +314,7 @@
       centerModalCancel.hidden = false;
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function openCenterModal({ title, body, confirmText = "确定", cancelText = "取消", danger = false, onConfirm = null }) {
       centerModalTitle.textContent = title;
       centerModalBody.textContent = body;
@@ -325,6 +330,7 @@
       centerModalConfirm.focus();
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function clearSelection() {
       document.querySelectorAll(".selectable-row.selected").forEach((row) => {
         row.classList.remove("selected");
@@ -350,6 +356,7 @@
 
     window.clearPageSelection = clearSelection;
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function selectContractRow(row) {
       clearSelection();
       row.classList.add("selected");
@@ -406,10 +413,12 @@
       });
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function contractRows() {
       return Array.from(document.querySelectorAll(".selectable-row"));
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function rowSearchText(row) {
       return [
         row.dataset.contractName,
@@ -419,12 +428,14 @@
       ].join(" ").toLowerCase();
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function hideSearchPreview() {
       if (searchPreview) {
         searchPreview.hidden = true;
       }
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function renderSearchPreview() {
       if (!contractSearchInput || !searchPreview) {
         return;
@@ -502,6 +513,7 @@
       });
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function setupResponsibleMemory(input) {
       if (!input) {
         return;
@@ -520,6 +532,7 @@
       fieldWrap.appendChild(input);
       fieldWrap.appendChild(dropdown);
 
+      // 函数说明：处理页面交互和数据展示逻辑。
       function renderOptions() {
         const keyword = input.value.trim().toLowerCase();
         const matches = responsiblePeople.filter((value) => value.toLowerCase().includes(keyword));
@@ -542,6 +555,7 @@
         dropdown.hidden = matches.length === 0;
       }
 
+      // 函数说明：处理页面交互和数据展示逻辑。
       function saveValue() {
         const value = input.value.trim();
         if (!value) {
@@ -607,6 +621,7 @@
       });
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     async function loadMaintenanceCalendar() {
       if (!maintenanceState.enabled) {
         return;
@@ -626,6 +641,7 @@
       }
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function renderMaintenanceCalendar(data) {
       maintenanceState.year = data.year;
       centerModalBody.textContent = "";
@@ -676,6 +692,7 @@
       });
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function projectPopupTabs(activeTab) {
       const tabs = document.createElement("div");
       tabs.className = "project-popup-tabs";
@@ -705,10 +722,12 @@
       return tabs;
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function formatMoney(value) {
       return `¥ ${Number(value || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     async function loadProjectStats() {
       const params = new URLSearchParams({
         period: projectStatsState.period,
@@ -729,6 +748,7 @@
       }
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function updateProjectRangeLabels() {
       projectYearLabel.textContent = `${projectStatsState.year - 11} - ${projectStatsState.year} 年`;
       projectMonthLabel.textContent = `${projectStatsState.year} 年`;
@@ -745,11 +765,13 @@
       });
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function openProjectRangeModal() {
       updateProjectRangeLabels();
       projectRangeModal.hidden = false;
     }
 
+    // 函数说明：处理页面交互和数据展示逻辑。
     function renderProjectStats(data) {
       projectStatsState.period = data.period;
       projectStatsState.year = data.year;
@@ -818,6 +840,7 @@
           chart: { primary: data.chart.expense || data.chart.payment, secondary: data.chart.expense || data.chart.payment },
         },
       };
+      // 函数说明：处理页面交互和数据展示逻辑。
       function projectSeriesData(values, peerValues, defaultPosition) {
         return values.map((value, index) => ({
           value,
@@ -962,6 +985,7 @@
           },
         ],
       });
+      // 函数说明：处理页面交互和数据展示逻辑。
       function applyProjectStatsMode() {
         const mode = modeToggle.checked ? "receipt" : "invoice";
         const labels = mode === "invoice"

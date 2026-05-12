@@ -2,18 +2,21 @@
 from django.db import migrations, models
 
 
+# 迁移函数：处理历史数据的字段转换。
 def rename_other_project_to_other(apps, schema_editor):
     # 同步已有数据库中的旧合同类型名称。
     Contract = apps.get_model("contracts", "Contract")
     Contract.objects.filter(contract_type="其他项目").update(contract_type="其他")
 
 
+# 迁移函数：处理历史数据的字段转换。
 def rename_other_to_other_project(apps, schema_editor):
     # 回滚迁移时恢复旧合同类型名称。
     Contract = apps.get_model("contracts", "Contract")
     Contract.objects.filter(contract_type="其他").update(contract_type="其他项目")
 
 
+# 迁移类：声明本次数据库结构变更和依赖关系。
 class Migration(migrations.Migration):
     dependencies = [
         ("contracts", "0006_alter_appsetting_delete_source_file"),

@@ -6,6 +6,7 @@ import django.utils.timezone
 from django.db import migrations, models
 
 
+# 迁移类：声明本次数据库结构变更和依赖关系。
 class Migration(migrations.Migration):
 
     # 依赖合同文件排序迁移，保证记录附件路径函数已经可用。

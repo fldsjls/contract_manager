@@ -50,6 +50,7 @@ TYPE_SIDE = {
 
 
 # 判断当前请求是否处于管理员模式。
+# 函数说明：封装可复用的业务处理。
 def is_admin_mode(request) -> bool:
     return bool(
         request.user.is_authenticated
@@ -60,6 +61,7 @@ def is_admin_mode(request) -> bool:
 
 
 # 判断当前请求是否处于普通用户模式。
+# 函数说明：封装可复用的业务处理。
 def is_normal_mode(request) -> bool:
     return bool(
         request.user.is_authenticated
@@ -74,12 +76,14 @@ def can_manage(request) -> bool:
     return is_admin_mode(request) or is_normal_mode(request)
 
 
+# 函数说明：封装可复用的业务处理。
 def can_add_money_records(request) -> bool:
     return is_admin_mode(request)
 
 
 # 限制只有管理员或普通用户模式才能访问写入类页面。
 def admin_required(view_func):
+    # 内部函数：在调用原视图前执行权限检查。
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
         if can_manage(request):
@@ -91,6 +95,7 @@ def admin_required(view_func):
 
 # 发票/收据类记录只允许管理员新增，普通用户和游客都不展示也不能直连。
 def money_record_required(view_func):
+    # 内部函数：在调用原视图前执行权限检查。
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
         if can_add_money_records(request):
@@ -101,7 +106,9 @@ def money_record_required(view_func):
 
 
 # 账号密码等真正的管理员能力不下放给普通用户。
+# 函数说明：封装可复用的业务处理。
 def true_admin_required(view_func):
+    # 内部函数：在调用原视图前执行权限检查。
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
         if is_admin_mode(request):
@@ -112,6 +119,7 @@ def true_admin_required(view_func):
 
 
 # 给模板上下文统一补充登录模式信息。
+# 函数说明：封装可复用的业务处理。
 def context_with_auth(request, context: dict | None = None) -> dict:
     data = context or {}
     data["is_admin_mode"] = is_admin_mode(request)
@@ -123,6 +131,7 @@ def context_with_auth(request, context: dict | None = None) -> dict:
 
 
 # 从磁盘上删除上传文件。
+# 函数说明：封装可复用的业务处理。
 def delete_file_from_storage(file_field) -> None:
     if not file_field:
         return
@@ -134,12 +143,14 @@ def delete_file_from_storage(file_field) -> None:
         path.unlink()
 
 
+# 函数说明：封装可复用的业务处理。
 def safe_folder_name(value: str, fallback: str = "未命名项目") -> str:
     # Windows 文件夹名不能包含部分特殊字符，统一替换后再用于外部图片目录。
     safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", value or "").strip(" ._")
     return safe_name or fallback
 
 
+# 视图函数：处理页面请求并返回响应。
 def contract_image_folder(contract: Contract) -> Path:
     # 图片查看使用独立根目录，并按“合同类型/合同名称”分层存放。
     root_path = AppSetting.current().image_root_path.strip() or AppSetting._meta.get_field("image_root_path").default
@@ -147,6 +158,7 @@ def contract_image_folder(contract: Contract) -> Path:
     return Path(root_path) / contract_type_folder / safe_project_folder_name(contract)
 
 
+# 函数说明：封装可复用的业务处理。
 def ensure_contract_image_folder(contract: Contract) -> Path:
     # 新建合同和点击图片查看时都保证目标文件夹已经存在。
     folder = contract_image_folder(contract)
@@ -155,6 +167,7 @@ def ensure_contract_image_folder(contract: Contract) -> Path:
 
 
 # 保存合同附件，必要时按系统设置替换旧文件。
+# 函数说明：封装可复用的业务处理。
 def save_contract_files(contract: Contract, uploaded_files) -> None:
     uploaded_files = list(uploaded_files)
     if uploaded_files and AppSetting.current().delete_source_file:
@@ -174,6 +187,7 @@ def save_contract_files(contract: Contract, uploaded_files) -> None:
 
 
 # 保存合同附件并返回新建的文件对象，供即时上传接口使用。
+# 函数说明：封装可复用的业务处理。
 def save_contract_files_and_return(contract: Contract, uploaded_files) -> list[ContractFile]:
     uploaded_files = list(uploaded_files)
     if uploaded_files and AppSetting.current().delete_source_file:
@@ -195,12 +209,14 @@ def save_contract_files_and_return(contract: Contract, uploaded_files) -> list[C
 
 
 # 删除选中的合同附件记录和磁盘文件。
+# 函数说明：封装可复用的业务处理。
 def delete_contract_files(file_ids) -> None:
     for item in ContractFile.objects.filter(id__in=file_ids):
         delete_file_from_storage(item.file)
         item.delete()
 
 
+# 函数说明：封装可复用的业务处理。
 def preview_type_for_file(file_name: str) -> str:
     suffix = Path(file_name).suffix.lower()
     if suffix == ".pdf":
@@ -211,6 +227,7 @@ def preview_type_for_file(file_name: str) -> str:
 
 
 # 永久清理超过保留期的回收站合同和关联文件。
+# 函数说明：封装可复用的业务处理。
 def purge_expired_trash() -> None:
     cutoff = timezone.now() - timedelta(days=TRASH_RETENTION_DAYS)
     expired_contracts = Contract.objects.filter(is_deleted=True, deleted_at__lt=cutoff)
@@ -229,6 +246,7 @@ def purge_expired_trash() -> None:
 
 
 # 从批量记录表单中读取多行开票或收票数据。
+# 函数说明：封装可复用的业务处理。
 def save_records_from_request(request, contract: Contract, record_model) -> int:
     dates = request.POST.getlist("record_date")
     amounts = request.POST.getlist("amount")
@@ -256,6 +274,7 @@ def save_records_from_request(request, contract: Contract, record_model) -> int:
     return saved_count
 
 
+# 函数说明：封装可复用的业务处理。
 def save_typed_records_from_request(request, contract: Contract, record_model_by_type: dict[str, type]) -> int:
     dates = request.POST.getlist("record_date")
     amounts = request.POST.getlist("amount")
@@ -284,6 +303,7 @@ def save_typed_records_from_request(request, contract: Contract, record_model_by
     return saved_count
 
 
+# 函数说明：封装可复用的业务处理。
 def income_expense_totals(invoice_records, payment_records) -> tuple[Decimal, Decimal]:
     # 兼容发票和收据两张表，按 record_type 而不是模型名判断收入/支出。
     income_total = Decimal("0")
@@ -303,16 +323,19 @@ def income_expense_totals(invoice_records, payment_records) -> tuple[Decimal, De
     return income_total, expense_total
 
 
+# 函数说明：封装可复用的业务处理。
 def record_amount_for_stats(record) -> Decimal:
     # 实际金额优先用于统计；未填实际金额时回退到票面金额。
     return record.actual_amount if record.actual_amount is not None else record.amount
 
 
+# 函数说明：封装可复用的业务处理。
 def record_side(record) -> str:
     # 旧数据可能没有明确类型，按模型给出兜底方向。
     return TYPE_SIDE.get(record.record_type, "income" if isinstance(record, InvoiceRecord) else "expense")
 
 
+# 函数说明：封装可复用的业务处理。
 def add_income_expense(target: dict, record) -> None:
     # 将单条记录累加到按日期/年份/月度汇总的目标字典。
     amount = record_amount_for_stats(record)
@@ -322,6 +345,7 @@ def add_income_expense(target: dict, record) -> None:
         target["expense"] = target.get("expense", Decimal("0")) + amount
 
 
+# 函数说明：封装可复用的业务处理。
 def project_mode_labels(contract: Contract) -> dict:
     # 不开发票的合同把“开票/收票”文案替换成“开据/收据”。
     has_invoice = contract.invoice_status != "不开票"
@@ -335,6 +359,7 @@ def project_mode_labels(contract: Contract) -> dict:
     }
 
 
+# 函数说明：封装可复用的业务处理。
 def project_mode_totals(records) -> dict:
     # 项目统计弹窗需要同时展示票面金额和实际金额两组口径。
     totals = {
@@ -350,6 +375,7 @@ def project_mode_totals(records) -> dict:
     return totals
 
 
+# 函数说明：封装可复用的业务处理。
 def project_mode_chart_rows(rows: list[dict], records) -> list[dict]:
     # 在已有时间轴行上叠加收入/支出的票面金额和实际金额。
     by_label = {row["label"]: row for row in rows}
@@ -373,6 +399,7 @@ def project_mode_chart_rows(rows: list[dict], records) -> list[dict]:
 
 
 # 从批量记录表单中读取多行维护保养数据。
+# 函数说明：封装可复用的业务处理。
 def save_maintenance_records_from_request(request, contract: Contract) -> int:
     dates = request.POST.getlist("record_date")
     months = request.POST.getlist("month")
@@ -398,6 +425,7 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
 
 
 # 查询 30 天内即将到期的合同。
+# 函数说明：封装可复用的业务处理。
 def expiring_contract_queryset():
     today = timezone.localdate()
     expiring_limit = today + timedelta(days=30)
@@ -410,6 +438,7 @@ def expiring_contract_queryset():
 
 
 # 把按日期汇总的数据转换成 SVG 折线图坐标。
+# 函数说明：封装可复用的业务处理。
 def chart_points(rows: list[dict], key: str, max_amount: Decimal) -> str:
     if not rows:
         return ""
@@ -429,6 +458,7 @@ def chart_points(rows: list[dict], key: str, max_amount: Decimal) -> str:
 
 
 # 给每个图表日期补充坐标，供 SVG 绘制圆点使用。
+# 函数说明：封装可复用的业务处理。
 def enrich_chart_rows(rows: list[dict], max_amount: Decimal) -> list[dict]:
     if not rows:
         return rows
@@ -462,6 +492,7 @@ def enrich_chart_rows(rows: list[dict], max_amount: Decimal) -> list[dict]:
 
 
 # 根据请求参数确定统计趋势图的时间范围。
+# 函数说明：封装可复用的业务处理。
 def chart_range_from_request(request):
     today = timezone.localdate()
     period = request.GET.get("period", "all")
@@ -493,6 +524,7 @@ def chart_range_from_request(request):
 
 
 # 按统计范围汇总开票/收票记录，生成趋势图行数据。
+# 函数说明：封装可复用的业务处理。
 def build_chart_rows(period: str, year: int, month: int) -> list[dict]:
     invoice_queryset = InvoiceRecord.objects.filter(contract__is_deleted=False)
     payment_queryset = PaymentRecord.objects.filter(contract__is_deleted=False)
@@ -551,6 +583,7 @@ def build_chart_rows(period: str, year: int, month: int) -> list[dict]:
 
 
 # 获取当前主机的局域网 IP，用于设置页提示其他用户访问地址。
+# 函数说明：封装可复用的业务处理。
 def local_ip_address() -> str:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -561,6 +594,7 @@ def local_ip_address() -> str:
 
 
 # 根据当前统计范围过滤合同和记录查询。
+# 函数说明：封装可复用的业务处理。
 def scoped_querysets(period: str, year: int, month: int):
     contracts = Contract.objects.filter(is_deleted=False)
     invoice_records = InvoiceRecord.objects.filter(contract__is_deleted=False)
@@ -578,6 +612,7 @@ def scoped_querysets(period: str, year: int, month: int):
 
 
 # 按统计范围生成单个合同的开票/收票趋势数据。
+# 函数说明：封装可复用的业务处理。
 def build_contract_chart_rows(contract: Contract, period: str, year: int, month: int) -> list[dict]:
     invoice_queryset = contract.invoicerecord_set.all()
     payment_queryset = contract.paymentrecord_set.all()
@@ -629,6 +664,7 @@ def build_contract_chart_rows(contract: Contract, period: str, year: int, month:
     ]
 
 
+# 函数说明：封装可复用的业务处理。
 def build_contract_mode_chart_rows(contract: Contract, period: str, year: int, month: int) -> list[dict]:
     records = list(contract.invoicerecord_set.all()) + list(contract.paymentrecord_set.all())
     if period == "all":
@@ -663,6 +699,7 @@ def build_contract_mode_chart_rows(contract: Contract, period: str, year: int, m
         totals[f"{mode}_primary"] += record.amount
         totals[f"{mode}_secondary"] += record_amount_for_stats(record)
 
+    # 内部函数：按统计范围生成图表时间标签。
     def label_for_unit(unit):
         if period == "all":
             return unit.strftime("%m-%d")
@@ -683,6 +720,7 @@ def build_contract_mode_chart_rows(contract: Contract, period: str, year: int, m
 
 
 # 返回单个合同的统计弹窗数据。
+# 函数说明：封装可复用的业务处理。
 def build_dashboard_mode_chart_rows(invoice_records, payment_records, period: str, year: int, month: int) -> list[dict]:
     records = list(invoice_records) + list(payment_records)
     if period == "all":
@@ -716,6 +754,7 @@ def build_dashboard_mode_chart_rows(invoice_records, payment_records, period: st
         totals[f"{mode}_primary"] += record.amount
         totals[f"{mode}_secondary"] += record_amount_for_stats(record)
 
+    # 内部函数：按统计范围生成图表时间标签。
     def label_for_unit(unit):
         if period == "all":
             return unit.strftime("%m-%d")
@@ -735,6 +774,7 @@ def build_dashboard_mode_chart_rows(invoice_records, payment_records, period: st
     ]
 
 
+# 视图函数：处理页面请求并返回响应。
 def contract_stats_data(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     period, year, month, _, _, range_label = chart_range_from_request(request)
@@ -838,6 +878,7 @@ def maintenance_record_data(request, pk: int):
 
 
 # 渲染合同文件预览页，避免局域网用户直接触发浏览器下载。
+# 视图函数：处理页面请求并返回响应。
 def contract_file_preview(request, pk: int):
     item = get_object_or_404(ContractFile, pk=pk, contract__is_deleted=False)
     return_from = request.GET.get("from")
@@ -867,6 +908,7 @@ def contract_file_preview(request, pk: int):
     )
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 # 从预览页删除当前合同附件。
 def contract_file_delete(request, pk: int):
@@ -879,6 +921,7 @@ def contract_file_delete(request, pk: int):
 
 
 # 渲染早期单文件字段的预览页，兼容旧数据。
+# 函数说明：封装可复用的业务处理。
 def legacy_contract_file_preview(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if not contract.file:
@@ -909,6 +952,7 @@ def legacy_contract_file_preview(request, pk: int):
     )
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 # 从预览页删除早期单文件字段中的合同文件。
 def legacy_contract_file_delete(request, pk: int):
@@ -921,6 +965,7 @@ def legacy_contract_file_delete(request, pk: int):
 
 
 # 渲染统计总览页面。
+# 视图函数：处理页面请求并返回响应。
 def dashboard(request):
     purge_expired_trash()
     chart_period, chart_year, chart_month, prev_range_params, next_range_params, chart_range_label = chart_range_from_request(request)
@@ -1018,6 +1063,7 @@ def dashboard(request):
     return render(request, "contracts/dashboard.html", context)
 
 
+# 函数说明：封装可复用的业务处理。
 def contracts_for_list_request(request):
     # 合同列表和 Excel 导出共用这一套搜索、筛选、排序规则，避免两处结果不一致。
     keyword = request.GET.get("q", "").strip()
@@ -1080,6 +1126,7 @@ def contracts_for_list_request(request):
     return contracts
 
 
+# 函数说明：封装可复用的业务处理。
 def xlsx_cell_ref(row_index: int, column_index: int) -> str:
     # 把 1 开始的行列号转换为 Excel 的 A1 坐标。
     letters = ""
@@ -1089,6 +1136,7 @@ def xlsx_cell_ref(row_index: int, column_index: int) -> str:
     return f"{letters}{row_index}"
 
 
+# 函数说明：封装可复用的业务处理。
 def xlsx_text_cell(row_index: int, column_index: int, value, style: int | None = None) -> str:
     # inlineStr 会让合同编号等长数字按文本显示，避免 Excel 自动转成科学计数法。
     style_attr = f' s="{style}"' if style is not None else ""
@@ -1099,12 +1147,14 @@ def xlsx_text_cell(row_index: int, column_index: int, value, style: int | None =
     )
 
 
+# 函数说明：封装可复用的业务处理。
 def xlsx_number_cell(row_index: int, column_index: int, value, style: int | None = None) -> str:
     style_attr = f' s="{style}"' if style is not None else ""
     number = Decimal(str(value or 0)).quantize(Decimal("0.01"))
     return f'<c r="{xlsx_cell_ref(row_index, column_index)}"{style_attr}><v>{number}</v></c>'
 
 
+# 函数说明：封装可复用的业务处理。
 def text_display_width(value) -> int:
     # 中文字符在 Excel 中通常占用约两个英文字符宽度，用这个估算列宽更接近实际显示。
     width = 0
@@ -1113,6 +1163,7 @@ def text_display_width(value) -> int:
     return width
 
 
+# 视图函数：处理页面请求并返回响应。
 def contract_export_column_widths(headers, rows) -> list[int]:
     # 按标题和实际内容动态计算列宽，日期列设置最低宽度，保证中文日期完整显示。
     min_widths = [8, 18, 18, 10, 18, 12, 10, 18, 18, 12, 10, 10]
@@ -1126,6 +1177,7 @@ def contract_export_column_widths(headers, rows) -> list[int]:
     return widths
 
 
+# 函数说明：封装可复用的业务处理。
 def build_contract_list_xlsx(headers, rows) -> bytes:
     # 使用标准库拼装最小 XLSX 包，避免依赖用户虚拟环境中未安装的 openpyxl。
     column_widths = contract_export_column_widths(headers, rows)
@@ -1193,6 +1245,7 @@ def build_contract_list_xlsx(headers, rows) -> bytes:
 
 
 # 渲染合同列表页面，并处理搜索和表头排序。
+# 视图函数：处理页面请求并返回响应。
 def contract_list(request):
     purge_expired_trash()
     keyword = request.GET.get("q", "").strip()
@@ -1286,6 +1339,7 @@ def contract_list(request):
     return render(request, "contracts/contract_list.html", context)
 
 
+# 视图函数：处理页面请求并返回响应。
 def contract_list_export(request):
     # 导出结果遵循当前合同列表的搜索、筛选和排序状态。
     contracts = contracts_for_list_request(request)
@@ -1331,6 +1385,7 @@ def contract_list_export(request):
 
 
 # 渲染单个合同详情页面。
+# 视图函数：处理页面请求并返回响应。
 def contract_detail(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if is_normal_mode(request):
@@ -1351,6 +1406,7 @@ def contract_detail(request, pk: int):
     return render(request, "contracts/contract_detail.html", context)
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 def contract_remark_update(request, pk: int):
     # 详情页允许直接补充或修改合同备注，不必进入完整编辑表单。
@@ -1369,11 +1425,13 @@ RECORD_MODEL_MAP = {
 }
 
 
+# 函数说明：封装可复用的业务处理。
 def record_model_for_kind(kind: str):
     # 前端提交的记录来源标记会映射到具体模型。
     return RECORD_MODEL_MAP.get(kind)
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 def record_delete(request, pk: int):
     # 详情页三类记录共用同一个删除入口，前端用 kind:id 标记来源表。
@@ -1401,6 +1459,7 @@ def record_delete(request, pk: int):
     return redirect("contracts:contract_detail", pk=contract.pk)
 
 
+# 函数说明：封装可复用的业务处理。
 @admin_required
 def record_file_update(request, kind: str, pk: int):
     # 单条记录只保留一个附件，新上传文件会覆盖并删除旧文件。
@@ -1420,6 +1479,7 @@ def record_file_update(request, kind: str, pk: int):
     return redirect("contracts:contract_detail", pk=record.contract_id)
 
 
+# 函数说明：封装可复用的业务处理。
 @admin_required
 def record_remark_update(request, kind: str, pk: int):
     # 详情页记录备注允许原位编辑，保存后回到当前列表位置。
@@ -1436,6 +1496,7 @@ def record_remark_update(request, kind: str, pk: int):
     return redirect("contracts:contract_detail", pk=record.contract_id)
 
 
+# 函数说明：封装可复用的业务处理。
 def maintenance_record_list(request, pk: int):
     # 所有合同类型的扩展记录共用 MaintenanceRecord 表和同一个列表模板。
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
@@ -1453,6 +1514,7 @@ def maintenance_record_list(request, pk: int):
     return render(request, "contracts/maintenance_record_list.html", context)
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 # 新增合同并保存随表单上传的合同文件。
 def contract_create(request):
@@ -1489,6 +1551,7 @@ def contract_create(request):
     )
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 def contract_image_folder_open(request, pk: int):
     # 打开当前合同在图片整理目录中的专属文件夹，便于直接查看 OCR 整理后的图片。
@@ -1502,6 +1565,7 @@ def contract_image_folder_open(request, pk: int):
     return JsonResponse({"ok": True, "path": str(folder)})
 
 
+# 函数说明：封装可复用的业务处理。
 @admin_required
 def settlement_file_list(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
@@ -1528,6 +1592,7 @@ def settlement_file_list(request, pk: int):
     )
 
 
+# 函数说明：封装可复用的业务处理。
 @admin_required
 def settlement_file_preview(request, pk: int):
     item = get_object_or_404(SettlementFile, pk=pk, contract__is_deleted=False)
@@ -1549,6 +1614,7 @@ def settlement_file_preview(request, pk: int):
     )
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 def settlement_file_delete(request, pk: int):
     item = get_object_or_404(SettlementFile, pk=pk, contract__is_deleted=False)
@@ -1559,6 +1625,7 @@ def settlement_file_delete(request, pk: int):
     return redirect("contracts:settlement_file_list", pk=contract_id)
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 # 处理合同编辑页中的即时文件上传请求。
 def contract_file_upload(request, pk: int):
@@ -1585,6 +1652,7 @@ def contract_file_upload(request, pk: int):
     )
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 # 保存编辑页拖拽后的合同文件顺序。
 def contract_file_reorder(request, pk: int):
@@ -1603,6 +1671,7 @@ def contract_file_reorder(request, pk: int):
     return JsonResponse({"ok": True})
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 # 编辑合同基础信息，并处理批量删除合同文件。
 def contract_update(request, pk: int):
@@ -1639,6 +1708,7 @@ def contract_update(request, pk: int):
     )
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 # 将合同移入回收站，一周内可从回收站恢复。
 def contract_delete(request, pk: int):
@@ -1653,6 +1723,7 @@ def contract_delete(request, pk: int):
     )
 
 
+# 函数说明：封装可复用的业务处理。
 @admin_required
 # 根据合同是否开票，进入开票或收票记录新增入口。
 def record_add(request, pk: int):
@@ -1661,6 +1732,7 @@ def record_add(request, pk: int):
     return redirect("contracts:maintenance_record_create", pk=pk)
 
 
+# 函数说明：封装可复用的业务处理。
 @money_record_required
 # 新增一批开票记录。
 def invoice_record_create(request, pk: int):
@@ -1690,6 +1762,7 @@ def invoice_record_create(request, pk: int):
     )
 
 
+# 函数说明：封装可复用的业务处理。
 @money_record_required
 # 新增一批收票记录。
 def payment_record_create(request, pk: int):
@@ -1718,6 +1791,7 @@ def payment_record_create(request, pk: int):
     )
 
 
+# 函数说明：封装可复用的业务处理。
 @admin_required
 # 新增一批维护保养记录。
 def maintenance_record_create(request, pk: int):
@@ -1753,6 +1827,7 @@ def maintenance_record_create(request, pk: int):
 
 
 # 显示回收站合同，超过一周的删除项会先自动清理。
+# 视图函数：处理页面请求并返回响应。
 def trash_list(request):
     purge_expired_trash()
     trashed_contracts = Contract.objects.filter(is_deleted=True).order_by("-deleted_at", "-id")
@@ -1770,6 +1845,7 @@ def trash_list(request):
     )
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 # 从回收站恢复合同。
 def contract_restore(request, pk: int):
@@ -1779,6 +1855,7 @@ def contract_restore(request, pk: int):
     return redirect("contracts:trash")
 
 
+# 视图函数：处理页面请求并返回响应。
 @admin_required
 # 显示和保存系统设置。
 def settings_view(request):
@@ -1806,6 +1883,7 @@ def settings_view(request):
     )
 
 
+# 函数说明：封装可复用的业务处理。
 @true_admin_required
 # 修改当前管理员账号的登录密码。
 def password_change(request):
@@ -1825,6 +1903,7 @@ def password_change(request):
 
 
 # 处理用户账号密码登录，并按账号身份自动进入管理员或普通用户模式。
+# 视图函数：处理页面请求并返回响应。
 def login_view(request):
     if request.method == "POST":
         form = LoginForm(request.POST)
@@ -1847,6 +1926,7 @@ def login_view(request):
 
 
 # 直接进入游客模式，不需要填写账号和密码。
+# 函数说明：封装可复用的业务处理。
 def guest_login_view(request):
     logout(request)
     request.session["guest_mode"] = True
@@ -1855,11 +1935,13 @@ def guest_login_view(request):
 
 
 # 普通用户现在使用账号密码登录，保留旧地址用于回到登录页。
+# 函数说明：封装可复用的业务处理。
 def normal_login_view(request):
     return redirect("contracts:login")
 
 
 # 退出当前登录或游客会话。
+# 函数说明：封装可复用的业务处理。
 def logout_view(request):
     logout(request)
     request.session.flush()

@@ -1,0 +1,83 @@
+<!doctype html>
+<!-- 登录页独立于后台布局，提供用户登录和游客入口。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 - 合同管理系统</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f6f7f9;
+      color: #1f2937;
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+    }
+    .login-card {
+      width: min(420px, calc(100vw - 32px));
+      padding: 26px;
+      background: #fff;
+      border: 1px solid #d9dee7;
+    }
+    h1 { margin: 0 0 18px; font-size: 24px; }
+    label { display: block; margin: 12px 0 6px; font-weight: 600; }
+    input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #cbd3df;
+      border-radius: 4px;
+      font-family: inherit;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    button, a {
+      display: inline-block;
+      padding: 9px 15px;
+      border: 1px solid #b9c3d1;
+      border-radius: 4px;
+      background: #fff;
+      color: #111827;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 14px;
+      text-decoration: none;
+    }
+    .primary {
+      border-color: #2563eb;
+      background: #2563eb;
+      color: #fff;
+    }
+    .errorlist {
+      margin: 8px 0;
+      padding-left: 18px;
+      color: #dc2626;
+    }
+  </style>
+</head>
+<body>
+  <!-- 登录卡片共用账号密码表单，后端会按账号身份进入管理员或普通用户模式。 -->
+  <main class="login-card">
+    <h1>合同管理系统</h1>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <label for="{{ form.username.id_for_label }}">{{ form.username.label }}</label>
+      {{ form.username }}
+      {{ form.username.errors }}
+      <label for="{{ form.password.id_for_label }}">{{ form.password.label }}</label>
+      {{ form.password }}
+      {{ form.password.errors }}
+      <div class="actions">
+        <button class="primary" type="submit">用户登录</button>
+        <a href="{% url 'contracts:guest_login' %}">游客登入</a>
+      </div>
+    </form>
+  </main>
+</body>
+</html>

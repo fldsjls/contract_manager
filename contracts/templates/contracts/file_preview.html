@@ -1,0 +1,89 @@
+{% extends "contracts/base.html" %}
+<!-- 文件预览页，局域网用户通过页面查看文件，避免直接触发下载。 -->
+{% block title %}文件预览 - 合同管理系统{% endblock %}
+
+{% block content %}
+  <div class="page-content detail-page">
+    <!-- 预览页标题和返回入口。 -->
+    <h1 class="page-title">文件预览</h1>
+    <div class="toolbar" style="align-items: center;">
+      <a class="button" href="{{ return_url }}">返回</a>
+      <a class="button" href="{{ file_url }}" download>下载文件</a>
+      <span class="file-preview-name" title="{{ file_name }}">{{ file_name }}</span>
+      <span class="toolbar-spacer"></span>
+      {% if can_manage %}
+        <form method="post" action="{{ delete_url }}" style="margin: 0;">
+          {% csrf_token %}
+          <button class="button danger" type="submit">删除文件</button>
+        </form>
+      {% endif %}
+    </div>
+
+    <!-- PDF 使用 PDF.js 渲染，图片直接显示，其他文件不自动打开，避免下载。 -->
+    <section class="panel" style="flex: 1; min-height: 0;">
+      {% if preview_type == "pdf" %}
+        <div id="pdfStatus" class="empty">正在加载 PDF 预览...</div>
+        <div id="pdfViewer" style="display: grid; gap: 16px; justify-items: center; overflow: auto;"></div>
+      {% elif preview_type == "image" %}
+        <div style="height: 100%; min-height: 640px; display: grid; place-items: center; overflow: auto;">
+          <img src="{{ file_url }}" alt="{{ file_name }}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+        </div>
+      {% else %}
+        <div class="empty">
+          当前文件类型无法在浏览器中直接预览。<br>
+          可在主机电脑上用本地软件打开，或将文件转换为 PDF 后上传。
+        </div>
+      {% endif %}
+    </section>
+  </div>
+
+  {% if preview_type == "pdf" %}
+    <!-- PDF.js 将 PDF 每一页渲染到 canvas，避免浏览器 PDF 插件不可用时无法预览。 -->
+    <script type="module">
+      import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs";
+
+      const pdfUrl = "{{ file_url|escapejs }}";
+      const status = document.querySelector("#pdfStatus");
+      const viewer = document.querySelector("#pdfViewer");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
+
+      // 函数说明：处理页面交互和数据展示逻辑。
+      async function renderPdf() {
+        try {
+          const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+          status.textContent = `共 ${pdf.numPages} 页，正在渲染...`;
+
+          for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+            const page = await pdf.getPage(pageNumber);
+            const baseViewport = page.getViewport({ scale: 1 });
+            const availableWidth = Math.max(320, viewer.clientWidth - 24);
+            const scale = Math.min(2, Math.max(0.75, availableWidth / baseViewport.width));
+            const viewport = page.getViewport({ scale });
+            const canvas = document.createElement("canvas");
+            const context = canvas.getContext("2d");
+
+            canvas.width = Math.floor(viewport.width);
+            canvas.height = Math.floor(viewport.height);
+            canvas.style.maxWidth = "100%";
+            canvas.style.background = "#fff";
+            canvas.style.border = "1px solid #d9dee7";
+            canvas.style.boxShadow = "0 2px 8px rgba(15, 23, 42, 0.08)";
+            viewer.appendChild(canvas);
+
+            await page.render({ canvasContext: context, viewport }).promise;
+          }
+
+          status.remove();
+        } catch (error) {
+          status.innerHTML = `
+            PDF 预览加载失败。<br>
+            常见原因是当前电脑无法访问 PDF.js CDN，或文件本身不是有效 PDF。<br>
+            <a class="button" href="${pdfUrl}" download>下载文件</a>
+          `;
+        }
+      }
+
+      renderPdf();
+    </script>
+  {% endif %}
+{% endblock %}

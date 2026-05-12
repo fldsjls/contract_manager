@@ -1,0 +1,334 @@
+{% extends "contracts/base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+  <!-- 合同新增和编辑表单。 -->
+  <h1 class="page-title">{{ title }}</h1>
+
+  <!-- multipart 表单用于同时提交合同字段和上传文件。 -->
+  <form class="panel" method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      {{ form.non_field_errors }}
+    {% endif %}
+
+    <!-- 合同基础字段由 Django 表单自动渲染。 -->
+    <div class="form-grid">
+      {% for field in form %}
+        {% if field.name == "original_contract_folder" or field.name == "original_contract_inner_number" %}
+        {% else %}
+        <div class="form-row {% if field.name == 'remark' %}full{% endif %}">
+          <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {% if field.name == "contract_number" %}
+            <div class="field-control-row contract-number-row">
+              {{ field }}
+              {{ form.original_contract_folder }}
+              {{ form.original_contract_inner_number }}
+              <button class="button icon-button" id="resetContractNumber" type="button" title="恢复默认合同编号">默认</button>
+            </div>
+            {{ form.original_contract_folder.errors }}
+            {{ form.original_contract_inner_number.errors }}
+          {% elif field.name == "start_date" %}
+            <div class="field-control-row">
+              {{ field }}
+              <button class="button icon-button" id="copySignDate" type="button" title="复制签订日期">⇦</button>
+            </div>
+          {% else %}
+            {{ field }}
+          {% endif %}
+          {{ field.errors }}
+        </div>
+        {% endif %}
+      {% endfor %}
+      <!-- 合同文件区域支持多文件上传和选中后批量删除。 -->
+      <div class="form-row full file-list" id="fileList">
+        <div class="file-list-header">
+          <span class="field-label">合同文件</span>
+          <label class="button" for="contractFiles">添加文件</label>
+          <input
+            class="hidden-file-input"
+            id="contractFiles"
+            {% if contract %}
+              data-upload-url="{% url 'contracts:contract_file_upload' contract.id %}"
+            {% else %}
+              name="files"
+            {% endif %}
+            type="file"
+            multiple
+          >
+        </div>
+        {% if contract_files %}
+          {% for item in contract_files %}
+            <div class="file-item sortable-file" data-file-id="{{ item.id }}" draggable="true">
+              <input type="checkbox" name="delete_files" value="{{ item.id }}">
+              <span class="file-name" title="{{ item.original_name|default:item.file.name }}">{{ item.original_name|default:item.file.name }}</span>
+              <div class="file-actions">
+                <a class="button" href="{% url 'contracts:contract_file_preview' item.id %}?from=edit">预览</a>
+                <a class="button" href="{{ item.file.url }}" download>下载</a>
+              </div>
+            </div>
+          {% endfor %}
+        {% elif contract and contract.file %}
+          <div class="file-item legacy-file-item">
+            <span class="file-name" title="{{ contract.file.name }}">{{ contract.file.name }}</span>
+            <div class="file-actions">
+              <a class="button" href="{% url 'contracts:legacy_contract_file_preview' contract.id %}?from=edit">预览</a>
+              <a class="button" href="{{ contract.file.url }}" download>下载</a>
+            </div>
+          </div>
+        {% else %}
+          <div class="file-empty" id="fileEmptyHint">暂无合同文件，请点击“添加文件”上传。</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="toolbar" style="margin-top: 18px;">
+      <button class="button primary" type="submit">保存</button>
+      {% if contract %}
+        <button class="button danger" type="submit" name="action" value="delete_files">删除</button>
+      {% endif %}
+      <a class="button" href="{% url 'contracts:contract_list' %}">取消</a>
+    </div>
+  </form>
+
+  <!-- 编辑已有合同时选择文件会立即上传，新建合同时随合同保存。 -->
+  <script>
+    const contractFilesInput = document.querySelector("#contractFiles");
+    const fileList = document.querySelector("#fileList");
+    const contractTypeInput = document.querySelector("#id_contract_type");
+    const endDateInput = document.querySelector("#id_end_date");
+    const amountInput = document.querySelector("#id_amount");
+    const signDateInput = document.querySelector("#id_sign_date");
+    const startDateInput = document.querySelector("#id_start_date");
+    const contractNumberInput = document.querySelector("#id_contract_number");
+    const responsiblePersonInput = document.querySelector("#id_responsible_person");
+    const resetContractNumberButton = document.querySelector("#resetContractNumber");
+    const copySignDateButton = document.querySelector("#copySignDate");
+    const defaultContractNumber = "{{ default_contract_number }}";
+    const responsiblePersonStorageKey = "contract_last_responsible_person";
+    const responsiblePersonHistoryKey = "contract_responsible_person_history";
+    const isContractEditPage = Boolean("{{ contract.id|default:'' }}");
+    const reorderUrl = "{% if contract %}{% url 'contracts:contract_file_reorder' contract.id %}{% endif %}";
+
+    if (responsiblePersonInput) {
+      const legacyResponsiblePerson = localStorage.getItem(responsiblePersonStorageKey);
+      const savedResponsiblePeople = JSON.parse(localStorage.getItem(responsiblePersonHistoryKey) || "[]");
+      const responsiblePeople = Array.from(new Set([legacyResponsiblePerson, ...savedResponsiblePeople].filter(Boolean)));
+      const responsibleFieldWrap = document.createElement("div");
+      const responsibleDropdown = document.createElement("div");
+      responsibleFieldWrap.className = "memory-field-wrap";
+      responsibleDropdown.className = "memory-dropdown";
+      responsibleDropdown.hidden = true;
+      responsiblePersonInput.parentNode.insertBefore(responsibleFieldWrap, responsiblePersonInput);
+      responsibleFieldWrap.appendChild(responsiblePersonInput);
+      responsibleFieldWrap.appendChild(responsibleDropdown);
+
+      // 函数说明：处理页面交互和数据展示逻辑。
+      function renderResponsibleOptions() {
+        const keyword = responsiblePersonInput.value.trim().toLowerCase();
+        const matches = responsiblePeople.filter((value) => value.toLowerCase().includes(keyword));
+        responsibleDropdown.innerHTML = "";
+        matches.forEach((value) => {
+          const option = document.createElement("button");
+          option.className = "memory-option";
+          option.type = "button";
+          option.textContent = value;
+          option.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+          });
+          option.addEventListener("click", () => {
+            responsiblePersonInput.value = value;
+            responsibleDropdown.hidden = true;
+            responsiblePersonInput.focus();
+          });
+          responsibleDropdown.appendChild(option);
+        });
+        responsibleDropdown.hidden = matches.length === 0;
+      }
+
+      // 函数说明：处理页面交互和数据展示逻辑。
+      const saveResponsiblePerson = () => {
+        const value = responsiblePersonInput.value.trim();
+        if (!value) {
+          return;
+        }
+        const nextPeople = [value, ...responsiblePeople.filter((item) => item !== value)].slice(0, 20);
+        localStorage.setItem(responsiblePersonStorageKey, value);
+        localStorage.setItem(responsiblePersonHistoryKey, JSON.stringify(nextPeople));
+      };
+      responsiblePersonInput.closest("form")?.addEventListener("submit", saveResponsiblePerson);
+      responsiblePersonInput.addEventListener("focus", renderResponsibleOptions);
+      responsiblePersonInput.addEventListener("click", renderResponsibleOptions);
+      responsiblePersonInput.addEventListener("input", renderResponsibleOptions);
+      document.addEventListener("click", (event) => {
+        if (!responsibleFieldWrap.contains(event.target)) {
+          responsibleDropdown.hidden = true;
+        }
+      });
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function syncEndDateRequired() {
+      if (!contractTypeInput || !endDateInput) {
+        return;
+      }
+      endDateInput.required = contractTypeInput.value === "维保";
+    }
+
+    if (contractTypeInput) {
+      contractTypeInput.addEventListener("change", syncEndDateRequired);
+      syncEndDateRequired();
+    }
+
+    if (amountInput) {
+      amountInput.addEventListener("keydown", (event) => {
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") {
+          return;
+        }
+        event.preventDefault();
+        const currentValue = Number.parseFloat(amountInput.value || "0") || 0;
+        const step = Number.parseFloat(amountInput.dataset.step || "1000");
+        const nextValue = event.key === "ArrowUp" ? currentValue + step : Math.max(0, currentValue - step);
+        amountInput.value = Number.isInteger(nextValue) ? String(nextValue) : nextValue.toFixed(2);
+      });
+      amountInput.addEventListener("wheel", (event) => {
+        if (document.activeElement !== amountInput) {
+          return;
+        }
+        event.preventDefault();
+        const currentValue = Number.parseFloat(amountInput.value || "0") || 0;
+        const step = Number.parseFloat(amountInput.dataset.step || "1000");
+        const nextValue = event.deltaY < 0 ? currentValue + step : Math.max(0, currentValue - step);
+        amountInput.value = Number.isInteger(nextValue) ? String(nextValue) : nextValue.toFixed(2);
+      }, { passive: false });
+    }
+
+    if (resetContractNumberButton && contractNumberInput) {
+      resetContractNumberButton.addEventListener("click", () => {
+        contractNumberInput.value = defaultContractNumber;
+      });
+    }
+
+    if (copySignDateButton && signDateInput && startDateInput) {
+      copySignDateButton.addEventListener("click", () => {
+        startDateInput.value = signDateInput.value;
+      });
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function appendFileRow(fileData, pendingText = "") {
+      const emptyHint = document.querySelector("#fileEmptyHint");
+      if (emptyHint) {
+        emptyHint.remove();
+      }
+      const row = document.createElement("div");
+      row.className = "file-item";
+      if (fileData.id) {
+        row.classList.add("sortable-file");
+        row.draggable = true;
+        row.dataset.fileId = fileData.id;
+        row.innerHTML = `
+          <input type="checkbox" name="delete_files" value="${fileData.id}">
+          <span class="file-name" title="${fileData.name}">${fileData.name}</span>
+          <div class="file-actions">
+            <a class="button" href="${fileData.preview_url}">预览</a>
+            <a class="button" href="${fileData.url}" download>下载</a>
+          </div>
+        `;
+      } else {
+        row.classList.add("pending-file");
+        row.innerHTML = `
+          <span class="pending-marker">待上传</span>
+          <span class="file-name" title="${fileData.name}">${fileData.name}</span>
+          <div class="file-actions"><span class="button muted">${pendingText}</span></div>
+        `;
+      }
+      fileList.appendChild(row);
+      bindSortableFile(row);
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function sortableRows() {
+      return Array.from(fileList.querySelectorAll(".sortable-file"));
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    async function saveFileOrder() {
+      if (!reorderUrl) {
+        return;
+      }
+      await fetch(reorderUrl, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value,
+        },
+        body: JSON.stringify({ file_ids: sortableRows().map((row) => row.dataset.fileId) }),
+      });
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function bindSortableFile(row) {
+      row.addEventListener("dragstart", () => {
+        row.classList.add("dragging");
+      });
+      row.addEventListener("dragend", () => {
+        row.classList.remove("dragging");
+        saveFileOrder();
+      });
+    }
+
+    fileList.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      const dragging = fileList.querySelector(".dragging");
+      const target = event.target.closest(".sortable-file");
+      if (!dragging || !target || dragging === target) {
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      const afterTarget = event.clientY > rect.top + rect.height / 2;
+      fileList.insertBefore(dragging, afterTarget ? target.nextSibling : target);
+    });
+
+    sortableRows().forEach(bindSortableFile);
+
+    contractFilesInput.addEventListener("change", async () => {
+      const files = Array.from(contractFilesInput.files);
+      if (!files.length) {
+        return;
+      }
+
+      const uploadUrl = contractFilesInput.dataset.uploadUrl;
+      if (!uploadUrl) {
+        fileList.querySelectorAll(".pending-file").forEach((item) => item.remove());
+        files.forEach((file) => appendFileRow({ name: file.name }, "创建合同时保存"));
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("csrfmiddlewaretoken", document.querySelector("[name=csrfmiddlewaretoken]").value);
+      files.forEach((file) => formData.append("files", file));
+
+      const response = await fetch(uploadUrl, {
+        method: "POST",
+        body: formData,
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        alert("文件上传失败，请重试。");
+        return;
+      }
+
+      const data = await response.json();
+      if (data.replace) {
+        fileList.querySelectorAll(".file-item").forEach((item) => item.remove());
+      }
+      if (data.files) {
+        data.files.forEach((file) => appendFileRow(file));
+      }
+      contractFilesInput.value = "";
+    });
+  </script>
+{% endblock %}

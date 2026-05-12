@@ -1,0 +1,57 @@
+{% extends "contracts/base.html" %}
+<!-- 回收站页面，显示一周内删除的合同并提供恢复操作。 -->
+{% block title %}回收站 - 合同管理系统{% endblock %}
+
+{% block content %}
+  <div class="page-content contract-list-page">
+    <!-- 页面标题和保留规则提示。 -->
+    <h1 class="page-title">回收站</h1>
+    <div class="summary">
+      <span>默认保留 {{ retention_days }} 天，超过后自动清理。</span>
+      <span>共 {{ contracts|length }} 个删除项目</span>
+    </div>
+
+    <!-- 回收站合同表格。 -->
+    <div class="table-wrap fill">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 70px;">序号</th>
+            <th>合同名称</th>
+            <th>合同编号</th>
+            <th>甲方名称</th>
+            <th>合同金额</th>
+            <th>删除时间</th>
+            <th style="width: 120px;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for contract in contracts %}
+            <tr>
+              <td>{{ forloop.counter }}</td>
+              <td class="name">{{ contract.contract_name }}</td>
+              <td>{{ contract.display_contract_number }}</td>
+              <td class="party">{{ contract.party_name }}</td>
+              <td>¥ {{ contract.amount|floatformat:2 }}</td>
+              <td>{{ contract.deleted_at|date:"Y-m-d H:i" }}</td>
+              <td>
+                {% if can_manage %}
+                  <form method="post" action="{% url 'contracts:contract_restore' contract.id %}">
+                    {% csrf_token %}
+                    <button class="button primary" type="submit">恢复</button>
+                  </form>
+                {% else %}
+                  <span class="button muted">仅管理员</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="7" class="empty">回收站暂无项目</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}

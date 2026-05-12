@@ -1,0 +1,61 @@
+{% extends "contracts/base.html" %}
+
+{% block title %}系统设置{% endblock %}
+
+{% block content %}
+  <!-- 系统设置页面，管理全局文件上传开关。 -->
+  <div class="page-content">
+    <h1 class="page-title">系统设置</h1>
+
+    <!-- 设置表单横跨多个独立栏目，视觉分组清晰，底部按钮统一保存。 -->
+    <form id="settingsForm" method="post">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+      <section class="panel">
+        <label style="display: flex; gap: 10px; align-items: center;">
+          {{ form.delete_source_file }}
+          <span>上传时是否删除原文件</span>
+        </label>
+        <p style="color: #667085;">
+          说明：开启后，同一合同再次上传新文件时，会先删除该合同已有的已上传文件副本，再保存新文件。
+        </p>
+      </section>
+
+      <!-- 图片保存位置独立成块，避免和上传删除开关混在同一组设置里。 -->
+      <section class="panel">
+        <h2 style="margin-top: 0;">图片保存位置</h2>
+        <div style="max-width: 950px;">
+          <label class="field-label" for="{{ form.image_root_path.id_for_label }}">保存目录</label>
+          {{ form.image_root_path }}
+          {{ form.image_root_path.errors }}
+          <p style="color: #667085; line-height: 1.8;">
+            说明：新增合同时会在该位置下自动创建合同名称文件夹，合同列表中的“图片查看”会打开对应文件夹。
+          </p>
+        </div>
+      </section>
+    </form>
+
+    <!-- 局域网访问说明，供同一网络内其他用户打开系统。 -->
+    <section class="panel">
+      <h2 style="margin-top: 0;">局域网访问说明</h2>
+      <p style="color: #667085; line-height: 1.8;">
+        其他用户需要和本机处在同一局域网内，并访问以下地址：
+        <strong>{{ lan_url }}</strong>
+      </p>
+      <p style="color: #667085; line-height: 1.8;">
+        当前主机 IP：<strong>{{ host_ip }}</strong>；启动服务时请使用
+        <code>python manage.py runserver 0.0.0.0:8000</code>。
+      </p>
+    </section>
+
+    <!-- 管理员辅助入口固定在设置页底部，管理后台单独靠右放置。 -->
+    <div class="toolbar" style="margin-top: auto;">
+      <button class="button primary" type="submit" form="settingsForm">保存设置</button>
+      {% if is_admin_mode %}
+        <a class="button" href="{% url 'contracts:password_change' %}">修改密码</a>
+        <span class="toolbar-spacer"></span>
+        <a class="button" href="/admin/">管理后台</a>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

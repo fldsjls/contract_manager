@@ -1,0 +1,438 @@
+{% extends "contracts/base.html" %}
+{% load static %}
+
+{% block title %}统计总览{% endblock %}
+
+{% block content %}
+  <!-- 统计总览首页：顶部卡片随收入/支出开关切换，下面保持趋势和项目列表。 -->
+  <div class="page-content dashboard-page">
+    <div class="dashboard-title-row">
+      <h1 class="page-title">统计总览</h1>
+      <div class="dashboard-top-controls">
+        <label class="switch-control" for="dashboardModeToggle" title="切换收入/支出视图">
+          <input id="dashboardModeToggle" type="checkbox">
+          <span class="switch-track"></span>
+        </label>
+        {% if chart_period != "all" %}<a class="button" href="?{{ prev_range_params }}">←</a>{% endif %}
+        <button class="button" id="rangeModalButton" type="button">{{ chart_range_label }}</button>
+        {% if chart_period != "all" %}<a class="button" href="?{{ next_range_params }}">→</a>{% endif %}
+      </div>
+    </div>
+
+    <div class="dashboard-scroll">
+      <!-- 总金额、开票/开据金额、收款金额和比例指标。 -->
+      <section class="dashboard-top-row">
+        <div class="metric-grid">
+          <div class="metric-card">
+          <div class="metric-title">总合同金额</div>
+          <div class="metric-value">¥ {{ total_amount|floatformat:2 }}</div>
+          </div>
+          <div class="metric-card">
+          <div class="metric-title" data-dashboard-metric-title="primary">总开票/开据金额</div>
+          <div class="metric-value" data-dashboard-metric-value="primary">¥ {{ dashboard_mode_totals.invoice_primary|floatformat:2 }}</div>
+          </div>
+          <div class="metric-card">
+          <div class="metric-title" data-dashboard-metric-title="secondary">总收款金额</div>
+          <div class="metric-value" data-dashboard-metric-value="secondary">¥ {{ dashboard_mode_totals.invoice_secondary|floatformat:2 }}</div>
+          </div>
+          <div class="metric-card">
+          <div class="metric-title" data-dashboard-metric-title="rate">收款率</div>
+          <div class="metric-value" data-dashboard-metric-value="rate">{{ dashboard_income_rate|floatformat:1 }}%</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 左侧趋势图和右侧即将到期项目共用同一行布局。 -->
+      <section class="chart-grid">
+        <div class="chart-area">
+          <div class="file-list-header" style="margin-bottom: 8px;">
+            <h2 id="trendChartTitle">收入趋势</h2>
+          </div>
+          {% if chart_rows %}
+            <div class="echarts-trend" id="trendChart" role="img" aria-label="收入和支出趋势图"></div>
+            {{ chart_data|json_script:"trendChartData" }}
+          {% else %}
+            <div class="empty" style="flex: 1;">暂无记录</div>
+          {% endif %}
+        </div>
+
+        <div class="chart-area">
+          <h2>即将到期项目</h2>
+          {% if expiring_contracts %}
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>合同</th>
+                    <th>截止日期</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for contract in expiring_contracts %}
+                    <tr>
+                      <td class="name">{{ contract.contract_name }}</td>
+                      <td>{{ contract.end_date }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="empty" style="flex: 1;">30 天内暂无即将到期项目</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <!-- 最近项目表格在记录过多时只在该区域内滚动。 -->
+      <section class="chart-area recent-panel">
+        <h2>最近项目</h2>
+        {% if recent_contracts %}
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>合同名称</th>
+                  <th>合同编号</th>
+                  <th>甲方名称</th>
+                  <th>合同金额</th>
+                  <th>状态</th>
+                  <th>创建时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for contract in recent_contracts %}
+                  <tr>
+                    <td class="name">
+                      <a href="{% url 'contracts:contract_detail' contract.id %}">{{ contract.contract_name }}</a>
+                    </td>
+                    <td>{{ contract.display_contract_number }}</td>
+                    <td class="party">{{ contract.party_name }}</td>
+                    <td>¥ {{ contract.amount|floatformat:2 }}</td>
+                    <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
+                    <td>{{ contract.created_at|date:"Y-m-d H:i" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty">暂无最近项目</div>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+
+  <!-- 统计范围弹窗：全部、按年和按月使用同一套前端状态。 -->
+  <div class="modal-backdrop" id="rangeModal" hidden>
+    <div class="modal-card range-modal-card" role="dialog" aria-modal="true" aria-labelledby="rangeModalTitle">
+      <div class="modal-header" id="rangeModalTitle">选择统计范围</div>
+      <form method="get">
+        <input id="periodInput" name="period" type="hidden" value="{{ chart_period }}">
+        <input id="yearInput" name="year" type="hidden" value="{{ chart_year }}">
+        <input id="monthInput" name="month" type="hidden" value="{{ chart_month }}">
+        <div class="modal-body">
+          <div class="range-section">
+            <label class="field-label">统计方式</label>
+            <div class="toolbar range-options" data-keep-selection>
+              <button class="button period-option {% if chart_period == 'all' %}primary{% endif %}" type="button" data-period="all">全部</button>
+              <button class="button period-option {% if chart_period == 'year' %}primary{% endif %}" type="button" data-period="year">按年统计</button>
+              <button class="button period-option {% if chart_period == 'month' %}primary{% endif %}" type="button" data-period="month">按月统计</button>
+            </div>
+          </div>
+          <div class="range-section range-control-space">
+            <div id="yearControl" class="field-control-row">
+              <button class="button icon-button" id="yearPrev" type="button">←</button>
+              <div class="button" id="yearLabel" style="flex: 1; text-align: center;">{{ chart_year }} 年</div>
+              <button class="button icon-button" id="yearNext" type="button">→</button>
+            </div>
+            <div id="monthControl" class="field-control-row">
+              <button class="button icon-button" id="monthPrev" type="button">←</button>
+              <div class="button" id="monthLabel" style="flex: 1; text-align: center;">{{ chart_year }} 年</div>
+              <button class="button icon-button" id="monthNext" type="button">→</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" id="rangeModalCancel" type="button">取消</button>
+          <button class="button primary" type="submit">应用</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="{% static 'contracts/vendor/echarts.min.js' %}"></script>
+  <script>
+    // 后端通过 json_script 注入图表数据，前端只负责视图切换和 ECharts 渲染。
+    const rangeModal = document.querySelector("#rangeModal");
+    const rangeModalButton = document.querySelector("#rangeModalButton");
+    const rangeModalCancel = document.querySelector("#rangeModalCancel");
+    const periodInput = document.querySelector("#periodInput");
+    const yearInput = document.querySelector("#yearInput");
+    const monthInput = document.querySelector("#monthInput");
+    const yearControl = document.querySelector("#yearControl");
+    const monthControl = document.querySelector("#monthControl");
+    const rangeControlSpace = document.querySelector("#rangeModal .range-control-space");
+    const yearLabel = document.querySelector("#yearLabel");
+    const monthLabel = document.querySelector("#monthLabel");
+    const periodOptions = document.querySelectorAll(".period-option");
+
+    // 根据统计方式切换年份/月度选择控件，并同步按钮选中状态。
+    function updateRangeLabels() {
+      const year = Number.parseInt(yearInput.value, 10);
+      yearLabel.textContent = `${year - 11} - ${year} 年`;
+      monthLabel.textContent = `${year} 年`;
+      rangeControlSpace.style.visibility = periodInput.value === "all" ? "hidden" : "visible";
+      rangeControlSpace.style.pointerEvents = periodInput.value === "all" ? "none" : "auto";
+      rangeControlSpace.style.display = "flex";
+      yearControl.style.display = periodInput.value === "year" ? "flex" : "none";
+      monthControl.style.display = periodInput.value === "month" ? "flex" : "none";
+      periodOptions.forEach((button) => {
+        button.classList.toggle("primary", button.dataset.period === periodInput.value);
+      });
+    }
+
+    rangeModalButton.addEventListener("click", () => {
+      rangeModal.hidden = false;
+      updateRangeLabels();
+      rangeModal.querySelector(".period-option.primary").focus();
+    });
+    rangeModalCancel.addEventListener("click", () => {
+      rangeModal.hidden = true;
+    });
+    rangeModal.addEventListener("click", (event) => {
+      if (event.target === rangeModal) {
+        rangeModal.hidden = true;
+      }
+    });
+    periodOptions.forEach((button) => {
+      button.addEventListener("click", () => {
+        periodInput.value = button.dataset.period;
+        updateRangeLabels();
+      });
+    });
+    document.querySelector("#yearPrev").addEventListener("click", () => {
+      yearInput.value = Number.parseInt(yearInput.value, 10) - 1;
+      updateRangeLabels();
+    });
+    document.querySelector("#yearNext").addEventListener("click", () => {
+      yearInput.value = Number.parseInt(yearInput.value, 10) + 1;
+      updateRangeLabels();
+    });
+    document.querySelector("#monthPrev").addEventListener("click", () => {
+      yearInput.value = Number.parseInt(yearInput.value, 10) - 1;
+      updateRangeLabels();
+    });
+    document.querySelector("#monthNext").addEventListener("click", () => {
+      yearInput.value = Number.parseInt(yearInput.value, 10) + 1;
+      updateRangeLabels();
+    });
+
+    const trendChartElement = document.querySelector("#trendChart");
+    const trendChartDataElement = document.querySelector("#trendChartData");
+    const dashboardModeToggle = document.querySelector("#dashboardModeToggle");
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function formatMoney(value) {
+      return `¥ ${Number(value || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    // 收入/支出趋势共用一张图，开关只替换标题、指标和两组序列数据。
+    if (trendChartElement && trendChartDataElement && window.echarts) {
+      const trendData = JSON.parse(trendChartDataElement.textContent);
+      const trendChart = echarts.init(trendChartElement);
+      const visiblePointLimit = 12;
+      const visibleEnd = 100;
+      const visibleStart = trendData.labels.length > visiblePointLimit
+        ? Math.max(0, 100 - (visiblePointLimit / trendData.labels.length) * 100)
+        : 0;
+
+      // 函数说明：处理页面交互和数据展示逻辑。
+      function trendSeriesData(values, peerValues, defaultPosition) {
+        return values.map((value, index) => ({
+          value,
+          label: {
+            position: Number(value || 0) === 0 && Number(peerValues[index] || 0) === 0 ? "top" : defaultPosition,
+          },
+        }));
+      }
+
+      trendChart.setOption({
+        color: ["#2563eb", "#14b8a6"],
+        tooltip: {
+          trigger: "axis",
+          valueFormatter: (value) => `¥ ${Math.round(Number(value || 0)).toLocaleString("zh-CN")}`,
+        },
+        legend: {
+          top: 0,
+          left: 18,
+          itemWidth: 18,
+          itemHeight: 8,
+          data: ["总开票/开据金额", "总收款金额"],
+        },
+        grid: {
+          left: 32,
+          right: 38,
+          top: 42,
+          bottom: 36,
+          containLabel: false,
+        },
+        xAxis: {
+          type: "category",
+          boundaryGap: false,
+          data: trendData.labels,
+          axisLine: {
+            symbol: ["none", "arrow"],
+            lineStyle: { color: "#98a2b3" },
+          },
+          axisTick: { alignWithLabel: true },
+          axisLabel: {
+            color: "#475467",
+            fontSize: 12,
+            hideOverlap: true,
+          },
+        },
+        yAxis: {
+          type: "value",
+          scale: true,
+          axisLine: {
+            show: true,
+            symbol: ["none", "arrow"],
+            lineStyle: { color: "#98a2b3" },
+          },
+          axisLabel: { show: false },
+          splitLine: { lineStyle: { color: "#edf0f5" } },
+        },
+        dataZoom: [
+          {
+            type: "inside",
+            filterMode: "filter",
+            start: visibleStart,
+            end: visibleEnd,
+            zoomOnMouseWheel: true,
+            moveOnMouseMove: true,
+            moveOnMouseWheel: false,
+          },
+          {
+            type: "slider",
+            filterMode: "filter",
+            left: 32,
+            right: 38,
+            height: 14,
+            bottom: 0,
+            start: visibleStart,
+            end: visibleEnd,
+            brushSelect: false,
+          },
+        ],
+        series: [
+          {
+            id: "trend-primary-line",
+            name: "总开票/开据金额",
+            type: "line",
+            data: trendData.modes.invoice.chart.primary,
+            symbol: "circle",
+            symbolSize: 7,
+            z: 4,
+            itemStyle: { color: "#2563eb" },
+            lineStyle: { width: 2.4, color: "#2563eb" },
+            label: {
+              show: true,
+              position: "top",
+              distance: 8,
+              formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
+              color: "#2563eb",
+              fontSize: 11,
+            },
+            areaStyle: {
+              opacity: 0.18,
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: "#2563eb" },
+                { offset: 1, color: "rgba(37, 99, 235, 0)" },
+              ]),
+            },
+          },
+          {
+            id: "trend-secondary-line",
+            name: "总收款金额",
+            type: "line",
+            data: trendSeriesData(trendData.modes.invoice.chart.secondary, trendData.modes.invoice.chart.primary, "bottom"),
+            symbol: "circle",
+            symbolSize: 7,
+            z: 3,
+            itemStyle: { color: "#14b8a6" },
+            lineStyle: { width: 2.4, color: "#14b8a6" },
+            label: {
+              show: true,
+              position: "bottom",
+              distance: 8,
+              formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
+              color: "#0f9f8f",
+              fontSize: 11,
+            },
+            areaStyle: {
+              opacity: 0.16,
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: "#14b8a6" },
+                { offset: 1, color: "rgba(20, 184, 166, 0)" },
+              ]),
+            },
+          },
+          {
+            id: "trend-secondary-points",
+            name: "总收款金额",
+            type: "scatter",
+            data: trendData.modes.invoice.chart.secondary,
+            symbol: "circle",
+            symbolSize: 7,
+            z: 5,
+            silent: true,
+            tooltip: { show: false },
+            itemStyle: { color: "#14b8a6" },
+            label: { show: false },
+          },
+        ],
+      });
+
+      // 切换总览模式时保持坐标轴、缩放条和交互状态不变。
+      function applyDashboardMode() {
+        const mode = dashboardModeToggle.checked ? "receipt" : "invoice";
+        const modeData = trendData.modes[mode];
+        document.querySelector("#trendChartTitle").textContent = mode === "invoice" ? "收入趋势" : "支出趋势";
+        document.querySelector("[data-dashboard-metric-title='primary']").textContent = modeData.labels.primary;
+        document.querySelector("[data-dashboard-metric-value='primary']").textContent = formatMoney(modeData.primary_total);
+        document.querySelector("[data-dashboard-metric-title='secondary']").textContent = modeData.labels.secondary;
+        document.querySelector("[data-dashboard-metric-value='secondary']").textContent = formatMoney(modeData.secondary_total);
+        document.querySelector("[data-dashboard-metric-title='rate']").textContent = modeData.labels.rate;
+        document.querySelector("[data-dashboard-metric-value='rate']").textContent = `${Number(modeData.rate || 0).toFixed(1)}%`;
+        trendChart.setOption({
+          legend: { data: [modeData.labels.primary, modeData.labels.secondary] },
+          series: [
+            {
+              id: "trend-primary-line",
+              name: modeData.labels.primary,
+              data: modeData.chart.primary,
+              label: { position: "top", distance: 8 },
+            },
+            {
+              id: "trend-secondary-line",
+              name: modeData.labels.secondary,
+              data: trendSeriesData(modeData.chart.secondary, modeData.chart.primary, "bottom"),
+              itemStyle: { color: "#14b8a6" },
+              lineStyle: { color: "#14b8a6" },
+              label: { position: "bottom", distance: 8 },
+            },
+            {
+              id: "trend-secondary-points",
+              name: modeData.labels.secondary,
+              data: modeData.chart.secondary,
+            },
+          ],
+        });
+      }
+
+      dashboardModeToggle.addEventListener("change", applyDashboardMode);
+      applyDashboardMode();
+      window.addEventListener("resize", () => trendChart.resize());
+    }
+  </script>
+{% endblock %}

@@ -1,123 +1,243 @@
 # 合同管理系统
 
-一个基于 Python、PySide6 和 SQLite 的本地桌面合同管理系统。程序首次运行会自动创建本地数据库文件 `data/contracts.db`。
+这是一个基于 Django 的局域网合同管理系统，用于管理合同、合同文件、票据记录、项目记录、结算文件、统计图表和回收站数据。系统适合由一台办公室主机运行，其他同一局域网电脑通过浏览器访问。
 
-## 功能
+## 快速启动
 
-- 新增、编辑、删除合同信息
-- 表格展示合同列表
-- 按合同名称、合同编号、甲方名称搜索
-- 保存合同扫描件或 PDF 文件路径
-- 双击合同行打开对应文件
-- 按合同截止日期提醒 30 天内即将到期合同
-- 统计合同总金额
-- 显示合同状态：进行中、即将到期、已到期
-- 为合同批量添加开票记录和收款记录
-
-## 项目结构
-
-```text
-contract_manager/
-├─ main.py
-├─ database.py
-├─ models.py
-├─ requirements.txt
-├─ README.md
-├─ data/
-├─ contracts/
-└─ ui/
-   ├─ __init__.py
-   ├─ main_window.py
-   ├─ contract_form.py
-   └─ stats_window.py
-```
-
-## 环境要求
-
-- Python 3.12 或更高版本
-- Windows、macOS 或 Linux 桌面环境
-
-## 安装
-
-进入项目目录：
+1. 进入项目目录：
 
 ```powershell
 cd C:\Users\YF\Desktop\contract_manager
 ```
 
-创建虚拟环境：
+2. 激活虚拟环境：
 
 ```powershell
-python -m venv .venv
+.\.venv\Scripts\activate
 ```
 
-Windows 激活虚拟环境：
-
-```powershell
-.venv\Scripts\activate
-```
-
-macOS / Linux 激活虚拟环境：
-
-```bash
-source .venv/bin/activate
-```
-
-安装依赖：
+3. 安装依赖：
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-如果虚拟环境不可用，可以删除 `.venv` 后重新创建：
+4. 初始化或更新数据库：
 
 ```powershell
-Remove-Item -Recurse -Force .venv
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+python manage.py migrate
 ```
 
-## 运行
+5. 启动本机服务：
 
 ```powershell
-python main.py
+python manage.py runserver
 ```
 
-首次运行后会自动创建：
+6. 启动局域网服务：
+
+```powershell
+python manage.py runserver 0.0.0.0:8000
+```
+
+本机访问：
 
 ```text
-data/contracts.db
+http://127.0.0.1:8000
 ```
 
-## 使用说明
-
-- 点击“新增”录入合同。
-- 选中一行后点击“编辑”修改合同。
-- 选中一行后点击“删除”删除合同。
-- 在关键词输入框中输入合同名称、合同编号或甲方名称，然后点击“搜索”。
-- 在新增或编辑表单中选择合同扫描件/PDF 文件路径。
-- 在合同列表中双击某一行，可使用系统默认程序打开对应文件。
-- 点击“统计”查看合同总金额、状态数量和 30 天内即将到期合同。
-
-## 状态规则
-
-- 已到期：截止日期早于今天
-- 即将到期：截止日期为今天起 30 天内
-- 进行中：截止日期超过 30 天，或未能识别截止日期
-
-## 打包
-
-安装依赖后执行：
-
-```powershell
-pyinstaller --noconfirm --windowed --name ContractTracker main.py
-```
-
-打包完成后，可执行文件位于：
+局域网访问：
 
 ```text
-dist/ContractTracker/
+http://主机局域网IP:8000
 ```
 
-如果希望把数据库和合同文件保留在程序目录旁边，建议将 `data/` 和 `contracts/` 文件夹与打包后的可执行文件放在同一业务目录下使用。
+主机 IP 可以在系统的“设置”页面查看。
+
+## 登录与权限
+
+- 管理员：拥有全部权限，可以新增、编辑、删除、恢复、设置、导出票据和管理文件。
+- 普通用户：可以进行大部分合同管理操作，但不显示也不能新增发票/收据类记录。
+- 游客：只用于查看，不提供写入、删除和系统设置能力。
+
+管理员账号可以通过 Django 命令创建：
+
+```powershell
+python manage.py createsuperuser
+```
+
+## 常用操作流程
+
+### 新增合同
+
+1. 进入“合同列表”。
+2. 点击“新增合同”。
+3. 填写合同名称、编号、类型、甲方、金额、日期、负责人和备注。
+4. 上传合同文件。
+5. 保存后，系统会自动创建合同文件目录和图片查看目录。
+
+### 编辑合同
+
+1. 在合同列表中选中合同。
+2. 点击“编辑合同”。
+3. 修改字段或替换合同文件。
+4. 保存后返回列表。
+
+### 查看详情
+
+详情页展示合同基础信息、票据记录或项目记录。备注默认缩略显示，鼠标靠近可查看完整内容，点击后可以编辑，按 Enter 保存。
+
+### 添加票据
+
+合同列表中选中合同后点击“添加票据”。系统会根据合同是否开票切换为发票或收据逻辑：
+
+- 开票合同：使用开票、收票记录。
+- 不开票合同：使用开据、收据记录。
+
+票面金额用于票据金额统计，实际金额用于收款或付款统计。
+
+### 添加项目记录
+
+合同列表中选中合同后点击“添加记录”。按钮名称会根据合同类型变化，例如：
+
+- 维保合同：新增维保记录。
+- 评估合同：新增评估记录。
+- 其他类型：保持对应类型的项目记录逻辑。
+
+### 统计
+
+点击“统计”可查看单个合同的项目统计。统计窗口支持：
+
+- 合同金额、开票/开据金额、收款金额、收款率。
+- 切换后查看收票/收据金额、付款金额、利润率。
+- 按全部、按年、按月切换统计范围。
+- 项目记录以月份卡片方式显示。
+
+统计总览页使用相同的收入、支出口径。
+
+### 筛选和导出
+
+合同列表支持搜索、排序和筛选。筛选条件包括：
+
+- 合同类型
+- 是否开票
+- 状态
+- 负责人
+
+点击“导出 Excel”会按当前搜索、筛选和排序结果导出 `.xlsx` 文件。
+
+## 文件保存规则
+
+系统上传文件默认保存到 `media/contracts/` 下，并按合同类型、合同名称和功能文件夹分类。
+
+常见目录示例：
+
+```text
+media/
+└─ contracts/
+   └─ 维保/
+      └─ 合同名称/
+         ├─ 合同文件/
+         ├─ 结算文件/
+         ├─ 发票文件/
+         ├─ 收据文件/
+         └─ 维保记录/
+```
+
+图片查看功能使用设置页中的“图片保存位置”。新增合同时，系统会在该位置下自动创建对应合同名称的文件夹。
+
+## 项目结构
+
+```text
+contract_manager/
+├─ manage.py                         # Django 命令入口
+├─ README.md                         # 项目说明和操作手册
+├─ requirements.txt                  # Python 依赖列表
+├─ db.sqlite3                        # SQLite 数据库文件
+├─ media/                            # 上传文件保存目录
+├─ contract_web/                     # Django 项目配置
+│  ├─ settings.py                    # 全局配置、数据库、静态文件和媒体文件设置
+│  ├─ urls.py                        # 项目级路由入口
+│  ├─ asgi.py                        # ASGI 启动入口
+│  └─ wsgi.py                        # WSGI 启动入口
+└─ contracts/                        # 合同业务应用
+   ├─ models.py                      # 合同、文件、票据、项目记录、设置等数据模型
+   ├─ forms.py                       # 新增、编辑、登录和设置表单
+   ├─ views.py                       # 页面请求、统计、导出、上传和权限逻辑
+   ├─ urls.py                        # contracts 应用路由
+   ├─ admin.py                       # Django 管理后台配置
+   ├─ migrations/                    # 数据库迁移文件
+   ├─ templates/contracts/           # HTML 页面模板
+   └─ static/contracts/              # 前端样式、脚本和本地静态资源
+```
+
+## 核心文件关系
+
+- `contract_web/urls.py` 把根路径交给 `contracts/urls.py`。
+- `contracts/urls.py` 把具体地址映射到 `contracts/views.py` 中的视图函数。
+- `contracts/views.py` 调用 `contracts/models.py` 读写数据库，并把数据传给模板。
+- `contracts/forms.py` 负责表单字段、日期格式和基础校验。
+- `contracts/templates/contracts/` 负责页面结构和按钮显示。
+- `contracts/static/contracts/` 负责页面样式和前端交互。
+- `media/` 保存用户上传的实际文件。
+
+## 常用维护命令
+
+检查项目配置：
+
+```powershell
+python manage.py check
+```
+
+生成迁移文件：
+
+```powershell
+python manage.py makemigrations
+```
+
+执行迁移：
+
+```powershell
+python manage.py migrate
+```
+
+进入 Django 后台管理：
+
+```text
+http://127.0.0.1:8000/admin/
+```
+
+## 备份建议
+
+建议定期备份以下内容：
+
+```text
+db.sqlite3
+media/
+```
+
+如果使用了图片查看功能，也要备份设置页中配置的图片保存目录。
+
+## 常见问题
+
+### 局域网电脑打不开系统
+
+检查主机是否使用了局域网启动命令：
+
+```powershell
+python manage.py runserver 0.0.0.0:8000
+```
+
+同时检查 Windows 防火墙是否允许 8000 端口访问。
+
+### PDF 无法预览
+
+PDF 预览依赖前端 PDF 预览资源。如果预览失败，可以先使用“下载文件”确认文件本身是否正常。
+
+### Excel 导出时合同编号显示异常
+
+系统导出 `.xlsx` 时会把合同编号按文本写入，避免被 Excel 自动显示为科学计数法。
+
+### 日期在列表中显示不完整
+
+合同列表为了容纳较多字段，对部分文字做了缩略处理。鼠标靠近可查看完整内容，导出的 Excel 会保留完整日期。

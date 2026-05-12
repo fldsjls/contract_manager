@@ -1,0 +1,1081 @@
+﻿{% extends "contracts/base.html" %}
+
+{% load static %}
+
+{% block title %}合同列表{% endblock %}
+
+{% block content %}
+  <!-- 合同列表主页面，包含搜索、操作按钮和合同表格。 -->
+  <div class="page-content contract-list-page">
+    <h1 class="page-title">合同列表</h1>
+
+    <!-- 搜索栏按合同名称、编号和甲方名称过滤列表。 -->
+    <form class="search-toolbar" method="get" autocomplete="off">
+      <div class="search-preview-wrap">
+        <input class="search-input" id="contractSearchInput" name="q" value="{{ keyword }}" placeholder="搜索合同名称、合同编号、原合同编号、甲方名称、负责人">
+        <div class="search-preview" id="searchPreview" hidden></div>
+      </div>
+      <input name="contract_type" type="hidden" value="{{ contract_type_filter }}">
+      <input name="invoice_status" type="hidden" value="{{ invoice_status_filter }}">
+      <input name="status" type="hidden" value="{{ status_filter }}">
+      <input name="responsible_person" type="hidden" value="{{ responsible_person_filter }}">
+      <button type="submit">搜索</button>
+      <a class="button" href="{% url 'contracts:contract_list' %}">重置</a>
+    </form>
+
+    <!-- 行操作按钮默认禁用，选中合同后由脚本启用。 -->
+    <div class="action-toolbar" aria-label="合同操作" data-keep-selection>
+      {% if can_manage %}
+        <a class="button primary" href="{% url 'contracts:contract_create' %}">新增合同</a>
+      {% else %}
+        <a class="button muted" href="{% url 'contracts:login' %}">登录后新增</a>
+      {% endif %}
+      {% if can_add_money_records %}
+        <a class="button row-action" id="moneyRecordButton" href="#" data-invoice-url-template="{% url 'contracts:invoice_record_create' 0 %}" data-receipt-url-template="{% url 'contracts:payment_record_create' 0 %}" aria-disabled="true">添加发票</a>
+      {% endif %}
+      {% if can_manage %}
+        <a class="button row-action" id="recordButton" href="#" data-url-template="{% url 'contracts:maintenance_record_create' 0 %}" aria-disabled="true">添加记录</a>
+      {% endif %}
+      <a class="button row-action" id="detailButton" href="#" data-url-template="{% url 'contracts:contract_detail' 0 %}" aria-disabled="true">查看详情</a>
+      {% if can_manage %}
+        <a class="button row-action" id="editButton" href="#" data-url-template="{% url 'contracts:contract_update' 0 %}" aria-disabled="true">编辑合同</a>
+      {% endif %}
+      <a class="button row-action" id="fileButton" href="#" aria-disabled="true">预览合同</a>
+      <button class="button row-action" id="statsButton" type="button" aria-disabled="true">统计</button>
+      {% if can_manage %}
+        <a class="button row-action" id="settlementButton" href="#" data-url-template="{% url 'contracts:settlement_file_list' 0 %}" aria-disabled="true">结算</a>
+      {% endif %}
+      <span class="toolbar-spacer"></span>
+      {% if can_manage %}
+        <button class="button row-action" id="imageFolderButton" type="button" data-url-template="{% url 'contracts:contract_image_folder_open' 0 %}" aria-disabled="true">图片查看</button>
+        <button class="button{% if has_filters %} primary{% endif %}" id="filterButton" type="button">筛选</button>
+        <a class="button" href="{% url 'contracts:contract_list' %}{% if keyword %}?q={{ keyword|urlencode }}{% endif %}">清除筛选</a>
+        <a class="button" href="{% url 'contracts:contract_list_export' %}{% if export_query %}?{{ export_query }}{% endif %}">导出 Excel</a>
+        <button class="button danger row-action" id="deleteButton" type="button" data-url-template="{% url 'contracts:contract_delete' 0 %}" aria-disabled="true">删除合同</button>
+      {% endif %}
+    </div>
+
+    <!-- 删除合同使用隐藏表单提交 POST，避免跳转到单独确认页。 -->
+    <form id="deleteForm" method="post" style="display: none;">
+      {% csrf_token %}
+    </form>
+
+    <!-- 当前列表的数量和金额汇总。 -->
+    <div class="summary">
+      <span>共 {{ contract_count }} 份合同</span>
+      <span>总金额：¥ {{ total_amount|floatformat:2 }}</span>
+    </div>
+
+    <!-- 到期提醒只展示近期需要关注的合同。 -->
+    {% if expiring_contracts %}
+      <div class="expiring-list">
+        <strong class="expiring-list-title">到期提醒：</strong>
+        <div class="expiring-list-items">
+          {% for contract in expiring_contracts %}
+            <a class="expiring-item" href="{% url 'contracts:contract_detail' contract.id %}">
+              <span class="expiring-name">{{ contract.contract_name }}</span>
+              <span class="expiring-date">{{ contract.end_date }}</span>
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if contracts %}
+      <!-- 合同表格表头支持点击排序。 -->
+      <div class="table-wrap fill">
+        <table class="contract-table" id="contractTable">
+          <thead>
+            <tr>
+              <th>序号</th>
+              <th><a class="sort-link {% if sort == 'contract_name' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_name&direction={% if sort == 'contract_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同名称</a></th>
+              <th><a class="sort-link {% if sort == 'contract_number' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_number&direction={% if sort == 'contract_number' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同编号</a></th>
+              <th><a class="sort-link {% if sort == 'contract_type' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_type&direction={% if sort == 'contract_type' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同类型</a></th>
+              <th><a class="sort-link {% if sort == 'party_name' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=party_name&direction={% if sort == 'party_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">甲方名称</a></th>
+              <th><a class="sort-link {% if sort == 'amount' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=amount&direction={% if sort == 'amount' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同金额</a></th>
+              <th><a class="sort-link {% if sort == 'invoice_status' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=invoice_status&direction={% if sort == 'invoice_status' and direction == 'asc' %}desc{% else %}asc{% endif %}">是否开票</a></th>
+              <th><a class="sort-link {% if sort == 'start_date' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=start_date&direction={% if sort == 'start_date' and direction == 'asc' %}desc{% else %}asc{% endif %}">开始日期</a></th>
+              <th><a class="sort-link {% if sort == 'end_date' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=end_date&direction={% if sort == 'end_date' and direction == 'asc' %}desc{% else %}asc{% endif %}">截止日期</a></th>
+              <th><a class="sort-link {% if sort == 'responsible_person' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=responsible_person&direction={% if sort == 'responsible_person' and direction == 'asc' %}desc{% else %}asc{% endif %}">负责人</a></th>
+              <th><a class="sort-link {% if sort == 'status' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=status&direction={% if sort == 'status' and direction == 'asc' %}desc{% else %}asc{% endif %}">状态</a></th>
+              <th>文件</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for contract in contracts %}
+              <tr
+                class="selectable-row"
+                data-contract-id="{{ contract.id }}"
+                data-contract-name="{{ contract.contract_name }}"
+                data-contract-number="{{ contract.display_contract_number }}"
+                data-contract-type="{{ contract.contract_type }}"
+                data-party-name="{{ contract.party_name }}"
+                data-responsible-person="{{ contract.responsible_person }}"
+                data-invoice-status="{{ contract.invoice_status }}"
+                data-invoice-total="¥ {{ contract.invoice_total|floatformat:2 }}"
+                data-payment-total="¥ {{ contract.payment_total|floatformat:2 }}"
+                data-payment-rate="{{ contract.payment_rate|floatformat:1 }}%"
+                data-stats-url="{% url 'contracts:contract_stats_data' contract.id %}"
+                data-maintenance-url="{% url 'contracts:maintenance_record_data' contract.id %}"
+                data-file-url="{% if contract.latest_file %}{% url 'contracts:contract_file_preview' contract.latest_file.id %}?from=list{% elif contract.file %}{% url 'contracts:legacy_contract_file_preview' contract.id %}?from=list{% endif %}"
+              >
+                <td>{{ forloop.counter }}</td>
+                <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
+                <td title="{{ contract.display_contract_number }}">{{ contract.display_contract_number }}</td>
+                <td>{{ contract.contract_type }}</td>
+                <td class="party">{{ contract.party_name }}</td>
+                <td>¥ {{ contract.amount|floatformat:2 }}</td>
+                <td>{{ contract.invoice_status }}</td>
+                <td>{{ contract.start_date|default:"" }}</td>
+                <td>{{ contract.end_date|default:"" }}</td>
+                <td>{{ contract.responsible_person|default:"" }}</td>
+                <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
+                <td>{% if contract.latest_file or contract.file %}已上传{% else %}未上传{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty">暂无合同数据</div>
+    {% endif %}
+  </div>
+
+  <!-- 居中弹窗用于显示统计信息和删除确认。 -->
+  <div class="modal-backdrop" id="centerModal" hidden>
+    <div class="modal-card" id="centerModalCard" role="dialog" aria-modal="true" aria-labelledby="centerModalTitle">
+      <div class="modal-header" id="centerModalTitle"></div>
+      <div class="modal-body" id="centerModalBody"></div>
+      <div class="modal-actions">
+        <div class="modal-left-actions" id="centerModalLeftActions" data-keep-selection></div>
+        <button class="button" id="centerModalCancel" type="button">取消</button>
+        <button class="button primary" id="centerModalConfirm" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 合同筛选弹窗，提交后使用 GET 参数刷新当前列表。 -->
+  <div class="modal-backdrop" id="filterModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="filterModalTitle">
+      <div class="modal-header" id="filterModalTitle">筛选合同</div>
+      <form method="get">
+        <input name="q" type="hidden" value="{{ keyword }}">
+        <input name="sort" type="hidden" value="{{ sort }}">
+        <input name="direction" type="hidden" value="{{ direction }}">
+        <div class="modal-body" style="white-space: normal;">
+          <div class="form-grid" style="grid-template-columns: 1fr; gap: 14px;">
+            <div>
+              <label for="filterContractType">合同类型</label>
+              <select id="filterContractType" name="contract_type">
+                <option value="">全部类型</option>
+                {% for value, label in contract_type_choices %}
+                  <option value="{{ value }}" {% if contract_type_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="filterInvoiceStatus">是否开票</label>
+              <select id="filterInvoiceStatus" name="invoice_status">
+                <option value="">全部</option>
+                {% for value, label in invoice_status_choices %}
+                  <option value="{{ value }}" {% if invoice_status_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="filterResponsiblePerson">负责人</label>
+              <input id="filterResponsiblePerson" name="responsible_person" value="{{ responsible_person_filter }}" placeholder="输入负责人">
+            </div>
+            <div>
+              <label for="filterStatus">状态</label>
+              <select id="filterStatus" name="status">
+                <option value="">全部状态</option>
+                {% for value in status_choices %}
+                  <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" id="filterModalCancel" type="button">取消</button>
+          <button class="button primary" type="submit">应用</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 项目统计范围弹窗，样式和统计总览中的范围选择一致。 -->
+  <div class="modal-backdrop" id="projectRangeModal" hidden>
+    <div class="modal-card range-modal-card" role="dialog" aria-modal="true" aria-labelledby="projectRangeModalTitle">
+      <div class="modal-header" id="projectRangeModalTitle">选择统计范围</div>
+      <div class="modal-body">
+        <div class="range-section">
+          <label class="field-label">统计方式</label>
+          <div class="toolbar range-options" data-keep-selection>
+            <button class="button project-period-option primary" type="button" data-period="all">全部</button>
+            <button class="button project-period-option" type="button" data-period="year">按年统计</button>
+            <button class="button project-period-option" type="button" data-period="month">按月统计</button>
+          </div>
+        </div>
+        <div class="range-section range-control-space">
+          <div id="projectYearControl" class="field-control-row">
+            <button class="button icon-button" id="projectYearPrev" type="button">←</button>
+            <div class="button" id="projectYearLabel" style="flex: 1; text-align: center;"></div>
+            <button class="button icon-button" id="projectYearNext" type="button">→</button>
+          </div>
+          <div id="projectMonthControl" class="field-control-row">
+            <button class="button icon-button" id="projectMonthPrev" type="button">←</button>
+            <div class="button" id="projectMonthLabel" style="flex: 1; text-align: center;"></div>
+            <button class="button icon-button" id="projectMonthNext" type="button">→</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="button" id="projectRangeCancel" type="button">取消</button>
+        <button class="button primary" id="projectRangeApply" type="button">应用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 表格行选择、按钮启用、文件打开和单项目统计弹窗逻辑。 -->
+  <script src="{% static 'contracts/vendor/echarts.min.js' %}"></script>
+  <script>
+    const table = document.querySelector("#contractTable");
+    const contractSearchInput = document.querySelector("#contractSearchInput");
+    const searchPreview = document.querySelector("#searchPreview");
+    const rowButtons = document.querySelectorAll(".row-action");
+    const fileButton = document.querySelector("#fileButton");
+    const moneyRecordButton = document.querySelector("#moneyRecordButton");
+    const imageFolderButton = document.querySelector("#imageFolderButton");
+    const statsButton = document.querySelector("#statsButton");
+    const deleteButton = document.querySelector("#deleteButton");
+    const filterButton = document.querySelector("#filterButton");
+    const deleteForm = document.querySelector("#deleteForm");
+    const centerModal = document.querySelector("#centerModal");
+    const centerModalCard = document.querySelector("#centerModalCard");
+    const centerModalTitle = document.querySelector("#centerModalTitle");
+    const centerModalBody = document.querySelector("#centerModalBody");
+    const centerModalLeftActions = document.querySelector("#centerModalLeftActions");
+    const centerModalCancel = document.querySelector("#centerModalCancel");
+    const centerModalConfirm = document.querySelector("#centerModalConfirm");
+    const filterModal = document.querySelector("#filterModal");
+    const filterModalCancel = document.querySelector("#filterModalCancel");
+    const filterResponsiblePerson = document.querySelector("#filterResponsiblePerson");
+    const projectRangeModal = document.querySelector("#projectRangeModal");
+    const projectRangeCancel = document.querySelector("#projectRangeCancel");
+    const projectRangeApply = document.querySelector("#projectRangeApply");
+    const projectPeriodOptions = document.querySelectorAll(".project-period-option");
+    const projectRangeControlSpace = document.querySelector("#projectRangeModal .range-control-space");
+    const projectYearControl = document.querySelector("#projectYearControl");
+    const projectMonthControl = document.querySelector("#projectMonthControl");
+    const projectYearLabel = document.querySelector("#projectYearLabel");
+    const projectMonthLabel = document.querySelector("#projectMonthLabel");
+    let modalConfirmHandler = null;
+    let projectStatsState = {
+      url: "",
+      period: "all",
+      year: new Date().getFullYear(),
+      month: new Date().getMonth() + 1,
+    };
+    let maintenanceState = {
+      url: "",
+      year: new Date().getFullYear(),
+      enabled: false,
+    };
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function setDisabled(button, disabled) {
+      button.setAttribute("aria-disabled", disabled ? "true" : "false");
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function urlFor(button, id) {
+      return button.dataset.urlTemplate.replace("/0/", `/${id}/`);
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function closeCenterModal() {
+      centerModal.hidden = true;
+      centerModalCard.classList.remove("wide");
+      centerModalLeftActions.innerHTML = "";
+      modalConfirmHandler = null;
+      centerModalConfirm.classList.remove("danger");
+      centerModalConfirm.classList.add("primary");
+      centerModalCancel.hidden = false;
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function openCenterModal({ title, body, confirmText = "确定", cancelText = "取消", danger = false, onConfirm = null }) {
+      centerModalTitle.textContent = title;
+      centerModalBody.textContent = body;
+      centerModalLeftActions.innerHTML = "";
+      centerModalCard.classList.remove("wide");
+      centerModalConfirm.textContent = confirmText;
+      centerModalCancel.textContent = cancelText;
+      centerModalCancel.hidden = !onConfirm;
+      modalConfirmHandler = onConfirm;
+      centerModalConfirm.classList.toggle("danger", danger);
+      centerModalConfirm.classList.toggle("primary", !danger);
+      centerModal.hidden = false;
+      centerModalConfirm.focus();
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function clearSelection() {
+      document.querySelectorAll(".selectable-row.selected").forEach((row) => {
+        row.classList.remove("selected");
+      });
+      rowButtons.forEach((button) => {
+        button.href = "#";
+        button.dataset.currentUrl = "";
+        setDisabled(button, true);
+      });
+      if (fileButton) {
+        fileButton.removeAttribute("href");
+      }
+      if (statsButton) {
+        statsButton.dataset.contractName = "";
+        statsButton.dataset.invoiceTotal = "";
+        statsButton.dataset.paymentTotal = "";
+        statsButton.dataset.paymentRate = "";
+        statsButton.dataset.statsUrl = "";
+        statsButton.dataset.maintenanceUrl = "";
+        statsButton.dataset.contractType = "";
+      }
+    }
+
+    window.clearPageSelection = clearSelection;
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function selectContractRow(row) {
+      clearSelection();
+      row.classList.add("selected");
+
+      const id = row.dataset.contractId;
+      rowButtons.forEach((button) => {
+        if (button.dataset.urlTemplate) {
+          button.dataset.currentUrl = urlFor(button, id);
+          if (button.tagName.toLowerCase() === "a") {
+            button.href = button.dataset.currentUrl;
+          }
+        }
+        setDisabled(button, false);
+      });
+
+      if (fileButton && row.dataset.fileUrl) {
+        fileButton.href = row.dataset.fileUrl;
+        setDisabled(fileButton, false);
+      } else if (fileButton) {
+        fileButton.removeAttribute("href");
+        setDisabled(fileButton, true);
+      }
+
+      const invoiceStatus = row.dataset.invoiceStatus || "";
+      if (moneyRecordButton) {
+        const template = invoiceStatus === "不开票"
+          ? moneyRecordButton.dataset.receiptUrlTemplate
+          : moneyRecordButton.dataset.invoiceUrlTemplate;
+        moneyRecordButton.href = template.replace("/0/", `/${id}/`);
+        moneyRecordButton.textContent = invoiceStatus === "不开票" ? "添加收据" : "添加发票";
+        setDisabled(moneyRecordButton, false);
+      }
+
+      if (statsButton) {
+        statsButton.dataset.contractName = row.dataset.contractName;
+        statsButton.dataset.invoiceTotal = row.dataset.invoiceTotal;
+        statsButton.dataset.paymentTotal = row.dataset.paymentTotal;
+        statsButton.dataset.paymentRate = row.dataset.paymentRate;
+        statsButton.dataset.statsUrl = row.dataset.statsUrl;
+        statsButton.dataset.maintenanceUrl = row.dataset.maintenanceUrl;
+        statsButton.dataset.contractType = row.dataset.contractType;
+      }
+    }
+
+    if (table) {
+      table.addEventListener("click", (event) => {
+        const row = event.target.closest(".selectable-row");
+        if (!row) {
+          clearSelection();
+          return;
+        }
+
+        selectContractRow(row);
+      });
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function contractRows() {
+      return Array.from(document.querySelectorAll(".selectable-row"));
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function rowSearchText(row) {
+      return [
+        row.dataset.contractName,
+        row.dataset.contractNumber,
+        row.dataset.partyName,
+        row.dataset.responsiblePerson,
+      ].join(" ").toLowerCase();
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function hideSearchPreview() {
+      if (searchPreview) {
+        searchPreview.hidden = true;
+      }
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function renderSearchPreview() {
+      if (!contractSearchInput || !searchPreview) {
+        return;
+      }
+      const keyword = contractSearchInput.value.trim().toLowerCase();
+      searchPreview.innerHTML = "";
+      if (!keyword) {
+        hideSearchPreview();
+        return;
+      }
+      const matches = contractRows()
+        .filter((row) => rowSearchText(row).includes(keyword))
+        .slice(0, 8);
+      matches.forEach((row) => {
+        const item = document.createElement("button");
+        item.className = "search-preview-item";
+        item.type = "button";
+        item.innerHTML = `
+          <span class="search-preview-title">${escapeHtml(row.dataset.contractName)}</span>
+          <span class="search-preview-meta">编号: ${escapeHtml(row.dataset.contractNumber)}　甲方: ${escapeHtml(row.dataset.partyName)}　负责人: ${escapeHtml(row.dataset.responsiblePerson || "未填写")}</span>
+        `;
+        item.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+        });
+        item.addEventListener("click", () => {
+          selectContractRow(row);
+          row.scrollIntoView({ block: "center", behavior: "smooth" });
+          hideSearchPreview();
+        });
+        searchPreview.appendChild(item);
+      });
+      searchPreview.hidden = matches.length === 0;
+    }
+
+    if (contractSearchInput) {
+      contractSearchInput.addEventListener("input", renderSearchPreview);
+      contractSearchInput.addEventListener("focus", renderSearchPreview);
+      document.addEventListener("click", (event) => {
+        if (!event.target.closest(".search-preview-wrap")) {
+          hideSearchPreview();
+        }
+      });
+    }
+
+    if (deleteButton && deleteForm) {
+      deleteButton.addEventListener("click", () => {
+        if (deleteButton.getAttribute("aria-disabled") === "true") {
+          return;
+        }
+        openCenterModal({
+          title: "确认删除",
+          body: "确定要将选中的合同移入回收站吗？一周内可恢复，超过后自动清理。",
+          confirmText: "移入回收站",
+          danger: true,
+          onConfirm: () => {
+            deleteForm.action = deleteButton.dataset.currentUrl;
+            deleteForm.submit();
+          },
+        });
+      });
+    }
+
+    if (filterButton && filterModal) {
+      filterButton.addEventListener("click", () => {
+        filterModal.hidden = false;
+        filterModal.querySelector("select").focus();
+      });
+      filterModalCancel.addEventListener("click", () => {
+        filterModal.hidden = true;
+      });
+      filterModal.addEventListener("click", (event) => {
+        if (event.target === filterModal) {
+          filterModal.hidden = true;
+        }
+      });
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function setupResponsibleMemory(input) {
+      if (!input) {
+        return;
+      }
+      const responsiblePersonStorageKey = "contract_last_responsible_person";
+      const responsiblePersonHistoryKey = "contract_responsible_person_history";
+      const legacyResponsiblePerson = localStorage.getItem(responsiblePersonStorageKey);
+      const savedResponsiblePeople = JSON.parse(localStorage.getItem(responsiblePersonHistoryKey) || "[]");
+      const responsiblePeople = Array.from(new Set([legacyResponsiblePerson, ...savedResponsiblePeople].filter(Boolean)));
+      const fieldWrap = document.createElement("div");
+      const dropdown = document.createElement("div");
+      fieldWrap.className = "memory-field-wrap";
+      dropdown.className = "memory-dropdown";
+      dropdown.hidden = true;
+      input.parentNode.insertBefore(fieldWrap, input);
+      fieldWrap.appendChild(input);
+      fieldWrap.appendChild(dropdown);
+
+      // 函数说明：处理页面交互和数据展示逻辑。
+      function renderOptions() {
+        const keyword = input.value.trim().toLowerCase();
+        const matches = responsiblePeople.filter((value) => value.toLowerCase().includes(keyword));
+        dropdown.innerHTML = "";
+        matches.forEach((value) => {
+          const option = document.createElement("button");
+          option.className = "memory-option";
+          option.type = "button";
+          option.textContent = value;
+          option.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+          });
+          option.addEventListener("click", () => {
+            input.value = value;
+            dropdown.hidden = true;
+            input.focus();
+          });
+          dropdown.appendChild(option);
+        });
+        dropdown.hidden = matches.length === 0;
+      }
+
+      // 函数说明：处理页面交互和数据展示逻辑。
+      function saveValue() {
+        const value = input.value.trim();
+        if (!value) {
+          return;
+        }
+        const nextPeople = [value, ...responsiblePeople.filter((item) => item !== value)].slice(0, 20);
+        localStorage.setItem(responsiblePersonStorageKey, value);
+        localStorage.setItem(responsiblePersonHistoryKey, JSON.stringify(nextPeople));
+      }
+
+      input.addEventListener("focus", renderOptions);
+      input.addEventListener("click", renderOptions);
+      input.addEventListener("input", renderOptions);
+      input.closest("form")?.addEventListener("submit", saveValue);
+      document.addEventListener("click", (event) => {
+        if (!fieldWrap.contains(event.target)) {
+          dropdown.hidden = true;
+        }
+      });
+    }
+
+    setupResponsibleMemory(filterResponsiblePerson);
+
+    if (imageFolderButton) {
+      imageFolderButton.addEventListener("click", async () => {
+        if (imageFolderButton.getAttribute("aria-disabled") === "true" || !imageFolderButton.dataset.currentUrl) {
+          return;
+        }
+        const response = await fetch(imageFolderButton.dataset.currentUrl, {
+          credentials: "same-origin",
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        if (!response.ok) {
+          alert("图片文件夹打开失败，请检查设置中的保存位置。");
+        }
+      });
+    }
+
+    if (statsButton) {
+      statsButton.addEventListener("click", async () => {
+        if (statsButton.getAttribute("aria-disabled") === "true") {
+          return;
+        }
+        centerModalCard.classList.add("wide");
+        centerModalTitle.textContent = "项目统计";
+        centerModalBody.textContent = "正在加载统计数据...";
+        centerModalConfirm.textContent = "关闭";
+        centerModalCancel.hidden = true;
+        modalConfirmHandler = null;
+        centerModalConfirm.classList.remove("danger");
+        centerModalConfirm.classList.remove("primary");
+        centerModal.hidden = false;
+        centerModalConfirm.focus();
+        projectStatsState.url = statsButton.dataset.statsUrl;
+        projectStatsState.period = "all";
+        projectStatsState.year = new Date().getFullYear();
+        projectStatsState.month = new Date().getMonth() + 1;
+        maintenanceState.url = statsButton.dataset.maintenanceUrl;
+        maintenanceState.year = new Date().getFullYear();
+        maintenanceState.enabled = Boolean(statsButton.dataset.contractType);
+        maintenanceState.label = `${statsButton.dataset.contractType || "项目"}记录`;
+        await loadProjectStats();
+      });
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    async function loadMaintenanceCalendar() {
+      if (!maintenanceState.enabled) {
+        return;
+      }
+      const params = new URLSearchParams({ year: maintenanceState.year });
+      centerModalBody.textContent = `正在加载${maintenanceState.label || "项目记录"}...`;
+      try {
+        const response = await fetch(`${maintenanceState.url}?${params.toString()}`, {
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        if (!response.ok) {
+          throw new Error("项目记录加载失败");
+        }
+        renderMaintenanceCalendar(await response.json());
+      } catch (error) {
+        centerModalBody.textContent = `${maintenanceState.label || "项目记录"}加载失败，请稍后重试。`;
+      }
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function renderMaintenanceCalendar(data) {
+      maintenanceState.year = data.year;
+      centerModalBody.textContent = "";
+      centerModalLeftActions.innerHTML = "";
+      const wrapper = document.createElement("div");
+      wrapper.className = "maintenance-calendar";
+      wrapper.innerHTML = `
+        <div class="maintenance-calendar-header">
+          <div class="maintenance-calendar-title"></div>
+          <div class="maintenance-year-control" data-keep-selection>
+            <button class="button icon-button" id="maintenanceYearPrev" type="button">←</button>
+            <div class="button maintenance-year-label">${data.year} 年</div>
+            <button class="button icon-button" id="maintenanceYearNext" type="button">→</button>
+          </div>
+        </div>
+        <div class="maintenance-month-grid"></div>
+      `;
+      wrapper.querySelector(".maintenance-calendar-title").textContent = data.contract_name;
+      const grid = wrapper.querySelector(".maintenance-month-grid");
+      data.months.forEach((month) => {
+        const item = document.createElement("div");
+        item.className = `maintenance-month${month.has_records ? " has-records" : ""}`;
+        const records = month.records.map((record) => {
+          const attachment = record.file_url ? `<a href="${escapeHtml(record.file_url)}" target="_blank">附件</a>` : "无附件";
+          return `
+            <div class="maintenance-month-record">
+              <span>日期: ${escapeHtml(record.date)}</span>
+              <span title="${escapeHtml(record.remark)}">备注: ${escapeHtml(record.remark)}</span>
+              <span>附件: ${attachment}</span>
+            </div>
+          `;
+        }).join("");
+        item.innerHTML = `
+          <div class="maintenance-month-name">${month.label}</div>
+          <div class="maintenance-month-records">${records || "暂无记录"}</div>
+        `;
+        grid.appendChild(item);
+      });
+      centerModalBody.appendChild(wrapper);
+      centerModalLeftActions.appendChild(projectPopupTabs("maintenance"));
+      wrapper.querySelector("#maintenanceYearPrev").addEventListener("click", async () => {
+        maintenanceState.year -= 1;
+        await loadMaintenanceCalendar();
+      });
+      wrapper.querySelector("#maintenanceYearNext").addEventListener("click", async () => {
+        maintenanceState.year += 1;
+        await loadMaintenanceCalendar();
+      });
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function projectPopupTabs(activeTab) {
+      const tabs = document.createElement("div");
+      tabs.className = "project-popup-tabs";
+      tabs.setAttribute("data-keep-selection", "");
+      const statsTab = document.createElement("button");
+      const isStatsActive = activeTab === "stats";
+      statsTab.className = `button${isStatsActive ? " primary current" : ""}`;
+      statsTab.type = "button";
+      statsTab.textContent = "项目统计";
+      statsTab.disabled = isStatsActive;
+      if (!isStatsActive) {
+        statsTab.addEventListener("click", loadProjectStats);
+      }
+      tabs.appendChild(statsTab);
+      if (maintenanceState.enabled) {
+        const maintenanceTab = document.createElement("button");
+        const isMaintenanceActive = activeTab === "maintenance";
+        maintenanceTab.className = `button${isMaintenanceActive ? " primary current" : ""}`;
+        maintenanceTab.type = "button";
+        maintenanceTab.textContent = maintenanceState.label || "项目记录";
+        maintenanceTab.disabled = isMaintenanceActive;
+        if (!isMaintenanceActive) {
+          maintenanceTab.addEventListener("click", loadMaintenanceCalendar);
+        }
+        tabs.appendChild(maintenanceTab);
+      }
+      return tabs;
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function formatMoney(value) {
+      return `¥ ${Number(value || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    async function loadProjectStats() {
+      const params = new URLSearchParams({
+        period: projectStatsState.period,
+        year: projectStatsState.year,
+        month: projectStatsState.month,
+      });
+      centerModalBody.textContent = "正在加载统计数据...";
+      try {
+        const response = await fetch(`${projectStatsState.url}?${params.toString()}`, {
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        if (!response.ok) {
+          throw new Error("统计数据加载失败");
+        }
+        renderProjectStats(await response.json());
+      } catch (error) {
+        centerModalBody.textContent = "统计数据加载失败，请稍后重试。";
+      }
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function updateProjectRangeLabels() {
+      projectYearLabel.textContent = `${projectStatsState.year - 11} - ${projectStatsState.year} 年`;
+      projectMonthLabel.textContent = `${projectStatsState.year} 年`;
+      projectRangeControlSpace.style.visibility = projectStatsState.period === "all" ? "hidden" : "visible";
+      projectRangeControlSpace.style.pointerEvents = projectStatsState.period === "all" ? "none" : "auto";
+      projectRangeControlSpace.style.display = "flex";
+      projectYearControl.style.display = projectStatsState.period === "year" ? "flex" : "none";
+      projectMonthControl.style.display = projectStatsState.period === "month" ? "flex" : "none";
+      projectPeriodOptions.forEach((button) => {
+        const isCurrentPeriod = button.dataset.period === projectStatsState.period;
+        button.classList.toggle("primary", isCurrentPeriod);
+        button.classList.toggle("current", isCurrentPeriod);
+        button.disabled = isCurrentPeriod;
+      });
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function openProjectRangeModal() {
+      updateProjectRangeLabels();
+      projectRangeModal.hidden = false;
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function renderProjectStats(data) {
+      projectStatsState.period = data.period;
+      projectStatsState.year = data.year;
+      projectStatsState.month = data.month;
+      centerModalBody.textContent = "";
+      centerModalLeftActions.innerHTML = "";
+      const wrapper = document.createElement("div");
+      wrapper.className = "project-stats";
+      wrapper.innerHTML = `
+        <div class="file-list-header">
+          <div class="project-stats-name"></div>
+          <div class="file-actions">
+            <label class="switch-control" for="projectStatsModeToggle" title="切换开票/收票视图">
+              <input id="projectStatsModeToggle" type="checkbox">
+              <span class="switch-track"></span>
+            </label>
+            <button class="button" id="projectStatsRangeButton" type="button">${data.range_label}</button>
+          </div>
+        </div>
+        <section class="metric-grid">
+          <div class="metric-card">
+            <div class="metric-title">合同金额</div>
+            <div class="metric-value">${formatMoney(data.amount)}</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-title" data-metric-title="primary"></div>
+            <div class="metric-value" data-metric-value="primary"></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-title" data-metric-title="secondary"></div>
+            <div class="metric-value" data-metric-value="secondary"></div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-title" data-metric-title="rate"></div>
+            <div class="metric-value" data-metric-value="rate"></div>
+          </div>
+        </section>
+        <div class="project-stats-chart" id="projectStatsChart"></div>
+      `;
+      wrapper.querySelector(".project-stats-name").textContent = data.contract_name;
+      centerModalBody.appendChild(wrapper);
+      centerModalLeftActions.appendChild(projectPopupTabs("stats"));
+      wrapper.querySelector("#projectStatsRangeButton").addEventListener("click", openProjectRangeModal);
+      const modeToggle = wrapper.querySelector("#projectStatsModeToggle");
+      const chartElement = wrapper.querySelector("#projectStatsChart");
+      const chart = echarts.init(chartElement);
+      const projectLabels = data.labels || {
+        invoice_primary: "开票金额",
+        invoice_secondary: "收款金额",
+        invoice_rate: "收款率",
+        receipt_primary: "收票金额",
+        receipt_secondary: "付款金额",
+        receipt_rate: "利润率",
+      };
+      const projectModes = data.modes || {
+        invoice: {
+          primary_total: data.income_total ?? data.invoice_total,
+          secondary_total: data.income_total ?? data.invoice_total,
+          rate: data.payment_rate,
+          chart: { primary: data.chart.income || data.chart.invoice, secondary: data.chart.income || data.chart.invoice },
+        },
+        receipt: {
+          primary_total: data.expense_total ?? data.payment_total,
+          secondary_total: data.expense_total ?? data.payment_total,
+          rate: data.payment_rate,
+          chart: { primary: data.chart.expense || data.chart.payment, secondary: data.chart.expense || data.chart.payment },
+        },
+      };
+      // 函数说明：处理页面交互和数据展示逻辑。
+      function projectSeriesData(values, peerValues, defaultPosition) {
+        return values.map((value, index) => ({
+          value,
+          label: {
+            position: Number(value || 0) === 0 && Number(peerValues[index] || 0) === 0 ? "top" : defaultPosition,
+          },
+        }));
+      }
+      chart.setOption({
+        color: ["#2563eb", "#14b8a6"],
+        tooltip: {
+          trigger: "axis",
+          valueFormatter: (value) => `¥ ${Math.round(Number(value || 0)).toLocaleString("zh-CN")}`,
+        },
+        legend: {
+          top: 8,
+          left: 18,
+          itemWidth: 18,
+          itemHeight: 8,
+          data: [projectLabels.invoice_primary, projectLabels.invoice_secondary],
+        },
+        grid: {
+          left: 34,
+          right: 38,
+          top: 48,
+          bottom: 42,
+          containLabel: false,
+        },
+        xAxis: {
+          type: "category",
+          boundaryGap: false,
+          data: data.chart.labels,
+          axisLine: {
+            symbol: ["none", "arrow"],
+            lineStyle: { color: "#98a2b3" },
+          },
+          axisTick: { alignWithLabel: true },
+          axisLabel: {
+            color: "#475467",
+            fontSize: 12,
+            hideOverlap: true,
+          },
+        },
+        yAxis: {
+          type: "value",
+          scale: true,
+          axisLine: {
+            show: true,
+            symbol: ["none", "arrow"],
+            lineStyle: { color: "#98a2b3" },
+          },
+          axisLabel: { show: false },
+          splitLine: { lineStyle: { color: "#edf0f5" } },
+        },
+        dataZoom: [
+          {
+            type: "inside",
+            filterMode: "filter",
+            start: 0,
+            end: 100,
+            zoomOnMouseWheel: true,
+            moveOnMouseMove: true,
+            moveOnMouseWheel: false,
+          },
+          {
+            type: "slider",
+            filterMode: "filter",
+            left: 34,
+            right: 38,
+            height: 14,
+            bottom: 4,
+            start: 0,
+            end: 100,
+            brushSelect: false,
+          },
+        ],
+        series: [
+          {
+            id: "project-primary-line",
+            name: projectLabels.invoice_primary,
+            type: "line",
+            data: projectModes.invoice.chart.primary,
+            symbol: "circle",
+            symbolSize: 7,
+            z: 4,
+            itemStyle: { color: "#2563eb" },
+            lineStyle: { width: 2.4, color: "#2563eb" },
+            label: {
+              show: true,
+              position: "top",
+              distance: 8,
+              formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
+              color: "#2563eb",
+              fontSize: 11,
+            },
+            areaStyle: {
+              opacity: 0.18,
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: "#2563eb" },
+                { offset: 1, color: "rgba(37, 99, 235, 0)" },
+              ]),
+            },
+          },
+          {
+            id: "project-secondary-line",
+            name: projectLabels.invoice_secondary,
+            type: "line",
+            data: projectSeriesData(projectModes.invoice.chart.secondary, projectModes.invoice.chart.primary, "bottom"),
+            symbol: "circle",
+            symbolSize: 7,
+            z: 3,
+            itemStyle: { color: "#14b8a6" },
+            lineStyle: { width: 2.4, color: "#14b8a6" },
+            label: {
+              show: true,
+              position: "bottom",
+              distance: 8,
+              formatter: (params) => `¥ ${Math.round(Number(params.value || 0)).toLocaleString("zh-CN")}`,
+              color: "#0f9f8f",
+              fontSize: 11,
+            },
+            areaStyle: {
+              opacity: 0.16,
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: "#14b8a6" },
+                { offset: 1, color: "rgba(20, 184, 166, 0)" },
+              ]),
+            },
+          },
+          {
+            id: "project-secondary-points",
+            name: projectLabels.invoice_secondary,
+            type: "scatter",
+            data: projectModes.invoice.chart.secondary,
+            symbol: "circle",
+            symbolSize: 7,
+            z: 5,
+            silent: true,
+            tooltip: { show: false },
+            itemStyle: { color: "#14b8a6" },
+            label: { show: false },
+          },
+        ],
+      });
+      // 函数说明：处理页面交互和数据展示逻辑。
+      function applyProjectStatsMode() {
+        const mode = modeToggle.checked ? "receipt" : "invoice";
+        const labels = mode === "invoice"
+          ? {
+              primary: projectLabels.invoice_primary,
+              secondary: projectLabels.invoice_secondary,
+              rate: projectLabels.invoice_rate,
+            }
+          : {
+              primary: projectLabels.receipt_primary,
+              secondary: projectLabels.receipt_secondary,
+              rate: projectLabels.receipt_rate,
+            };
+        const modeData = projectModes[mode];
+        wrapper.querySelector("[data-metric-title='primary']").textContent = labels.primary;
+        wrapper.querySelector("[data-metric-value='primary']").textContent = formatMoney(modeData.primary_total);
+        wrapper.querySelector("[data-metric-title='secondary']").textContent = labels.secondary;
+        wrapper.querySelector("[data-metric-value='secondary']").textContent = formatMoney(modeData.secondary_total);
+        wrapper.querySelector("[data-metric-title='rate']").textContent = labels.rate;
+        wrapper.querySelector("[data-metric-value='rate']").textContent = `${Number(modeData.rate || 0).toFixed(1)}%`;
+        chart.setOption({
+          legend: { data: [labels.primary, labels.secondary] },
+          series: [
+            { id: "project-primary-line", name: labels.primary, data: modeData.chart.primary, label: { position: "top", distance: 8 } },
+            {
+              id: "project-secondary-line",
+              name: labels.secondary,
+              data: projectSeriesData(modeData.chart.secondary, modeData.chart.primary, "bottom"),
+              itemStyle: { color: "#14b8a6" },
+              lineStyle: { color: "#14b8a6" },
+              label: { position: "bottom", distance: 8 },
+            },
+            { id: "project-secondary-points", name: labels.secondary, data: modeData.chart.secondary },
+          ],
+        });
+      }
+      modeToggle.addEventListener("change", applyProjectStatsMode);
+      applyProjectStatsMode();
+      setTimeout(() => chart.resize(), 0);
+    }
+
+    centerModalCancel.addEventListener("click", closeCenterModal);
+    centerModalConfirm.addEventListener("click", () => {
+      if (modalConfirmHandler) {
+        modalConfirmHandler();
+      } else {
+        closeCenterModal();
+      }
+    });
+    centerModal.addEventListener("click", (event) => {
+      if (event.target === centerModal) {
+        closeCenterModal();
+      }
+    });
+    projectPeriodOptions.forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.dataset.period === projectStatsState.period) {
+          return;
+        }
+        projectStatsState.period = button.dataset.period;
+        updateProjectRangeLabels();
+      });
+    });
+    document.querySelector("#projectYearPrev").addEventListener("click", () => {
+      projectStatsState.year -= 1;
+      updateProjectRangeLabels();
+    });
+    document.querySelector("#projectYearNext").addEventListener("click", () => {
+      projectStatsState.year += 1;
+      updateProjectRangeLabels();
+    });
+    document.querySelector("#projectMonthPrev").addEventListener("click", () => {
+      projectStatsState.year -= 1;
+      updateProjectRangeLabels();
+    });
+    document.querySelector("#projectMonthNext").addEventListener("click", () => {
+      projectStatsState.year += 1;
+      updateProjectRangeLabels();
+    });
+    projectRangeCancel.addEventListener("click", () => {
+      projectRangeModal.hidden = true;
+    });
+    projectRangeApply.addEventListener("click", async () => {
+      projectRangeModal.hidden = true;
+      await loadProjectStats();
+    });
+    projectRangeModal.addEventListener("click", (event) => {
+      if (event.target === projectRangeModal) {
+        projectRangeModal.hidden = true;
+      }
+    });
+  </script>
+{% endblock %}

@@ -1,0 +1,1512 @@
+<!doctype html>
+<!-- 全站基础模板，提供统一布局、样式和侧边栏。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}合同管理系统{% endblock %}</title>
+  <style>
+    /* 全局布局和通用排版，保证桌面端页面固定在应用窗口内滚动。 */
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html,
+    body {
+      height: 100%;
+      overflow: hidden;
+    }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+      background: #f6f7f9;
+      color: #1f2937;
+    }
+    a { color: #1d4ed8; text-decoration: none; }
+    .app-shell {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .sidebar {
+      width: 156px;
+      flex: 0 0 156px;
+      background: #eef1f5;
+      border-right: 1px solid #d9dee7;
+      padding: 16px 10px;
+      display: flex;
+      flex-direction: column;
+    }
+    .brand {
+      font-weight: 700;
+      margin: 0 0 16px;
+      padding: 8px 10px;
+    }
+    .nav-link {
+      display: block;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: #1f2937;
+    }
+    .nav-link:hover,
+    .nav-link.active {
+      background: #fff;
+      border-color: #d9dee7;
+      font-weight: 700;
+    }
+    .auth-box {
+      margin-top: auto;
+      padding: 10px;
+      color: #667085;
+      font-size: 13px;
+      line-height: 1.7;
+      border-top: 1px solid #d9dee7;
+    }
+    .auth-box strong {
+      display: block;
+      color: #1f2937;
+      font-size: 14px;
+    }
+    .page {
+      flex: 1;
+      min-width: 0;
+      padding: 22px;
+      overflow: auto;
+    }
+    .page-content {
+      height: 100%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .page-title { margin: 0 0 16px; font-size: 24px; }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .detail-toolbar {
+      width: 100%;
+    }
+    .detail-maintenance-link {
+      margin-left: auto;
+    }
+    .summary {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 9px 10px;
+      border: 1px solid #cbd3df;
+      border-radius: 4px;
+      background: #fff;
+      font-family: inherit;
+    }
+    input[type="checkbox"] {
+      width: auto;
+      padding: 0;
+    }
+    .memory-field-wrap {
+      position: relative;
+    }
+    .memory-dropdown {
+      position: absolute;
+      z-index: 30;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      max-height: 180px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid #cbd3df;
+      box-shadow: 0 8px 18px rgba(16, 24, 40, 0.12);
+    }
+    .memory-dropdown[hidden] {
+      display: none;
+    }
+    .memory-option {
+      width: 100%;
+      padding: 9px 10px;
+      border: 0;
+      border-bottom: 1px solid #eef1f5;
+      background: #fff;
+      text-align: left;
+      color: #101828;
+      cursor: pointer;
+    }
+    .memory-option:hover {
+      background: #eef4ff;
+    }
+    .search-toolbar {
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .search-preview-wrap {
+      position: relative;
+      min-width: 0;
+    }
+    .search-input { width: 100%; }
+    .search-preview {
+      position: absolute;
+      z-index: 25;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      max-height: 240px;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid #cbd3df;
+      box-shadow: 0 8px 18px rgba(16, 24, 40, 0.12);
+    }
+    .search-preview[hidden] {
+      display: none;
+    }
+    .search-preview-item {
+      width: 100%;
+      padding: 9px 10px;
+      border: 0;
+      border-bottom: 1px solid #eef1f5;
+      background: #fff;
+      text-align: left;
+      color: #101828;
+      cursor: pointer;
+    }
+    .search-preview-item:hover {
+      background: #eef4ff;
+    }
+    .search-preview-title {
+      display: block;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .search-preview-meta {
+      display: block;
+      margin-top: 3px;
+      color: #667085;
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .action-toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: nowrap;
+    }
+    .toolbar-spacer { flex: 1; }
+    /* 统一按钮体系，后续页面只通过 primary/success/danger/current 区分状态。 */
+    .button, button {
+      display: inline-block;
+      padding: 9px 15px;
+      border: 1px solid #b9c3d1;
+      border-radius: 4px;
+      background: #fff;
+      color: #111827;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 14px;
+    }
+    .button.primary {
+      border-color: #2563eb;
+      background: #2563eb;
+      color: #fff;
+    }
+    .button.current,
+    .button.primary:disabled {
+      opacity: 1;
+      cursor: default;
+      pointer-events: none;
+    }
+    .button.danger {
+      border-color: #dc2626;
+      background: #dc2626;
+      color: #fff;
+    }
+    .button.success {
+      border-color: #16a34a;
+      background: #16a34a;
+      color: #fff;
+    }
+    .button.muted {
+      color: #98a2b3;
+      border-color: #d9dee7;
+      background: #f3f4f6;
+      cursor: not-allowed;
+    }
+    .switch-control {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 56px;
+      height: 38px;
+      padding: 0;
+      border: 1px solid #b9c3d1;
+      border-radius: 999px;
+      background: #fff;
+      cursor: pointer;
+      line-height: 1;
+      vertical-align: middle;
+    }
+    .switch-control input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .switch-track {
+      position: relative;
+      width: 40px;
+      height: 20px;
+      border-radius: 999px;
+      background: #d9dee7;
+      transition: background 0.16s ease;
+    }
+    .switch-track::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.28);
+      transition: transform 0.16s ease;
+    }
+    .switch-control input:checked + .switch-track {
+      background: #2563eb;
+    }
+    .switch-control input:checked + .switch-track::after {
+      transform: translateX(20px);
+    }
+    .button[aria-disabled="true"] {
+      color: #98a2b3;
+      border-color: #d9dee7;
+      background: #f3f4f6;
+      pointer-events: none;
+      cursor: not-allowed;
+    }
+    /* 通用弹窗结构，项目统计、范围选择和登录提示共用这套容器。 */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(17, 24, 39, 0.36);
+    }
+    .modal-backdrop[hidden] {
+      display: none;
+    }
+    .modal-card {
+      width: min(460px, calc(100vw - 48px));
+      max-height: min(620px, calc(100vh - 48px));
+      overflow: auto;
+      background: #fff;
+      border: 1px solid #d9dee7;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+    }
+    .modal-card.wide {
+      width: min(860px, calc(100vw - 48px));
+      height: min(640px, calc(100vh - 48px));
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .modal-card.wide .modal-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding-bottom: 10px;
+    }
+    .modal-header {
+      padding: 18px 20px 8px;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .modal-body {
+      padding: 14px 20px 18px;
+      line-height: 1.8;
+      white-space: pre-line;
+    }
+    .modal-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 0 20px 20px;
+    }
+    .modal-card.wide .modal-actions {
+      padding: 0 20px 12px;
+    }
+    .modal-left-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-right: auto;
+    }
+    .range-modal-card {
+      width: min(420px, calc(100vw - 48px));
+      height: auto;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .range-modal-card form {
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .range-modal-card .modal-header {
+      padding: 18px 20px 4px;
+    }
+    .range-modal-card .modal-body {
+      flex: 0 0 auto;
+      padding: 10px 20px 6px;
+      line-height: 1.4;
+      white-space: normal;
+    }
+    .range-modal-card .modal-actions {
+      margin-top: 2px;
+      padding: 0 20px 18px;
+    }
+    .range-section {
+      margin-top: 0;
+    }
+    .range-section:first-child {
+      margin-top: 0;
+    }
+    .range-section .field-label {
+      margin-bottom: 8px;
+    }
+    .range-options {
+      margin-bottom: 0;
+      gap: 8px;
+    }
+    .range-control-space {
+      height: 46px;
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+    }
+    .range-control-space .field-control-row {
+      width: 100%;
+      align-items: center;
+    }
+    .range-control-space .button {
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .table-wrap {
+      overflow: auto;
+      background: #fff;
+      border: 1px solid #d9dee7;
+      min-height: 0;
+    }
+    .table-wrap.fill { flex: 1; }
+    table {
+      width: 100%;
+      min-width: 0;
+      table-layout: fixed;
+      border-collapse: collapse;
+      background: #fff;
+    }
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #edf0f5;
+      border-right: 1px solid #edf0f5;
+      text-align: center;
+      white-space: nowrap;
+    }
+    td { overflow: visible; text-overflow: clip; }
+    th {
+      background: #eef1f5;
+      font-weight: 700;
+      overflow: visible;
+      text-overflow: clip;
+    }
+    .table-wrap thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    .sort-link {
+      display: block;
+      color: #111827;
+      white-space: nowrap;
+    }
+    .sort-link.active {
+      color: #1d4ed8;
+    }
+    .sort-link.active.asc::after {
+      content: " ▲";
+      font-size: 11px;
+    }
+    .sort-link.active.desc::after {
+      content: " ▼";
+      font-size: 11px;
+    }
+    tbody tr.selectable-row {
+      cursor: pointer;
+    }
+    tbody tr.selectable-row:hover td {
+      background: #f1f6ff;
+    }
+    tbody tr.selectable-row.selected td {
+      background: #b9d8ff;
+    }
+    td.name, td.party {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    td.remark {
+      max-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .contract-list-page .table-wrap {
+      overflow-x: hidden;
+    }
+    .contract-table th,
+    .contract-table td {
+      padding: 7px 5px;
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .contract-table .sort-link {
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: clip;
+    }
+    .contract-table th:nth-child(1),
+    .contract-table td:nth-child(1) { width: 3.5%; }
+    .contract-table th:nth-child(2),
+    .contract-table td:nth-child(2) { width: 14%; }
+    .contract-table th:nth-child(3),
+    .contract-table td:nth-child(3) { width: 10%; }
+    .contract-table th:nth-child(4),
+    .contract-table td:nth-child(4) { width: 7%; }
+    .contract-table th:nth-child(5),
+    .contract-table td:nth-child(5) { width: 13%; }
+    .contract-table th:nth-child(6),
+    .contract-table td:nth-child(6) { width: 8.5%; }
+    .contract-table th:nth-child(7),
+    .contract-table td:nth-child(7) { width: 7%; }
+    .contract-table th:nth-child(8),
+    .contract-table td:nth-child(8) { width: 10.5%; }
+    .contract-table th:nth-child(9),
+    .contract-table td:nth-child(9) { width: 10.5%; }
+    .contract-table th:nth-child(10),
+    .contract-table td:nth-child(10) { width: 6%; }
+    .contract-table th:nth-child(11),
+    .contract-table td:nth-child(11) { width: 5.5%; }
+    .contract-table th:nth-child(12),
+    .contract-table td:nth-child(12) { width: 4.5%; }
+    .status {
+      font-weight: 700;
+    }
+    .status.active { color: #15803d; }
+    .status.expiring { color: #a16207; }
+    .status.expired { color: #dc2626; }
+    .empty {
+      padding: 40px;
+      text-align: center;
+      color: #667085;
+      background: #fff;
+      border: 1px solid #d9dee7;
+    }
+    .panel {
+      background: #fff;
+      border: 1px solid #d9dee7;
+      padding: 18px;
+      margin-bottom: 16px;
+      overflow: auto;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px 18px;
+      max-width: 900px;
+    }
+    .form-row.full { grid-column: 1 / -1; }
+    .field-label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .field-control-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .field-control-row input,
+    .field-control-row select {
+      min-width: 0;
+      flex: 1;
+    }
+    .contract-number-row input {
+      flex: 1 1 120px;
+    }
+    .contract-number-row #id_contract_number {
+      flex: 1 0 130px;
+    }
+    .icon-button {
+      flex: 0 0 auto;
+      min-width: 42px;
+      padding: 9px 10px;
+      text-align: center;
+    }
+    .errorlist {
+      margin: 6px 0 0;
+      padding-left: 18px;
+      color: #dc2626;
+    }
+    .expiring-list {
+      margin: 0 0 14px;
+      padding: 12px 16px;
+      background: #fff8e1;
+      border: 1px solid #f4d06f;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      max-height: 118px;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    .expiring-list-title {
+      flex: 0 0 auto;
+      line-height: 1.8;
+    }
+    .expiring-list-items {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-width: 0;
+    }
+    .expiring-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 100%;
+      padding: 4px 8px;
+      border: 1px solid #f4d06f;
+      border-radius: 4px;
+      background: #fffdf3;
+      color: #1f2937;
+      line-height: 1.5;
+    }
+    .expiring-name {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .expiring-date {
+      flex: 0 0 auto;
+      color: #92400e;
+      white-space: nowrap;
+    }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    /* 统计卡片和项目统计弹窗共用的数值展示样式。 */
+    .metric-card {
+      background: #fff;
+      border: 1px solid #d9dee7;
+      padding: 16px;
+      min-height: 96px;
+    }
+    .metric-title {
+      color: #667085;
+      margin-bottom: 10px;
+    }
+    .metric-value {
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .project-stats {
+      display: grid;
+      gap: 10px;
+      white-space: normal;
+    }
+    .project-stats-name {
+      color: #475467;
+      font-size: 15px;
+    }
+    .project-stats .metric-grid {
+      margin-bottom: 0;
+      gap: 10px;
+    }
+    .project-stats .metric-card {
+      min-height: 76px;
+      padding: 10px 12px;
+    }
+    .project-stats .metric-title {
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    .project-stats .metric-value {
+      font-size: 24px;
+      line-height: 1.15;
+    }
+    .project-stats-chart {
+        height: clamp(260px, 46vh, 340px);
+        width: 100%;
+        border: 1px solid #d9dee7;
+        background: #fff;
+    }
+    /* 项目统计弹窗里的类型记录日历，按月份展示每类扩展记录。 */
+    .maintenance-calendar {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 14px;
+      white-space: normal;
+      height: 100%;
+      align-content: start;
+    }
+    .maintenance-calendar-header {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .maintenance-calendar-title {
+      color: #475467;
+      font-size: 15px;
+    }
+    .maintenance-year-control {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .maintenance-year-label {
+      min-width: 96px;
+      text-align: center;
+    }
+    .maintenance-month-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-rows: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      min-height: 0;
+    }
+    .maintenance-month {
+      min-height: 0;
+      padding: 10px;
+      border: 1px solid #d9dee7;
+      background: #fff;
+    }
+    .maintenance-month.has-records {
+      border-color: #16a34a;
+      background: #ecfdf3;
+    }
+    .maintenance-month-name {
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .maintenance-month-records {
+      display: grid;
+      gap: 4px;
+      color: #475467;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .maintenance-month-record {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .maintenance-month-record span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .project-popup-tabs {
+      display: flex;
+      gap: 10px;
+      margin-top: 0;
+      justify-content: flex-start;
+    }
+    .chart-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+      align-items: stretch;
+    }
+    .chart-area {
+      background: #fff;
+      border: 1px solid #d9dee7;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+    .chart-area h2 { margin-top: 0; }
+    .recent-panel {
+      min-height: 190px;
+    }
+    .recent-panel table {
+      flex: 1;
+    }
+    .record-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+      align-items: stretch;
+      width: 100%;
+    }
+    .record-grid .chart-area {
+      min-width: 0;
+    }
+    .record-table {
+      min-width: 0;
+      table-layout: fixed;
+    }
+    .record-table th:nth-child(1),
+    .record-table td:nth-child(1) { width: 28%; }
+    .record-table th:nth-child(2),
+    .record-table td:nth-child(2) { width: 24%; }
+    .record-table th:nth-child(3),
+    .record-table td:nth-child(3) { width: 18%; }
+    .record-table th:nth-child(4),
+    .record-table td:nth-child(4) { width: 30%; }
+    .record-table td {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mini-chart {
+      width: 100%;
+      height: 240px;
+    }
+    .mini-chart.compact {
+      height: 220px;
+    }
+    .echarts-trend {
+      flex: 1;
+      min-height: 0;
+      height: 190px;
+      width: 100%;
+    }
+    .file-list {
+      display: grid;
+      gap: 8px;
+    }
+    .file-list-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    .file-list-header .field-label {
+      margin-bottom: 0;
+    }
+    .hidden-file-input {
+      display: none;
+    }
+    .file-item {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 10px;
+      border: 1px solid #d9dee7;
+      background: #fff;
+    }
+    .file-empty {
+      padding: 18px;
+      border: 1px dashed #cbd3df;
+      color: #667085;
+      text-align: center;
+      background: #fff;
+    }
+    .file-item[draggable="true"] {
+      cursor: move;
+    }
+    .file-item.dragging {
+      opacity: 0.55;
+      border-color: #2563eb;
+      background: #f1f6ff;
+    }
+    .file-item span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-name {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-preview-name {
+      display: inline-block;
+      max-width: 100%;
+      vertical-align: middle;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-preview-button {
+      display: inline-flex;
+      max-width: 100%;
+      min-width: 0;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    td.file-cell {
+      min-width: 0;
+      max-width: 0;
+      overflow: hidden;
+    }
+    .legacy-file-item {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .file-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .pending-marker {
+      color: #667085;
+      font-weight: 600;
+    }
+    .record-table-wrap {
+      overflow-x: hidden;
+    }
+    .batch-record-table {
+      table-layout: fixed;
+    }
+    .batch-record-table th,
+    .batch-record-table td {
+      padding: 8px 6px;
+    }
+    .batch-record-table input,
+    .batch-record-table select,
+    .batch-record-table .button {
+      min-width: 0;
+      width: 100%;
+    }
+    .batch-record-table .button {
+      padding-left: 8px;
+      padding-right: 8px;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .money-record-table th:nth-child(1),
+    .money-record-table td:nth-child(1) { width: 18%; }
+    .money-record-table th:nth-child(2),
+    .money-record-table td:nth-child(2) { width: 16%; }
+    .money-record-table th:nth-child(3),
+    .money-record-table td:nth-child(3) { width: 19%; }
+    .money-record-table th:nth-child(4),
+    .money-record-table td:nth-child(4) { width: 19%; }
+    .money-record-table th:nth-child(5),
+    .money-record-table td:nth-child(5) { width: 20%; }
+    .money-record-table th:nth-child(6),
+    .money-record-table td:nth-child(6) { width: 8%; }
+    .maintenance-record-table th:nth-child(1),
+    .maintenance-record-table td:nth-child(1) { width: 18%; }
+    .maintenance-record-table th:nth-child(2),
+    .maintenance-record-table td:nth-child(2) { width: 18%; }
+    .maintenance-record-table th:nth-child(3),
+    .maintenance-record-table td:nth-child(3) { width: 52%; }
+    .maintenance-record-table th:nth-child(4),
+    .maintenance-record-table td:nth-child(4) { width: 12%; }
+    .dashboard-page {
+      font-size: 14px;
+      overflow: hidden;
+    }
+    .dashboard-page .page-title {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+    }
+    .dashboard-title-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .dashboard-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1.15fr) minmax(220px, 0.85fr);
+      gap: 10px;
+    }
+    .dashboard-top-row {
+      min-height: 0;
+    }
+    .dashboard-top-controls {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .dashboard-page .metric-grid {
+      gap: 10px;
+      margin-bottom: 0;
+    }
+    .dashboard-page .metric-card {
+      min-height: 76px;
+      padding: 12px 14px;
+    }
+    .dashboard-page .metric-title {
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    .dashboard-page .metric-value {
+      font-size: 20px;
+    }
+    .dashboard-page .chart-grid {
+      min-height: 0;
+      gap: 10px;
+    }
+    .dashboard-page .chart-area {
+      min-height: 0;
+      padding: 12px;
+    }
+    .dashboard-page .chart-area .table-wrap {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+    .dashboard-page .chart-area h2 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+    .dashboard-page .mini-chart.compact {
+      flex: 1;
+      min-height: 0;
+      height: 170px;
+    }
+    .dashboard-page .echarts-trend {
+      flex: 1;
+      min-height: 0;
+      height: 145px;
+    }
+    .dashboard-page .empty {
+      padding: 24px;
+      font-size: 14px;
+    }
+    .dashboard-page th,
+    .dashboard-page td {
+      padding: 7px 8px;
+      font-size: 13px;
+    }
+    .dashboard-page .recent-panel {
+      min-height: 0;
+    }
+    .dashboard-page .recent-panel .table-wrap {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+    /* 合同列表和详情页各自控制内部滚动，避免浏览器窗口出现多层横向滚动。 */
+    .contract-list-page {
+      overflow: hidden;
+    }
+    .content-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+    .detail-page {
+      overflow: hidden;
+    }
+    .detail-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .detail-page .panel {
+      margin-bottom: 0;
+      flex: 0 0 auto;
+    }
+    .detail-page .panel > table {
+      table-layout: fixed;
+    }
+    .detail-page .panel > table th {
+      white-space: nowrap;
+    }
+    .detail-page .panel > table th:nth-child(1),
+    .detail-page .panel > table th:nth-child(3) {
+      width: 13%;
+    }
+    .detail-page .panel > table td:nth-child(2),
+    .detail-page .panel > table td:nth-child(4) {
+      width: 37%;
+    }
+    .detail-page .panel > table td {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .inline-remark-form {
+      display: block;
+      width: 100%;
+    }
+    .inline-remark-editor {
+      min-width: 0;
+      width: 100%;
+    }
+    .inline-remark-display {
+      display: block;
+      width: 100%;
+      min-height: 20px;
+      padding: 4px 6px;
+      border: 1px solid transparent;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .inline-remark-display.empty {
+      color: #98a2b3;
+      text-align: center;
+    }
+    .inline-remark-editor:not(.editing) .inline-remark-form {
+      display: none !important;
+    }
+    .inline-remark-editor.editing .inline-remark-display {
+      display: none !important;
+    }
+    .inline-remark-editor.editing .inline-remark-form {
+      display: block !important;
+    }
+    .inline-remark-form textarea {
+      min-height: 38px;
+      max-height: 96px;
+      resize: vertical;
+      line-height: 1.5;
+      width: 100%;
+      display: block;
+    }
+    .detail-page .record-grid {
+      flex: 1;
+      min-height: 360px;
+    }
+    .detail-page .record-grid.detail-record-grid-fixed {
+      flex: 1;
+      min-height: 360px;
+    }
+    .detail-page .record-grid.maintenance-record-grid-full {
+      grid-template-columns: 1fr;
+      flex: 1;
+      min-height: 360px;
+    }
+    .detail-page .maintenance-record-grid-full .chart-area {
+      width: 100%;
+    }
+    .maintenance-record-detail-table {
+      font-size: 14px;
+    }
+    .detail-page .record-grid .chart-area {
+      min-width: 0;
+    }
+    .detail-page .record-grid .chart-area {
+      min-height: 0;
+    }
+    .detail-page .chart-area form {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+      flex-direction: column;
+    }
+    .record-panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .record-panel-title h2 {
+      margin: 0;
+    }
+    .record-delete-button {
+      flex: 0 0 auto;
+    }
+    /* 详情页记录表使用固定列宽，只有备注和文件名允许省略。 */
+    .detail-record-table {
+      table-layout: fixed;
+      min-width: 0;
+      font-size: 12px;
+    }
+    .detail-record-table .select-colgroup { width: 24px; }
+    .detail-record-table .standard-select-colgroup { width: 28px; }
+    .detail-record-table .date-colgroup { width: 104px; }
+    .detail-record-table .money-colgroup { width: 104px; }
+    .detail-record-table .file-colgroup { width: 112px; }
+    .detail-record-table .month-colgroup { width: 104px; }
+    .detail-record-table .remark-colgroup { width: auto; }
+    .detail-record-table .select-col {
+      width: 24px;
+      min-width: 24px;
+      max-width: 24px;
+      padding-left: 1px;
+      padding-right: 1px;
+      text-align: center;
+    }
+    .detail-record-table col.standard-select-colgroup ~ col,
+    .standard-record-table .select-col {
+      width: 28px;
+      min-width: 28px;
+      max-width: 28px;
+    }
+    .detail-record-table input[type="checkbox"] {
+      width: 12px;
+      height: 12px;
+      margin: 0;
+      vertical-align: middle;
+    }
+    .detail-record-table .file-preview-button {
+      width: 100%;
+      max-width: 104px;
+      height: 34px;
+      padding: 6px 8px;
+      margin: 0 auto;
+    }
+    .detail-record-table th,
+    .detail-record-table td {
+      box-sizing: border-box;
+      overflow: hidden;
+      text-overflow: clip;
+      white-space: nowrap;
+      padding: 6px 5px;
+    }
+    .detail-page .record-grid .table-wrap {
+      overflow-x: hidden;
+    }
+    .standard-record-table td:not(.remark),
+    .standard-record-table th {
+      overflow: hidden;
+      text-overflow: clip;
+      white-space: nowrap;
+    }
+    .detail-record-table th {
+      text-overflow: clip;
+      white-space: nowrap;
+    }
+    .detail-record-table td.remark {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .detail-page .record-grid .table-wrap,
+    .detail-page .record-grid .empty {
+      flex: 1;
+      min-height: 0;
+    }
+    .detail-page .maintenance-area {
+      width: calc((100% - 16px) / 2);
+      max-width: calc((100% - 16px) / 2);
+      flex: 0 0 270px;
+      min-height: 270px;
+    }
+    .maintenance-page-area {
+      width: calc((100% - 16px) / 2);
+      min-height: 360px;
+    }
+    .record-file-modal-card {
+      width: min(380px, calc(100vw - 48px));
+      max-height: none;
+      overflow: hidden;
+    }
+    .record-file-modal-card .modal-header {
+      padding: 22px 24px 10px;
+    }
+    .record-file-modal-card form {
+      margin: 0;
+    }
+    .record-file-actions {
+      padding: 12px 24px 22px;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .button.disabled,
+    .button[aria-disabled="true"] {
+      color: #98a2b3;
+      border-color: #d9dee7;
+      background: #f3f4f6;
+      cursor: not-allowed;
+    }
+    @media (max-width: 900px) {
+      .app-shell { display: block; }
+      .sidebar {
+        width: auto;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .brand { margin: 0; }
+      .auth-box { margin-top: 0; margin-left: auto; border-top: 0; }
+      .metric-grid,
+      .chart-grid,
+      .record-grid {
+        grid-template-columns: 1fr;
+      }
+      .search-toolbar {
+        grid-template-columns: 1fr;
+      }
+      .action-toolbar {
+        flex-wrap: wrap;
+      }
+      .toolbar-spacer {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- 页面主体由左侧导航和右侧内容区组成。 -->
+  <div class="app-shell">
+    <!-- 左侧导航栏显示模块入口和当前登录模式。 -->
+    <aside class="sidebar">
+      <div class="brand">金达铭公司</div>
+      <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'contracts:dashboard' %}">统计总览</a>
+      <a class="nav-link {% if active_nav == 'contracts' %}active{% endif %}" href="{% url 'contracts:contract_list' %}">合同列表</a>
+      <a class="nav-link {% if active_nav == 'trash' %}active{% endif %}" href="{% url 'contracts:trash' %}">回收站</a>
+      <a
+        class="nav-link {% if active_nav == 'settings' %}active{% endif %} {% if not can_manage %}requires-admin-login{% endif %}"
+        href="{% if not can_manage %}{% url 'contracts:login' %}{% else %}{% url 'contracts:settings' %}{% endif %}"
+      >设置</a>
+      <div class="auth-box">
+        {% if is_admin_mode %}
+          <strong>管理员模式</strong>
+          <a href="{% url 'contracts:logout' %}">退出登录</a>
+        {% elif is_normal_mode %}
+          <strong>普通用户</strong>
+          <a href="{% url 'contracts:logout' %}">退出普通用户</a>
+        {% elif is_guest_mode %}
+          <strong>游客模式</strong>
+          <a href="{% url 'contracts:logout' %}">退出游客</a>
+        {% else %}
+          <strong>未登录</strong>
+          <a href="{% url 'contracts:login' %}">登录 / 游客登入</a>
+        {% endif %}
+      </div>
+    </aside>
+    <!-- 子模板内容会渲染到右侧主内容区。 -->
+    <main class="page">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <!-- 游客访问管理员功能时显示登录提示。 -->
+  <div class="modal-backdrop" id="adminLoginModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="adminLoginModalTitle">
+      <div class="modal-header" id="adminLoginModalTitle">需要管理员登录</div>
+      <div class="modal-body">设置功能需要管理员权限。是否前往登录？</div>
+      <div class="modal-actions">
+        <button class="button" id="adminLoginCancel" type="button">取消</button>
+        <button class="button primary" id="adminLoginConfirm" type="button">登录</button>
+      </div>
+    </div>
+  </div>
+  <!-- 全局点击空白区域时清除表格选中状态。 -->
+  <script>
+    const adminLoginModal = document.querySelector("#adminLoginModal");
+    const adminLoginCancel = document.querySelector("#adminLoginCancel");
+    const adminLoginConfirm = document.querySelector("#adminLoginConfirm");
+    const adminOnlyLinks = document.querySelectorAll(".requires-admin-login");
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function closeInlineRemarkEditor(editor) {
+      const display = editor.querySelector(".inline-remark-display");
+      const panel = editor.querySelector(".inline-remark-form");
+      editor.classList.remove("editing");
+      if (display) {
+        display.hidden = false;
+      }
+      if (panel) {
+        panel.hidden = true;
+      }
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function openInlineRemarkEditor(editor) {
+      const display = editor.querySelector(".inline-remark-display");
+      const panel = editor.querySelector(".inline-remark-form");
+      editor.classList.add("editing");
+      if (display) {
+        display.hidden = true;
+      }
+      if (panel) {
+        panel.hidden = false;
+      }
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function getInlineRemarkToken(editor) {
+      const tokenInput = editor.querySelector("input[name='csrfmiddlewaretoken']");
+      return tokenInput ? tokenInput.value : "";
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    async function saveInlineRemarkEditor(editor) {
+      const display = editor.querySelector(".inline-remark-display");
+      const panel = editor.querySelector(".inline-remark-form");
+      const textarea = editor.querySelector("textarea");
+      if (!display || !panel || !textarea || !panel.dataset.action) {
+        closeInlineRemarkEditor(editor);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("remark", textarea.value);
+      formData.append("next", window.location.pathname + window.location.search);
+
+      const response = await fetch(panel.dataset.action, {
+        method: "POST",
+        body: formData,
+        headers: {
+          "X-CSRFToken": getInlineRemarkToken(editor),
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const remark = textarea.value.trim();
+      display.textContent = remark || "点击添加备注";
+      display.title = remark;
+      display.classList.toggle("empty", !remark);
+      closeInlineRemarkEditor(editor);
+    }
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function initInlineRemarkEditors() {
+      document.querySelectorAll(".inline-remark-editor").forEach((editor) => {
+        const display = editor.querySelector(".inline-remark-display");
+        const textarea = editor.querySelector("textarea");
+        const panel = editor.querySelector(".inline-remark-form");
+        if (!display || !textarea || !panel) {
+          return;
+        }
+        closeInlineRemarkEditor(editor);
+        display.addEventListener("click", (event) => {
+          event.stopPropagation();
+          document.querySelectorAll(".inline-remark-editor.editing").forEach((item) => {
+            if (item !== editor) {
+              closeInlineRemarkEditor(item);
+            }
+          });
+          openInlineRemarkEditor(editor);
+          textarea.focus();
+        });
+        textarea.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            saveInlineRemarkEditor(editor);
+          } else if (event.key === "Escape") {
+            closeInlineRemarkEditor(editor);
+          }
+        });
+        textarea.addEventListener("blur", () => {
+          setTimeout(() => {
+            if (!editor.contains(document.activeElement)) {
+              closeInlineRemarkEditor(editor);
+            }
+          }, 0);
+        });
+        editor.addEventListener("click", (event) => {
+          event.stopPropagation();
+        });
+      });
+    }
+
+    initInlineRemarkEditors();
+
+    document.addEventListener("pointerdown", (event) => {
+      document.querySelectorAll(".inline-remark-editor.editing").forEach((editor) => {
+        if (!editor.contains(event.target)) {
+          closeInlineRemarkEditor(editor);
+        }
+      });
+    }, true);
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function closeAdminLoginModal() {
+      adminLoginModal.hidden = true;
+    }
+
+    adminOnlyLinks.forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        adminLoginModal.hidden = false;
+        adminLoginConfirm.focus();
+      });
+    });
+
+    adminLoginCancel.addEventListener("click", closeAdminLoginModal);
+    adminLoginConfirm.addEventListener("click", () => {
+      window.location.href = "{% url 'contracts:login' %}";
+    });
+    adminLoginModal.addEventListener("click", (event) => {
+      if (event.target === adminLoginModal) {
+        closeAdminLoginModal();
+      }
+    });
+
+    // 函数说明：处理页面交互和数据展示逻辑。
+    function clearInteractiveSelection() {
+      document.querySelectorAll(".selectable-row.selected").forEach((row) => {
+        row.classList.remove("selected");
+      });
+      document.querySelectorAll(".row-action").forEach((button) => {
+        button.href = "#";
+        button.setAttribute("aria-disabled", "true");
+      });
+    }
+
+    document.addEventListener("click", (event) => {
+      document.querySelectorAll(".inline-remark-editor.editing").forEach((editor) => {
+        closeInlineRemarkEditor(editor);
+      });
+      const keepSelection = event.target.closest(
+        "a, button, input, select, textarea, label, .selectable-row, [data-keep-selection]"
+      );
+      if (!keepSelection) {
+        if (typeof window.clearPageSelection === "function") {
+          window.clearPageSelection();
+        } else {
+          clearInteractiveSelection();
+        }
+      }
+    });
+  </script>
+</body>
+</html>

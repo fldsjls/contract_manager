@@ -8,13 +8,10 @@ __pycache__/
 venv/
 env/
 
-# Local database and uploaded contract files
-data/*.db
-data/*.db-journal
-data/*.sqlite
-data/*.sqlite3
-contracts/*
-!contracts/.gitkeep
+# Local database and uploaded files
+db.sqlite3
+media/
+staticfiles/
 
 # PyInstaller build output
 build/

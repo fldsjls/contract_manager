@@ -56,6 +56,9 @@
         <button class="button{% if has_filters %} primary{% endif %}" id="filterButton" type="button">筛选</button>
         <a class="button" href="{% url 'contracts:contract_list' %}{% if keyword %}?q={{ keyword|urlencode }}{% endif %}">清除筛选</a>
         <a class="button" href="{% url 'contracts:contract_list_export' %}{% if export_query %}?{{ export_query }}{% endif %}">导出 Excel</a>
+        {% if is_admin_mode or is_super_admin_mode %}
+          <a class="button" href="{% url 'contracts:contract_import' %}">导入 Excel</a>
+        {% endif %}
         <button class="button danger row-action" id="deleteButton" type="button" data-url-template="{% url 'contracts:contract_delete' 0 %}" aria-disabled="true">删除合同</button>
       {% endif %}
     </div>

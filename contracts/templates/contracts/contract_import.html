@@ -1,0 +1,158 @@
+{% extends "contracts/base.html" %}
+
+{% block title %}导入 Excel{% endblock %}
+
+{% block content %}
+  <h1 class="page-title">导入 Excel</h1>
+
+  <style>
+    .contract-import-preview-table {
+      table-layout: fixed;
+      min-width: 0;
+      width: 100%;
+      font-size: 13px;
+    }
+    .contract-import-preview-table th,
+    .contract-import-preview-table td {
+      padding: 8px 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .contract-import-preview-table th {
+      font-size: 13px;
+      line-height: 1.25;
+    }
+    .contract-import-preview-table th:nth-child(1),
+    .contract-import-preview-table td:nth-child(1) { width: 54px; }
+    .contract-import-preview-table th:nth-child(2),
+    .contract-import-preview-table td:nth-child(2) { width: 190px; }
+    .contract-import-preview-table th:nth-child(3),
+    .contract-import-preview-table td:nth-child(3) { width: 112px; }
+    .contract-import-preview-table th:nth-child(4),
+    .contract-import-preview-table td:nth-child(4) { width: 88px; }
+    .contract-import-preview-table th:nth-child(5),
+    .contract-import-preview-table td:nth-child(5) { width: 160px; }
+    .contract-import-preview-table th:nth-child(6),
+    .contract-import-preview-table td:nth-child(6) { width: 112px; }
+    .contract-import-preview-table th:nth-child(7),
+    .contract-import-preview-table td:nth-child(7) { width: 88px; }
+    .contract-import-preview-table th:nth-child(8),
+    .contract-import-preview-table td:nth-child(8),
+    .contract-import-preview-table th:nth-child(9),
+    .contract-import-preview-table td:nth-child(9) { width: 112px; }
+    .contract-import-preview-table th:nth-child(10),
+    .contract-import-preview-table td:nth-child(10) { width: 82px; }
+    .contract-import-preview-table th:nth-child(11),
+    .contract-import-preview-table td:nth-child(11) { width: 76px; }
+    .contract-import-preview-table th:nth-child(12),
+    .contract-import-preview-table td:nth-child(12) { width: auto; }
+    .contract-import-preview-table .truncate-cell {
+      cursor: help;
+      font-size: 12px;
+      line-height: 1.25;
+      max-width: 0;
+    }
+    .contract-import-confirm-button:disabled {
+      border-color: #d9dee7;
+      background: #e5e7eb;
+      color: #98a2b3;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+  </style>
+
+  <form class="panel" id="contractImportUploadForm" method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="preview">
+    {% if form.non_field_errors %}
+      {{ form.non_field_errors }}
+    {% endif %}
+    {{ form.excel_file }}
+    {{ form.excel_file.errors }}
+    <div class="toolbar" style="margin-top: 18px;">
+      <button class="button primary" id="contractImportFileButton" type="button">上传并预览</button>
+      <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
+    </div>
+  </form>
+
+  {% if parse_errors %}
+    <div class="panel" style="margin-top: 16px;">
+      {% for error in parse_errors %}
+        <p>{{ error }}</p>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if results and not completed %}
+    <div class="panel" style="margin-top: 16px;">
+      <div class="toolbar" style="margin-bottom: 12px;">
+        <span>共 {{ results|length }} 行</span>
+        <span>可导入 {{ valid_count }} 行</span>
+        <span>错误 {{ error_count }} 行</span>
+      </div>
+      {% if confirm_error %}
+        <ul class="errorlist"><li>{{ confirm_error }}</li></ul>
+      {% endif %}
+      <div class="table-wrap">
+        <table class="contract-import-preview-table">
+          <thead>
+            <tr>
+              {% for label in preview_columns %}
+                <th>{{ label }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in results %}
+              <tr>
+                {% for cell in row.preview_cells %}
+                  <td{% if cell.css_class %} class="{{ cell.css_class }}"{% endif %}{% if cell.title %} title="{{ cell.title }}"{% endif %}>{{ cell.value }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if completed %}
+        <div class="toolbar" style="margin-top: 16px;">
+          <a class="button primary" href="{% url 'contracts:contract_list' %}">返回列表</a>
+          <a class="button" href="{% url 'contracts:contract_import' %}">继续导入</a>
+        </div>
+      {% else %}
+        <form method="post" style="margin-top: 16px;">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="confirm">
+          <input type="hidden" name="payload" value="{{ payload }}">
+          <div class="toolbar" style="margin-top: 12px;">
+            <button
+              class="button primary contract-import-confirm-button"
+              id="contractImportConfirmButton"
+              type="submit"
+              {% if not can_confirm_import %}disabled{% endif %}
+            >确认导入</button>
+          </div>
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <script>
+    const importUploadForm = document.querySelector("#contractImportUploadForm");
+    const importFileInput = document.querySelector("#id_excel_file");
+    const importFileButton = document.querySelector("#contractImportFileButton");
+
+    if (importUploadForm && importFileInput && importFileButton) {
+      importFileButton.addEventListener("click", () => {
+        importFileInput.value = "";
+        importFileInput.click();
+      });
+      importFileInput.addEventListener("change", () => {
+        if (importFileInput.files.length) {
+          importUploadForm.submit();
+        }
+      });
+    }
+
+  </script>
+{% endblock %}

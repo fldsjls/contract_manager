@@ -1,7 +1,7 @@
 from django import forms
 from django.utils import timezone
 
-from .models import AppSetting, Contract, InvoiceRecord, PaymentRecord
+from .models import AppSetting, Contract, InvoiceRecord, PaymentRecord, normalize_contract_number_part
 
 
 # 合同新增和编辑使用的表单。
@@ -47,8 +47,29 @@ class ContractForm(forms.ModelForm):
         self.fields["original_contract_folder"].label = "文件夹编号"
         self.fields["original_contract_inner_number"].label = "文件编号"
         self.fields["archive_years"].label = "归档时间（年）"
+        self.fields["contract_number"].widget.attrs.update(
+            {
+                "readonly": "readonly",
+                "aria-readonly": "true",
+                "title": "默认合同编号自动生成，不能手动修改。",
+            }
+        )
         self.fields["original_contract_folder"].widget.attrs.setdefault("placeholder", "文件夹编号")
         self.fields["original_contract_inner_number"].widget.attrs.setdefault("placeholder", "文件编号")
+        self.fields["original_contract_folder"].widget.attrs.update(
+            {
+                "maxlength": "2",
+                "inputmode": "numeric",
+                "pattern": r"\d{0,2}",
+            }
+        )
+        self.fields["original_contract_inner_number"].widget.attrs.update(
+            {
+                "maxlength": "4",
+                "inputmode": "numeric",
+                "pattern": r"\d{0,4}",
+            }
+        )
 
     # 方法说明：执行表单字段或整表校验。
     def clean_contract_number(self):
@@ -66,6 +87,14 @@ class ContractForm(forms.ModelForm):
         return value
 
     # 方法说明：执行表单字段或整表校验。
+    def clean_original_contract_folder(self):
+        return normalize_contract_number_part(self.cleaned_data.get("original_contract_folder"), 2)
+
+    # 方法说明：执行表单字段或整表校验。
+    def clean_original_contract_inner_number(self):
+        return normalize_contract_number_part(self.cleaned_data.get("original_contract_inner_number"), 4)
+
+    # 方法说明：执行表单字段或整表校验。
     def clean(self):
         # 校验维保合同必须填写截止日期。
         cleaned_data = super().clean()
@@ -74,14 +103,14 @@ class ContractForm(forms.ModelForm):
         if contract_type == "维保" and not end_date:
             self.add_error("end_date", "维保合同必须填写截止日期。")
 
-        folder = str(cleaned_data.get("original_contract_folder") or "").strip()
-        file_number = str(cleaned_data.get("original_contract_inner_number") or "").strip()
+        folder = normalize_contract_number_part(cleaned_data.get("original_contract_folder"), 2)
+        file_number = normalize_contract_number_part(cleaned_data.get("original_contract_inner_number"), 4)
         if folder and file_number:
             base_date = cleaned_data.get("sign_date") or cleaned_data.get("start_date") or timezone.localdate()
             display_contract_number = (
                 f"{base_date.year}"
-                f"{folder.zfill(2)}"
-                f"{file_number.zfill(4)}"
+                f"{folder}"
+                f"{file_number}"
                 f"{Contract.CONTRACT_TYPE_CODES.get(contract_type, '06')}"
             )
             candidates = Contract.objects.filter(
@@ -101,7 +130,44 @@ class ContractForm(forms.ModelForm):
 # 生成当前分钟对应的默认合同编号。
 # 函数说明：封装可复用的业务处理。
 def default_contract_number() -> str:
-    return timezone.localtime().strftime("%Y%m%d%H%M")
+    return default_contract_numbers()[0]
+
+
+def default_contract_numbers(count: int = 1) -> list[str]:
+    if count < 1:
+        return []
+
+    prefix = timezone.localtime().strftime("%y%m%d%H%M")
+    used_suffixes = {
+        int(number[-2:])
+        for number in Contract.objects.filter(contract_number__startswith=prefix).values_list(
+            "contract_number", flat=True
+        )
+        if len(number) == 12 and number[-2:].isdigit()
+    }
+    available_suffixes = [suffix for suffix in range(1, 100) if suffix not in used_suffixes]
+    if count > len(available_suffixes):
+        raise forms.ValidationError("当前分钟可用合同编号不足，请稍后再试或减少本次导入数量。")
+    return [f"{prefix}{suffix:02d}" for suffix in available_suffixes[:count]]
+
+
+class ContractImportUploadForm(forms.Form):
+    excel_file = forms.FileField(label="Excel 文件")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["excel_file"].widget.attrs.update(
+            {
+                "class": "hidden-file-input",
+                "accept": ".xlsx",
+            }
+        )
+
+    def clean_excel_file(self):
+        uploaded_file = self.cleaned_data["excel_file"]
+        if not uploaded_file.name.lower().endswith(".xlsx"):
+            raise forms.ValidationError("请上传 .xlsx 格式的 Excel 文件。")
+        return uploaded_file
 
 
 # 开票和收票表单共用的基础表单。
@@ -153,4 +219,4 @@ class AppSettingForm(forms.ModelForm):
     # 元数据类：配置字段、排序或显示名称。
     class Meta:
         model = AppSetting
-        fields = ["delete_source_file", "image_root_path"]
+        fields = ["allow_partial_import_with_errors", "image_root_path"]

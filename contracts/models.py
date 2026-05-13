@@ -11,6 +11,18 @@ from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 
 
+def normalize_contract_number_part(value, width: int) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if re.fullmatch(r"\d+\.0+", text):
+        text = str(int(float(text)))
+    digits = re.sub(r"\D", "", text)
+    if not digits:
+        return ""
+    return digits[-width:].zfill(width)
+
+
 # 清理项目文件夹名称，避免 Windows 和 URL 路径中的非法字符。
 # 函数说明：封装可复用的业务处理。
 def safe_project_folder_name(contract: "Contract") -> str:
@@ -134,8 +146,8 @@ class Contract(models.Model):
         if self.uses_default_display_contract_number:
             return self.contract_number
         year = str((self.sign_date or self.start_date or self.created_at).year)
-        folder = str(self.original_contract_folder).strip().zfill(2)
-        inner_number = str(self.original_contract_inner_number).strip().zfill(4)
+        folder = normalize_contract_number_part(self.original_contract_folder, 2)
+        inner_number = normalize_contract_number_part(self.original_contract_inner_number, 4)
         type_code = self.CONTRACT_TYPE_CODES.get(self.contract_type, "06")
         return f"{year}{folder}{inner_number}{type_code}"
 
@@ -143,7 +155,10 @@ class Contract(models.Model):
     @property
     def uses_default_display_contract_number(self) -> bool:
         # 文件编号或文件编号任一缺失时，列表回退显示默认自动编号。
-        return not (self.original_contract_folder and self.original_contract_inner_number)
+        return not (
+            normalize_contract_number_part(self.original_contract_folder, 2)
+            and normalize_contract_number_part(self.original_contract_inner_number, 4)
+        )
 
     # 函数说明：封装可复用的业务处理。
     @property
@@ -409,7 +424,7 @@ class MaintenanceRecordFileVersion(models.Model):
 # 保存系统级开关配置。
 # 模型类：定义数据库字段和业务属性。
 class AppSetting(models.Model):
-    delete_source_file = models.BooleanField("上传时是否删除原文件", default=False)
+    allow_partial_import_with_errors = models.BooleanField("Excel 导入存在错误时仍导入通过行", default=False)
     image_root_path = models.CharField(
         "图片保存位置",
         max_length=500,

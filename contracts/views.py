@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from functools import wraps
 from html import escape
@@ -10,12 +10,16 @@ import re
 import socket
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import zipfile
+import xml.etree.ElementTree as ET
 
 from django.contrib.auth import authenticate, get_user_model, login, logout, update_session_auth_hash
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from django.conf import settings
+from django.core import signing
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -28,8 +32,10 @@ from reversion.models import Revision, Version
 from .forms import (
     AppSettingForm,
     ContractForm,
+    ContractImportUploadForm,
     LoginForm,
     default_contract_number,
+    default_contract_numbers,
 )
 from .labels import UI_LABELS, invoice_mode_labels, project_record_labels
 from .models import (
@@ -44,6 +50,7 @@ from .models import (
     PaymentRecord,
     PaymentRecordFileVersion,
     SettlementFile,
+    normalize_contract_number_part,
     safe_text_folder_name,
 )
 
@@ -395,12 +402,6 @@ def file_response_from_setting(file_field, download: bool = False):
 # 函数说明：封装可复用的业务处理。
 def save_contract_files(contract: Contract, uploaded_files) -> None:
     uploaded_files = list(uploaded_files)
-    if uploaded_files and AppSetting.current().delete_source_file:
-        delete_contract_files(contract.files.values_list("id", flat=True))
-        if contract.file:
-            delete_file_from_storage(contract.file)
-            contract.file = None
-            contract.save(update_fields=["file"])
     next_order = contract.files.count()
     for index, item in enumerate(uploaded_files):
         ContractFile.objects.create(
@@ -415,12 +416,6 @@ def save_contract_files(contract: Contract, uploaded_files) -> None:
 # 函数说明：封装可复用的业务处理。
 def save_contract_files_and_return(contract: Contract, uploaded_files) -> list[ContractFile]:
     uploaded_files = list(uploaded_files)
-    if uploaded_files and AppSetting.current().delete_source_file:
-        delete_contract_files(contract.files.values_list("id", flat=True))
-        if contract.file:
-            delete_file_from_storage(contract.file)
-            contract.file = None
-            contract.save(update_fields=["file"])
     next_order = contract.files.count()
     return [
         ContractFile.objects.create(
@@ -719,7 +714,7 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
 def maintenance_record_number(contract: Contract, record_date) -> str:
     record_year = record_date.year if hasattr(record_date, "year") else int(str(record_date)[:4])
     sign_year = (contract.sign_date or contract.start_date or timezone.localdate()).year
-    file_number = str(contract.original_contract_inner_number or "").strip().zfill(4)
+    file_number = normalize_contract_number_part(contract.original_contract_inner_number, 4)
     type_code = Contract.CONTRACT_TYPE_CODES.get(contract.contract_type, "06")
     period_sequence = f"{record_year - sign_year + 1:02d}"
     return f"{file_number}{record_year}{period_sequence}{type_code}"
@@ -1577,7 +1572,9 @@ def contract_export_column_widths(headers, rows) -> list[int]:
         candidates = [header]
         candidates.extend(row[column_index] for row in rows if column_index < len(row))
         content_width = max(text_display_width(value) for value in candidates) + 2
-        widths.append(max(min_widths[column_index], min(content_width, max_widths[column_index])))
+        min_width = min_widths[column_index] if column_index < len(min_widths) else 12
+        max_width = max_widths[column_index] if column_index < len(max_widths) else 36
+        widths.append(max(min_width, min(content_width, max_width)))
     return widths
 
 
@@ -1901,6 +1898,428 @@ def contract_list_export(request):
     )
     response["Content-Disposition"] = 'attachment; filename="contract_list.xlsx"'
     return response
+
+
+CONTRACT_IMPORT_COLUMNS = [
+    ("contract_name", "合同名称"),
+    ("contract_type", "合同类型"),
+    ("party_name", "甲方名称"),
+    ("amount", "合同金额"),
+    ("invoice_status", "是否开票"),
+    ("sign_date", "签订日期"),
+    ("start_date", "开始日期"),
+    ("end_date", "截止日期"),
+    ("responsible_person", "负责人"),
+    ("original_contract_folder", "文件夹编号"),
+    ("original_contract_inner_number", "文件编号"),
+    ("archive_years", "归档时间（年）"),
+    ("remark", "备注"),
+]
+CONTRACT_IMPORT_PREVIEW_COLUMNS = [
+    "序号",
+    UI_LABELS["contract_name"],
+    UI_LABELS["contract_number"],
+    UI_LABELS["contract_type"],
+    UI_LABELS["party_name"],
+    UI_LABELS["contract_amount"],
+    UI_LABELS["invoice_status"],
+    UI_LABELS["start_date"],
+    UI_LABELS["end_date"],
+    UI_LABELS["responsible_person"],
+    UI_LABELS["status"],
+    "错误",
+]
+CONTRACT_IMPORT_HEADER_ALIASES = {
+    "金额": "amount",
+    "合同金额": "amount",
+    "归档时间": "archive_years",
+    "归档时间（年）": "archive_years",
+    "归档年限": "archive_years",
+    "原合同文件夹": "original_contract_folder",
+    "文件夹编号": "original_contract_folder",
+    "原合同编号": "original_contract_inner_number",
+    "文件编号": "original_contract_inner_number",
+}
+
+
+def normalize_import_cell(value):
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def normalize_import_value(field_name: str, value):
+    text = normalize_import_cell(value)
+    if not text:
+        return ""
+
+    if field_name in {"sign_date", "start_date", "end_date"}:
+        normalized = text.replace("年", "/").replace("月", "/").replace("日", "")
+        normalized = normalized.replace(".", "/").replace("-", "/")
+        match = re.fullmatch(r"(\d{4})/(\d{1,2})/(\d{1,2})", normalized)
+        if match:
+            year, month, day = (int(part) for part in match.groups())
+            try:
+                return date(year, month, day).isoformat()
+            except ValueError:
+                return text
+        if re.fullmatch(r"\d+(\.\d+)?", text):
+            serial_number = float(text)
+            if serial_number >= 20000:
+                try:
+                    return (date(1899, 12, 30) + timedelta(days=int(serial_number))).isoformat()
+                except OverflowError:
+                    return text
+
+    if field_name == "original_contract_folder":
+        return normalize_contract_number_part(text, 2)
+
+    if field_name == "original_contract_inner_number":
+        return normalize_contract_number_part(text, 4)
+
+    if field_name == "archive_years":
+        if re.fullmatch(r"\d+\.0+", text):
+            return str(int(float(text)))
+
+    return text
+
+
+def xlsx_column_number(cell_ref: str) -> int:
+    letters = "".join(char for char in cell_ref if char.isalpha()).upper()
+    number = 0
+    for char in letters:
+        number = number * 26 + ord(char) - 64
+    return number
+
+
+def xlsx_plain_text(element) -> str:
+    if element is None:
+        return ""
+    return "".join(element.itertext())
+
+
+def parse_contract_import_xlsx_with_stdlib(uploaded_file):
+    uploaded_file.seek(0)
+    namespace = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    with zipfile.ZipFile(uploaded_file) as archive:
+        shared_strings = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            shared_root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+            shared_strings = [xlsx_plain_text(item) for item in shared_root.findall("x:si", namespace)]
+        sheet_root = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+
+    parsed_rows = []
+    for row_element in sheet_root.findall(".//x:sheetData/x:row", namespace):
+        row_values = {}
+        for cell in row_element.findall("x:c", namespace):
+            ref = cell.attrib.get("r", "")
+            column_number = xlsx_column_number(ref)
+            cell_type = cell.attrib.get("t", "")
+            value = ""
+            if cell_type == "inlineStr":
+                value = xlsx_plain_text(cell.find("x:is", namespace))
+            else:
+                raw_value = xlsx_plain_text(cell.find("x:v", namespace))
+                if cell_type == "s" and raw_value.isdigit() and int(raw_value) < len(shared_strings):
+                    value = shared_strings[int(raw_value)]
+                else:
+                    value = raw_value
+            row_values[column_number] = value
+        if row_values:
+            max_column = max(row_values)
+            parsed_rows.append([row_values.get(index, "") for index in range(1, max_column + 1)])
+    return parsed_rows
+
+
+def parse_contract_import_xlsx(uploaded_file):
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        rows = parse_contract_import_xlsx_with_stdlib(uploaded_file)
+    else:
+        uploaded_file.seek(0)
+        workbook = load_workbook(uploaded_file, read_only=True, data_only=True)
+        worksheet = workbook.active
+        rows = list(worksheet.iter_rows(values_only=True))
+    if not rows:
+        return [], ["Excel 文件为空。"]
+
+    headers = [normalize_import_cell(value) for value in rows[0]]
+    header_map = {}
+    expected_fields = {field for field, _label in CONTRACT_IMPORT_COLUMNS}
+    expected_labels = {label: field for field, label in CONTRACT_IMPORT_COLUMNS}
+    for index, header in enumerate(headers):
+        field_name = expected_labels.get(header) or CONTRACT_IMPORT_HEADER_ALIASES.get(header)
+        if field_name in expected_fields:
+            header_map[field_name] = index
+
+    required_fields = ["contract_name", "contract_type", "party_name"]
+    missing_headers = [
+        dict(CONTRACT_IMPORT_COLUMNS)[field_name]
+        for field_name in required_fields
+        if field_name not in header_map
+    ]
+    if missing_headers:
+        return [], [f"缺少必需列：{', '.join(missing_headers)}。"]
+
+    parsed_rows = []
+    for excel_row_number, values in enumerate(rows[1:], start=2):
+        if not any(normalize_import_cell(value) for value in values):
+            continue
+        row_data = {}
+        for field_name, _label in CONTRACT_IMPORT_COLUMNS:
+            column_index = header_map.get(field_name)
+            row_data[field_name] = (
+                normalize_import_value(field_name, values[column_index])
+                if column_index is not None and column_index < len(values)
+                else ""
+            )
+        parsed_rows.append({"row_number": excel_row_number, "data": row_data})
+    if len(parsed_rows) > 99:
+        return parsed_rows, ["一次最多导入 99 条合同，请拆分 Excel 后再导入。"]
+    return parsed_rows, []
+
+
+def validate_contract_import_rows(parsed_rows, contract_numbers=None):
+    contract_numbers = contract_numbers or default_contract_numbers(max(len(parsed_rows), 1))
+    results = []
+    display_numbers = {}
+    for index, item in enumerate(parsed_rows):
+        data = item["data"].copy()
+        data["contract_number"] = contract_numbers[index]
+        form = ContractForm(data=data)
+        errors = []
+        is_valid = form.is_valid()
+        if not is_valid:
+            for field_errors in form.errors.values():
+                errors.extend(str(error) for error in field_errors)
+        cleaned = form.cleaned_data
+        folder = normalize_contract_number_part(data.get("original_contract_folder"), 2)
+        inner_number = normalize_contract_number_part(data.get("original_contract_inner_number"), 4)
+        if folder and inner_number:
+            base_date = cleaned.get("sign_date") or cleaned.get("start_date") or timezone.localdate()
+            contract_type = cleaned.get("contract_type") or data.get("contract_type")
+            display_number = (
+                f"{base_date.year}"
+                f"{folder}"
+                f"{inner_number}"
+                f"{Contract.CONTRACT_TYPE_CODES.get(contract_type, '06')}"
+            )
+            if display_number in display_numbers:
+                errors.append(f"显示合同编号 {display_number} 与第 {display_numbers[display_number]} 行重复。")
+            else:
+                display_numbers[display_number] = item["row_number"]
+        preview_contract = Contract(
+            contract_number=data["contract_number"],
+            contract_name=cleaned.get("contract_name") or data.get("contract_name", ""),
+            original_contract_folder=cleaned.get("original_contract_folder") or folder,
+            original_contract_inner_number=cleaned.get("original_contract_inner_number") or inner_number,
+            contract_type=cleaned.get("contract_type") or data.get("contract_type", ""),
+            party_name=cleaned.get("party_name") or data.get("party_name", ""),
+            amount=cleaned.get("amount") or Decimal("0"),
+            invoice_status=cleaned.get("invoice_status") or data.get("invoice_status", ""),
+            sign_date=cleaned.get("sign_date"),
+            start_date=cleaned.get("start_date"),
+            end_date=cleaned.get("end_date"),
+            responsible_person=cleaned.get("responsible_person") or data.get("responsible_person", ""),
+            archive_years=cleaned.get("archive_years") or 3,
+        )
+        invoice_status = preview_contract.invoice_status
+        invoice_status_class = ""
+        if invoice_status == "开收据":
+            invoice_status_class = "invoice-receipt"
+        elif invoice_status == "待开票":
+            invoice_status_class = "invoice-pending"
+        elif invoice_status == "票已结":
+            invoice_status_class = "invoice-done"
+        results.append(
+            {
+                "row_number": item["row_number"],
+                "data": item["data"],
+                "preview_cells": [
+                    {"value": item["row_number"] - 1},
+                    {"value": preview_contract.contract_name, "css_class": "truncate-cell", "title": preview_contract.contract_name},
+                    {"value": preview_contract.contract_number},
+                    {"value": preview_contract.contract_type},
+                    {"value": preview_contract.party_name, "css_class": "truncate-cell", "title": preview_contract.party_name},
+                    {"value": f"¥ {preview_contract.amount:.2f}"},
+                    {"value": preview_contract.invoice_status, "css_class": f"invoice-status {invoice_status_class}".strip()},
+                    {"value": preview_contract.start_date.strftime("%Y-%m-%d") if preview_contract.start_date else ""},
+                    {"value": preview_contract.end_date.strftime("%Y-%m-%d") if preview_contract.end_date else ""},
+                    {"value": preview_contract.responsible_person},
+                    {"value": preview_contract.status, "css_class": f"status {preview_contract.status_class}"},
+                    {"value": "；".join(errors), "css_class": "truncate-cell error-cell", "title": "；".join(errors)},
+                ],
+                "errors": errors,
+                "ok": not errors,
+            }
+        )
+    return results
+
+
+def contract_import_preview_context(
+    request,
+    upload_form,
+    results=None,
+    payload="",
+    parse_errors=None,
+    confirm_error="",
+    completed=False,
+):
+    results = results or []
+    valid_count = sum(1 for row in results if row["ok"])
+    error_count = len(results) - valid_count
+    allow_partial_import_with_errors = AppSetting.current().allow_partial_import_with_errors
+    can_confirm_import = valid_count > 0 and (not error_count or allow_partial_import_with_errors)
+    return context_with_auth(
+        request,
+        {
+            "form": upload_form,
+            "columns": CONTRACT_IMPORT_COLUMNS,
+            "preview_columns": CONTRACT_IMPORT_PREVIEW_COLUMNS,
+            "results": results,
+            "payload": payload,
+            "parse_errors": parse_errors or [],
+            "valid_count": valid_count,
+            "error_count": error_count,
+            "allow_partial_import_with_errors": allow_partial_import_with_errors,
+            "can_confirm_import": can_confirm_import,
+            "confirm_error": confirm_error,
+            "completed": completed,
+            "active_nav": "contracts",
+        },
+    )
+
+
+@true_admin_required
+def contract_import_template(request):
+    headers = [label for _field, label in CONTRACT_IMPORT_COLUMNS]
+    rows = [
+        [
+            "示例维保合同",
+            "维保",
+            "某某单位",
+            10000,
+            "开收据",
+            timezone.localdate().strftime("%Y-%m-%d"),
+            timezone.localdate().strftime("%Y-%m-%d"),
+            (timezone.localdate() + timedelta(days=365)).strftime("%Y-%m-%d"),
+            "张三",
+            "01",
+            "0001",
+            3,
+            "",
+        ]
+    ]
+    response = HttpResponse(
+        build_contract_list_xlsx(headers, rows, numeric_columns={4, 12}),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="contract_import_template.xlsx"'
+    return response
+
+
+@true_admin_required
+def contract_import(request):
+    if request.method == "POST" and request.POST.get("action") == "confirm":
+        try:
+            parsed_rows = signing.loads(request.POST.get("payload", ""), max_age=3600)
+        except signing.BadSignature:
+            context = contract_import_preview_context(
+                request,
+                ContractImportUploadForm(),
+                parse_errors=["导入预览已失效，请重新上传 Excel。"],
+            )
+            return render(request, "contracts/contract_import.html", context)
+
+        try:
+            contract_numbers = default_contract_numbers(max(len(parsed_rows), 1))
+            results = validate_contract_import_rows(parsed_rows, contract_numbers)
+        except DjangoValidationError as exc:
+            context = contract_import_preview_context(
+                request,
+                ContractImportUploadForm(),
+                parse_errors=[str(exc)],
+            )
+            return render(request, "contracts/contract_import.html", context)
+        invalid_rows = [row for row in results if not row["ok"]]
+        allow_partial = AppSetting.current().allow_partial_import_with_errors
+        if invalid_rows and not allow_partial:
+            payload = signing.dumps(parsed_rows)
+            context = contract_import_preview_context(
+                request,
+                ContractImportUploadForm(),
+                results=results,
+                payload=payload,
+                confirm_error="存在错误行，请在系统设置中开启“Excel 导入存在错误时仍导入通过行”，或返回修改 Excel。",
+            )
+            return render(request, "contracts/contract_import.html", context)
+
+        created_count = 0
+        with transaction.atomic():
+            for index, row in enumerate(results):
+                if not row["ok"]:
+                    continue
+                data = row["data"].copy()
+                data["contract_number"] = contract_numbers[index]
+                form = ContractForm(data=data)
+                if not form.is_valid():
+                    raise RuntimeError("确认导入时数据校验失败，请重新上传 Excel。")
+                contract = form.save()
+                ensure_contract_image_folder(contract)
+                log_operation(request, "新增", contract, detail=f"Excel import row: {row['row_number']}")
+                created_count += 1
+        return render(
+            request,
+            "contracts/contract_import.html",
+            contract_import_preview_context(
+                request,
+                ContractImportUploadForm(),
+                results=results,
+                parse_errors=[f"已导入 {created_count} 条合同。"],
+                completed=True,
+            ),
+        )
+
+    if request.method == "POST":
+        upload_form = ContractImportUploadForm(request.POST, request.FILES)
+        if upload_form.is_valid():
+            try:
+                parsed_rows, parse_errors = parse_contract_import_xlsx(upload_form.cleaned_data["excel_file"])
+                try:
+                    results = validate_contract_import_rows(parsed_rows) if parsed_rows and not parse_errors else []
+                    payload = signing.dumps(parsed_rows) if parsed_rows and not parse_errors else ""
+                except DjangoValidationError as exc:
+                    results = []
+                    payload = ""
+                    parse_errors = [str(exc)]
+            except RuntimeError as exc:
+                results = []
+                payload = ""
+                parse_errors = [str(exc)]
+            context = contract_import_preview_context(
+                request,
+                upload_form,
+                results=results,
+                payload=payload,
+                parse_errors=parse_errors,
+            )
+            return render(request, "contracts/contract_import.html", context)
+    else:
+        upload_form = ContractImportUploadForm()
+    return render(
+        request,
+        "contracts/contract_import.html",
+        contract_import_preview_context(request, upload_form),
+    )
 
 
 @true_admin_required
@@ -2251,13 +2670,11 @@ def contract_file_upload(request, pk: int):
         return JsonResponse({"error": "只允许上传文件。"}, status=405)
 
     uploaded_files = request.FILES.getlist("files")
-    replace_existing = bool(uploaded_files and AppSetting.current().delete_source_file)
     saved_files = save_contract_files_and_return(contract, uploaded_files)
     if saved_files:
         log_operation(request, "上传", contract, object_type="合同文件", detail=f"uploaded contract files: {len(saved_files)}")
     return JsonResponse(
         {
-            "replace": replace_existing,
             "files": [
                 {
                     "id": item.id,
@@ -2473,7 +2890,7 @@ def maintenance_record_create(request, pk: int):
             log_operation(request, "新增", contract, object_type="项目记录", detail=f"saved records: {saved_count}")
             return redirect(return_state["return_url"])
     project_labels = project_record_labels(contract.contract_type)
-    record_file_number = str(contract.original_contract_inner_number or "").strip().zfill(4)
+    record_file_number = normalize_contract_number_part(contract.original_contract_inner_number, 4)
     record_type_code = Contract.CONTRACT_TYPE_CODES.get(contract.contract_type, "06")
     record_sign_year = (contract.sign_date or contract.start_date or timezone.localdate()).year
     return render(

@@ -148,8 +148,8 @@ class MaintenanceRecordFileVersionAdmin(HistoryOnlyVersionAdmin):
 # 后台类：配置模型在 Django 管理后台的显示和筛选。
 @admin.register(AppSetting)
 class AppSettingAdmin(HistoryOnlyVersionAdmin):
-    # 后台显示文件上传相关开关和更新时间。
-    list_display = ("delete_source_file", "image_root_path", "updated_at")
+    # 后台显示系统设置和更新时间。
+    list_display = ("allow_partial_import_with_errors", "image_root_path", "updated_at")
 
 
 @admin.register(OperationLog)

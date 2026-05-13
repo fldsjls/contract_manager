@@ -41,7 +41,6 @@
               {{ field }}
               {{ form.original_contract_folder }}
               {{ form.original_contract_inner_number }}
-              <button class="button icon-button" id="resetContractNumber" type="button" title="恢复默认合同编号">默认</button>
             </div>
             {{ form.original_contract_folder.errors }}
             {{ form.original_contract_inner_number.errors }}
@@ -123,8 +122,9 @@
     const signDateInput = document.querySelector("#id_sign_date");
     const startDateInput = document.querySelector("#id_start_date");
     const contractNumberInput = document.querySelector("#id_contract_number");
+    const contractFolderInput = document.querySelector("#id_original_contract_folder");
+    const contractInnerNumberInput = document.querySelector("#id_original_contract_inner_number");
     const responsiblePersonInput = document.querySelector("#id_responsible_person");
-    const resetContractNumberButton = document.querySelector("#resetContractNumber");
     const copySignDateButton = document.querySelector("#copySignDate");
     const defaultContractNumber = "{{ default_contract_number }}";
     const responsiblePersonStorageKey = "contract_last_responsible_person";
@@ -225,10 +225,41 @@
       }, { passive: false });
     }
 
-    if (resetContractNumberButton && contractNumberInput) {
-      resetContractNumberButton.addEventListener("click", () => {
-        contractNumberInput.value = defaultContractNumber;
+    if (contractFolderInput && contractInnerNumberInput) {
+      const keepDigits = (input, maxLength) => {
+        input.value = input.value.replace(/\D/g, "").slice(0, maxLength);
+      };
+      const padDigits = (input, maxLength) => {
+        keepDigits(input, maxLength);
+        if (input.value) {
+          input.value = input.value.padStart(maxLength, "0");
+        }
+      };
+      contractFolderInput.addEventListener("input", () => {
+        keepDigits(contractFolderInput, 2);
+        if (contractFolderInput.value.length === 2) {
+          contractInnerNumberInput.focus();
+          contractInnerNumberInput.select();
+        }
       });
+      contractInnerNumberInput.addEventListener("input", () => {
+        keepDigits(contractInnerNumberInput, 4);
+      });
+      contractFolderInput.addEventListener("blur", () => padDigits(contractFolderInput, 2));
+      contractInnerNumberInput.addEventListener("blur", () => padDigits(contractInnerNumberInput, 4));
+      contractFolderInput.addEventListener("paste", () => {
+        requestAnimationFrame(() => {
+          keepDigits(contractFolderInput, 2);
+          if (contractFolderInput.value.length === 2) {
+            contractInnerNumberInput.focus();
+          }
+        });
+      });
+      contractInnerNumberInput.addEventListener("paste", () => {
+        requestAnimationFrame(() => keepDigits(contractInnerNumberInput, 4));
+      });
+      padDigits(contractFolderInput, 2);
+      padDigits(contractInnerNumberInput, 4);
     }
 
     if (copySignDateButton && signDateInput && startDateInput) {
@@ -343,9 +374,6 @@
       }
 
       const data = await response.json();
-      if (data.replace) {
-        fileList.querySelectorAll(".file-item").forEach((item) => item.remove());
-      }
       if (data.files) {
         data.files.forEach((file) => appendFileRow(file));
       }

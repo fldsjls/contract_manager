@@ -274,10 +274,17 @@
     }
     .action-toolbar {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
       margin-bottom: 14px;
       flex-wrap: nowrap;
+    }
+    .action-toolbar .button,
+    .action-toolbar button {
+      padding: 8px 12px;
+      font-size: 13px;
+      line-height: 1.25;
+      white-space: nowrap;
     }
     .toolbar-spacer { flex: 1; }
     /* 统一按钮体系，后续页面只通过 primary/success/danger/current 区分状态。 */
@@ -764,10 +771,23 @@
       margin-bottom: 0;
     }
     .contract-number-row input {
-      flex: 1 1 120px;
+      width: 100%;
+    }
+    .contract-number-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 120px 120px;
+      width: 100%;
     }
     .contract-number-row #id_contract_number {
-      flex: 1 0 130px;
+      color: #667085;
+      background: #f3f6fa;
+      cursor: not-allowed;
+    }
+    .contract-number-row #id_original_contract_folder {
+      text-align: center;
+    }
+    .contract-number-row #id_original_contract_inner_number {
+      text-align: center;
     }
     .icon-button {
       flex: 0 0 auto;

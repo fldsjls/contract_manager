@@ -1,1 +1,2 @@
 Django>=5.0
+django-reversion>=5.0

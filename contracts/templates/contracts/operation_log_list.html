@@ -16,6 +16,7 @@
       </select>
       <button type="submit">搜索</button>
       <a class="button" href="{% url 'contracts:operation_log_list' %}">重置</a>
+      <a class="button" href="{% url 'contracts:operation_log_export' %}{% if export_query %}?{{ export_query }}{% endif %}">导出日志</a>
     </form>
 
     <div class="table-wrap fill">
@@ -29,6 +30,7 @@
             <th>对象类型</th>
             <th>对象名称</th>
             <th>详情</th>
+            <th>历史</th>
           </tr>
         </thead>
         <tbody>
@@ -41,10 +43,15 @@
               <td>{{ log.object_type }}</td>
               <td class="log-object-name" title="{{ log.object_name }}">{{ log.object_name }}</td>
               <td class="log-detail" title="{{ log.detail }}">{{ log.detail }}</td>
+              <td>
+                {% if log.history_url %}
+                  <a class="button compact" href="{{ log.history_url }}">历史</a>
+                {% endif %}
+              </td>
             </tr>
           {% empty %}
             <tr>
-              <td colspan="7" class="empty">暂无操作日志</td>
+              <td colspan="8" class="empty">暂无操作日志</td>
             </tr>
           {% endfor %}
         </tbody>

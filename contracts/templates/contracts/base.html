@@ -216,7 +216,12 @@
       margin-bottom: 14px;
     }
     .operation-log-toolbar {
-      grid-template-columns: minmax(280px, 1fr) 120px auto auto;
+      grid-template-columns: minmax(180px, 1fr) max-content auto auto auto;
+    }
+    .operation-log-toolbar select {
+      width: auto;
+      min-width: 104px;
+      padding-right: 6px;
     }
     .search-preview-wrap {
       position: relative;
@@ -313,6 +318,11 @@
       border-color: #d9dee7;
       background: #f3f4f6;
       cursor: not-allowed;
+    }
+    .button.compact {
+      padding: 5px 8px;
+      font-size: 12px;
+      line-height: 1.2;
     }
     .switch-control {
       display: inline-flex;
@@ -638,17 +648,19 @@
     .operation-log-table th:nth-child(1),
     .operation-log-table td:nth-child(1) { width: 12%; }
     .operation-log-table th:nth-child(2),
-    .operation-log-table td:nth-child(2) { width: 8%; }
+    .operation-log-table td:nth-child(2) { width: 7%; }
     .operation-log-table th:nth-child(3),
-    .operation-log-table td:nth-child(3) { width: 11%; }
+    .operation-log-table td:nth-child(3) { width: 10%; }
     .operation-log-table th:nth-child(4),
-    .operation-log-table td:nth-child(4) { width: 7%; }
+    .operation-log-table td:nth-child(4) { width: 6%; }
     .operation-log-table th:nth-child(5),
-    .operation-log-table td:nth-child(5) { width: 9%; }
+    .operation-log-table td:nth-child(5) { width: 8%; }
     .operation-log-table th:nth-child(6),
-    .operation-log-table td:nth-child(6) { width: 28%; }
+    .operation-log-table td:nth-child(6) { width: 25%; }
     .operation-log-table th:nth-child(7),
-    .operation-log-table td:nth-child(7) { width: 25%; }
+    .operation-log-table td:nth-child(7) { width: 24%; }
+    .operation-log-table th:nth-child(8),
+    .operation-log-table td:nth-child(8) { width: 8%; }
     .operation-log-table .log-object-name {
       cursor: help;
       overflow: hidden;
@@ -1719,8 +1731,16 @@
 
     const managementNavGroup = document.querySelector("#managementNavGroup");
     if (managementNavGroup) {
+      const navParams = new URLSearchParams(window.location.search);
+      const requestedManagementNavOpen = navParams.get("management_open");
       const storedManagementNavOpen = localStorage.getItem("managementNavOpen");
-      if (storedManagementNavOpen === "true") {
+      if (requestedManagementNavOpen === "1") {
+        managementNavGroup.open = true;
+        localStorage.setItem("managementNavOpen", "true");
+      } else if (requestedManagementNavOpen === "0") {
+        managementNavGroup.open = false;
+        localStorage.setItem("managementNavOpen", "false");
+      } else if (storedManagementNavOpen === "true") {
         managementNavGroup.open = true;
       } else if (storedManagementNavOpen === "false") {
         managementNavGroup.open = false;

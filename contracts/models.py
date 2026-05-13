@@ -4,17 +4,19 @@ from pathlib import PurePath
 import re
 
 from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 
 
 # 清理项目文件夹名称，避免 Windows 和 URL 路径中的非法字符。
 # 函数说明：封装可复用的业务处理。
 def safe_project_folder_name(contract: "Contract") -> str:
-    raw_name = contract.contract_name or contract.contract_number or "未命名项目"
+    raw_name = contract.contract_number or "未编号合同"
     safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_name).strip(" ._")
-    return safe_name or "未命名项目"
+    return safe_name or "未编号合同"
 
 
 # 函数说明：封装可复用的业务处理。
@@ -148,13 +150,11 @@ class Contract(models.Model):
     # 函数说明：封装可复用的业务处理。
     @property
     def full_display_contract_number(self) -> str:
-        # 详情和导出保留自动编号，并追加原合同文件夹和文件编号。
-        parts = [
-            self.contract_number,
-            self.original_contract_folder,
-            self.original_contract_inner_number,
-        ]
-        return "-".join(part for part in parts if part)
+        # 详情页和导出使用“默认合同编号 + 显示合同编号”，中间不额外加分隔符。
+        display_number = self.display_contract_number
+        if display_number == self.contract_number:
+            return self.contract_number
+        return f"{self.contract_number}   {display_number}"
 
     # 函数说明：封装可复用的业务处理。
     @property
@@ -404,6 +404,14 @@ class OperationLog(models.Model):
     object_type = models.CharField("对象类型", max_length=100, blank=True)
     object_name = models.CharField("对象名称", max_length=255, blank=True)
     object_id = models.CharField("对象ID", max_length=50, blank=True)
+    content_type = models.ForeignKey(
+        ContentType,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name="对象模型",
+    )
+    object_pk = models.CharField("对象主键", max_length=50, blank=True)
     detail = models.TextField("详情", blank=True)
     ip_address = models.GenericIPAddressField("IP地址", null=True, blank=True)
     created_at = models.DateTimeField("操作时间", default=timezone.now)
@@ -415,3 +423,13 @@ class OperationLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.created_at:%Y-%m-%d %H:%M} {self.username} {self.action}"
+
+    @property
+    def history_url(self) -> str:
+        if not self.content_type_id or not self.object_pk:
+            return ""
+        url_name = f"admin:{self.content_type.app_label}_{self.content_type.model}_history"
+        try:
+            return reverse(url_name, args=[self.object_pk])
+        except NoReverseMatch:
+            return ""

@@ -27,7 +27,7 @@
           {{ form.image_root_path }}
           {{ form.image_root_path.errors }}
           <p style="color: #667085; line-height: 1.8;">
-            说明：新增合同时会在该位置下按合同类型和显示合同编号自动创建文件夹，合同列表中的“图片查看”会打开对应文件夹。
+            说明：新增合同时会在该位置下按 <code>contracts/合同类型/默认合同编号</code> 自动创建文件夹，合同列表中的“图片查看”会打开对应文件夹。
           </p>
         </div>
       </section>
@@ -39,7 +39,7 @@
           {{ form.preview_root_path }}
           {{ form.preview_root_path.errors }}
           <p style="color: #667085; line-height: 1.8;">
-            说明：上传文件保存的是相对路径，例如 <code>contracts/合同类型/合同名称/合同文件/文件名</code>。
+            说明：上传文件保存的是相对路径，例如 <code>contracts/合同类型/默认合同编号/合同文件/文件名</code>。
             预览时会用这里的根目录加上该相对路径读取文件；留空则默认使用项目 <code>media</code> 文件夹。
           </p>
         </div>

@@ -14,12 +14,16 @@ import zipfile
 from django.contrib.auth import authenticate, get_user_model, login, logout, update_session_auth_hash
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.models import Group, Permission
+from django.contrib.contenttypes.models import ContentType
 from django.conf import settings
 from django.db.models import Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
+import reversion
+from reversion.models import Revision, Version
 
 from .forms import (
     AppSettingForm,
@@ -37,7 +41,6 @@ from .models import (
     OperationLog,
     PaymentRecord,
     SettlementFile,
-    safe_project_folder_name,
     safe_text_folder_name,
 )
 
@@ -98,6 +101,12 @@ def list_return_state(request, contract_id: int | str | None = None) -> dict:
 def redirect_with_current_query(request, url: str):
     query_string = request.GET.urlencode()
     return redirect(f"{url}?{query_string}" if query_string else url)
+
+
+def parse_form_date(value):
+    if not value:
+        return None
+    return parse_date(str(value).strip().replace("/", "-"))
 
 
 # 判断当前请求是否处于管理员模式。
@@ -214,13 +223,33 @@ def client_ip_address(request) -> str | None:
     return request.META.get("REMOTE_ADDR") or None
 
 
-def log_operation(request, action: str, obj=None, object_type: str = "", object_name: str = "", detail: str = "") -> None:
+def log_operation(
+    request,
+    action: str,
+    obj=None,
+    object_type: str = "",
+    object_name: str = "",
+    object_id: str = "",
+    detail: str = "",
+    version_obj=None,
+) -> None:
     user = request.user if request.user.is_authenticated else None
-    object_id = ""
     if obj is not None:
         object_type = object_type or getattr(getattr(obj, "_meta", None), "verbose_name", obj.__class__.__name__)
         object_name = object_name or str(obj)
-        object_id = str(getattr(obj, "pk", "") or "")
+        object_id = object_id or str(getattr(obj, "pk", "") or "")
+    history_obj = version_obj if version_obj is not None else obj
+    content_type = None
+    object_pk = ""
+    if history_obj is not None and getattr(history_obj, "pk", None):
+        content_type = ContentType.objects.get_for_model(history_obj, for_concrete_model=False)
+        object_pk = str(history_obj.pk)
+    ip_address = client_ip_address(request)
+    if reversion.is_active():
+        if user:
+            reversion.set_user(user)
+        comment_parts = [action, object_type, object_name, detail, f"IP: {ip_address}" if ip_address else ""]
+        reversion.set_comment(" | ".join(part for part in comment_parts if part))
     OperationLog.objects.create(
         user=user,
         username=getattr(user, "username", "") if user else "游客",
@@ -229,8 +258,10 @@ def log_operation(request, action: str, obj=None, object_type: str = "", object_
         object_type=object_type,
         object_name=object_name[:255],
         object_id=object_id,
+        content_type=content_type,
+        object_pk=object_pk,
         detail=detail,
-        ip_address=client_ip_address(request),
+        ip_address=ip_address,
     )
 
 
@@ -309,11 +340,11 @@ def safe_folder_name(value: str, fallback: str = "未命名项目") -> str:
 
 # 视图函数：处理页面请求并返回响应。
 def contract_image_folder(contract: Contract) -> Path:
-    # 图片查看使用独立根目录，并按“合同类型/显示合同编号”分层存放，避免同名合同冲突。
+    # 图片查看和上传文件使用同一套相对目录：contracts/合同类型/默认合同编号。
     root_path = AppSetting.current().image_root_path.strip() or AppSetting._meta.get_field("image_root_path").default
     contract_type_folder = safe_folder_name(contract.contract_type, "未分类")
-    contract_number_folder = safe_folder_name(contract.display_contract_number, "未编号合同")
-    return Path(root_path) / contract_type_folder / contract_number_folder
+    contract_number_folder = safe_folder_name(contract.contract_number, "未编号合同")
+    return Path(root_path) / "contracts" / contract_type_folder / contract_number_folder
 
 
 # 函数说明：封装可复用的业务处理。
@@ -453,11 +484,12 @@ def save_records_from_request(request, contract: Contract, record_model) -> int:
         actual_amount = actual_amounts[index] if index < len(actual_amounts) else None
         record_type = record_types[index] if index < len(record_types) else ""
         remark = remarks[index] if index < len(remarks) else ""
-        if not record_date or amount == "":
+        parsed_record_date = parse_form_date(record_date)
+        if not parsed_record_date or amount == "":
             continue
         record_model.objects.create(
             contract=contract,
-            record_date=record_date,
+            record_date=parsed_record_date,
             record_type=record_type,
             amount=amount,
             actual_amount=actual_amount or None,
@@ -482,11 +514,12 @@ def save_typed_records_from_request(request, contract: Contract, record_model_by
         record_type = record_types[index] if index < len(record_types) else ""
         remark = remarks[index] if index < len(remarks) else ""
         record_model = record_model_by_type.get(record_type)
-        if not record_date or amount == "" or record_model is None:
+        parsed_record_date = parse_form_date(record_date)
+        if not parsed_record_date or amount == "" or record_model is None:
             continue
         record_model.objects.create(
             contract=contract,
-            record_date=record_date,
+            record_date=parsed_record_date,
             record_type=record_type,
             amount=amount,
             actual_amount=actual_amount or None,
@@ -602,7 +635,8 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
     for index, record_date in enumerate(dates):
         month = months[index] if index < len(months) else ""
         remark = remarks[index] if index < len(remarks) else ""
-        if not record_date:
+        parsed_record_date = parse_form_date(record_date)
+        if not parsed_record_date:
             continue
         if not month and "-" in record_date:
             month = record_date[:7]
@@ -611,7 +645,7 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
             month = f"{year_text}年{int(month_text):02d}月"
         MaintenanceRecord.objects.create(
             contract=contract,
-            record_date=record_date,
+            record_date=parsed_record_date,
             month=month,
             file=request.FILES.get(f"file_{index}"),
             remark=remark,
@@ -1167,7 +1201,7 @@ def contract_file_delete(request, pk: int):
         contract_name = item.contract.contract_name
         delete_file_from_storage(item.file)
         item.delete()
-        log_operation(request, "删除", object_type="合同文件", object_name=object_name, object_id=str(pk), detail=f"contract: {contract_name}")
+        log_operation(request, "删除", object_type="合同文件", object_name=object_name, object_id=str(pk), detail=f"contract: {contract_name}", version_obj=item)
         next_url = request.POST.get("next", "")
         if next_url.startswith("/") and not next_url.startswith("//"):
             return redirect(next_url)
@@ -1479,7 +1513,7 @@ def contract_export_column_widths(headers, rows) -> list[int]:
 
 
 # 函数说明：封装可复用的业务处理。
-def build_contract_list_xlsx(headers, rows) -> bytes:
+def build_contract_list_xlsx(headers, rows, numeric_columns: set[int] | None = None) -> bytes:
     # 使用标准库拼装最小 XLSX 包，避免依赖用户虚拟环境中未安装的 openpyxl。
     column_widths = contract_export_column_widths(headers, rows)
     cols = "".join(
@@ -1491,10 +1525,11 @@ def build_contract_list_xlsx(headers, rows) -> bytes:
         for index, header in enumerate(headers, start=1)
     )
     sheet_rows = [f'<row r="1">{header_cells}</row>']
+    numeric_columns = numeric_columns if numeric_columns is not None else {6}
     for row_index, row in enumerate(rows, start=2):
         cells = []
         for column_index, value in enumerate(row, start=1):
-            if column_index == 6:
+            if column_index in numeric_columns:
                 cells.append(xlsx_number_cell(row_index, column_index, value, style=2))
             else:
                 cells.append(xlsx_text_cell(row_index, column_index, value))
@@ -1543,6 +1578,106 @@ def build_contract_list_xlsx(headers, rows) -> bytes:
         xlsx.writestr("xl/worksheets/sheet1.xml", worksheet_xml)
         xlsx.writestr("xl/styles.xml", styles_xml)
     return output.getvalue()
+
+
+def json_safe_value(value):
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    if hasattr(value, "name"):
+        return value.name
+    return value
+
+
+def model_snapshot(obj) -> dict:
+    return {field.name: json_safe_value(getattr(obj, field.attname)) for field in obj._meta.fields}
+
+
+def version_snapshot(version) -> dict:
+    revision = version.revision
+    return {
+        "version_id": version.pk,
+        "revision_id": revision.pk,
+        "date_created": timezone.localtime(revision.date_created).isoformat(),
+        "user": getattr(revision.user, "username", "") if revision.user else "",
+        "comment": revision.comment,
+        "object_repr": version.object_repr,
+        "format": version.format,
+        "serialized_data": version.serialized_data,
+    }
+
+
+def versions_for_object(obj) -> list[dict]:
+    versions = Version.objects.get_for_object(obj).select_related("revision", "revision__user")
+    return [version_snapshot(version) for version in versions]
+
+
+def contract_snapshot_payload(contract: Contract) -> dict:
+    related_groups = contract_snapshot_related_groups(contract)
+    payload = {
+        "exported_at": timezone.localtime().isoformat(),
+        "policy": {
+            "operation_logs_online_retention": "2 years",
+            "snapshots_online_retention": "12 months",
+            "single_contract_export_affects_global_archive": False,
+        },
+        "contract": {
+            "model": contract._meta.label,
+            "pk": contract.pk,
+            "fields": model_snapshot(contract),
+            "versions": versions_for_object(contract),
+        },
+        "related": {},
+    }
+    for key, queryset in related_groups:
+        payload["related"][key] = [
+            {
+                "model": item._meta.label,
+                "pk": item.pk,
+                "fields": model_snapshot(item),
+                "versions": versions_for_object(item),
+            }
+            for item in queryset
+        ]
+    return payload
+
+
+def contract_snapshot_related_groups(contract: Contract) -> list[tuple[str, object]]:
+    return [
+        ("contract_files", contract.files.all()),
+        ("settlement_files", contract.settlement_files.all()),
+        ("invoice_records", contract.invoicerecord_set.all()),
+        ("payment_records", contract.paymentrecord_set.all()),
+        ("maintenance_records", contract.maintenancerecord_set.all()),
+    ]
+
+
+def contract_snapshot_objects(contract: Contract) -> list:
+    objects = [contract]
+    for _, queryset in contract_snapshot_related_groups(contract):
+        objects.extend(list(queryset))
+    return objects
+
+
+def archive_contract_snapshot_to_file(contract: Contract, reason: str) -> Path:
+    payload = contract_snapshot_payload(contract)
+    payload["archive_reason"] = reason
+    archive_dir = settings.BASE_DIR / "archives" / "contracts"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = re.sub(r"[^0-9A-Za-z_-]+", "_", contract.contract_number or str(contract.pk)).strip("_")
+    archive_path = archive_dir / f"contract_snapshot_{contract.pk}_{safe_name}_{timezone.localtime():%Y%m%d%H%M%S}.json"
+    archive_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return archive_path
+
+
+def clear_contract_snapshot_versions(contract: Contract) -> int:
+    deleted_count = 0
+    for obj in contract_snapshot_objects(contract):
+        result, _ = Version.objects.get_for_object(obj).delete()
+        deleted_count += result
+    Revision.objects.filter(version__isnull=True).delete()
+    return deleted_count
 
 
 # 渲染合同列表页面，并处理搜索和表头排序。
@@ -1701,6 +1836,22 @@ def contract_list_export(request):
     return response
 
 
+@true_admin_required
+def contract_snapshot_export(request, pk: int):
+    if not is_super_admin_mode(request):
+        return redirect("contracts:contract_list")
+    contract = get_object_or_404(Contract, pk=pk)
+    payload = contract_snapshot_payload(contract)
+    exported_at = timezone.localtime().strftime("%Y%m%d%H%M%S")
+    filename = f"contract_snapshot_{contract.pk}_{exported_at}.json"
+    response = HttpResponse(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        content_type="application/json; charset=utf-8",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 # 渲染单个合同详情页面。
 # 视图函数：处理页面请求并返回响应。
 def contract_detail(request, pk: int):
@@ -1817,7 +1968,7 @@ def record_file_update(request, kind: str, pk: int):
             delete_file_from_storage(record.file)
             record.file = uploaded_file
             record.save(update_fields=["file", "updated_at"])
-            log_operation(request, "上传", record.contract, object_type="记录附件", object_name=uploaded_file.name, object_id=str(record.pk), detail=f"record type: {getattr(record, 'record_type', 'project record')}")
+            log_operation(request, "上传", record.contract, object_type="记录附件", object_name=uploaded_file.name, object_id=str(record.pk), detail=f"record type: {getattr(record, 'record_type', 'project record')}", version_obj=record)
     next_url = request.POST.get("next", "")
     if next_url.startswith("/"):
         return redirect(next_url)
@@ -1835,7 +1986,7 @@ def record_remark_update(request, kind: str, pk: int):
     if request.method == "POST":
         record.remark = request.POST.get("remark", "").strip()
         record.save(update_fields=["remark", "updated_at"])
-        log_operation(request, "修改", record.contract, object_type="记录备注", object_name=str(record), object_id=str(record.pk))
+        log_operation(request, "修改", record.contract, object_type="记录备注", object_name=str(record), object_id=str(record.pk), version_obj=record)
     next_url = request.POST.get("next", "")
     if next_url.startswith("/"):
         return redirect(next_url)
@@ -2019,7 +2170,7 @@ def settlement_file_delete(request, pk: int):
         object_name = item.original_name or Path(item.file.name).name
         delete_file_from_storage(item.file)
         item.delete()
-        log_operation(request, "删除", contract, object_type="结算文件", object_name=object_name, object_id=str(pk))
+        log_operation(request, "删除", contract, object_type="结算文件", object_name=object_name, object_id=str(pk), version_obj=item)
         next_url = request.POST.get("next", "")
         if next_url.startswith("/") and not next_url.startswith("//"):
             return redirect(next_url)
@@ -2323,7 +2474,9 @@ def contract_archive(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if request.method == "POST" and contract.status == "待归档" and not contract.uses_default_display_contract_number:
         contract.archive()
-        log_operation(request, "归档", contract)
+        archive_path = archive_contract_snapshot_to_file(contract, "contract archived")
+        deleted_versions = clear_contract_snapshot_versions(contract)
+        log_operation(request, "归档", contract, detail=f"snapshot archived: {archive_path}; cleared versions: {deleted_versions}")
     return redirect("contracts:archive_list")
 
 
@@ -2338,10 +2491,7 @@ def contract_restore(request, pk: int):
     return redirect("contracts:trash")
 
 
-@true_admin_required
-def operation_log_list(request):
-    if not is_super_admin_mode(request):
-        return redirect("contracts:contract_list")
+def operation_logs_for_request(request):
     keyword = request.GET.get("q", "").strip()
     action = request.GET.get("action", "").strip()
     logs = OperationLog.objects.all()
@@ -2356,6 +2506,14 @@ def operation_log_list(request):
         )
     if action:
         logs = logs.filter(action=action)
+    return logs, keyword, action
+
+
+@true_admin_required
+def operation_log_list(request):
+    if not is_super_admin_mode(request):
+        return redirect("contracts:contract_list")
+    logs, keyword, action = operation_logs_for_request(request)
     action_choices = OperationLog.objects.order_by().values_list("action", flat=True).distinct()
     return render(
         request,
@@ -2367,15 +2525,41 @@ def operation_log_list(request):
                 "keyword": keyword,
                 "action_filter": action,
                 "action_choices": action_choices,
+                "export_query": request.GET.urlencode(),
                 "active_nav": "operation_logs",
             },
         ),
     )
 
 
-# 视图函数：处理页面请求并返回响应。
+@true_admin_required
+def operation_log_export(request):
+    if not is_super_admin_mode(request):
+        return redirect("contracts:contract_list")
+    logs, _, _ = operation_logs_for_request(request)
+    headers = ["时间", "用户", "IP", "动作", "对象类型", "对象名称", "详情", "对象ID"]
+    rows = [
+        [
+            timezone.localtime(log.created_at).strftime("%Y-%m-%d %H:%M:%S"),
+            log.username,
+            log.ip_address or "",
+            log.action,
+            log.object_type,
+            log.object_name,
+            log.detail,
+            log.object_id,
+        ]
+        for log in logs
+    ]
+    response = HttpResponse(
+        build_contract_list_xlsx(headers, rows, numeric_columns=set()),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="operation_logs.xlsx"'
+    return response
+
+
 @admin_required
-# 显示和保存系统设置。
 def settings_view(request):
     setting = AppSetting.current()
     host_ip = local_ip_address()

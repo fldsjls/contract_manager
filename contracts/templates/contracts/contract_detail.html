@@ -18,11 +18,18 @@
     <div class="detail-scroll">
       <!-- 合同基础信息表，文件名和备注使用省略显示并保留悬停完整内容。 -->
       <section class="panel">
-        <div class="summary">
-          <span>{{ labels.contract_number }}：{{ contract.full_display_contract_number }}</span>
-          <span>{{ labels.contract_type }}：{{ contract.contract_type }}</span>
-          <span>{{ labels.status }}：<span class="status {{ contract.status_class }}">{{ contract.status }}</span></span>
-        </div>
+          <div class="summary">
+            <span>
+              {{ labels.contract_number }}：
+              <a
+                class="contract-folder-link"
+                href="{% url 'contracts:contract_image_folder_open' contract.id %}"
+                data-folder-url="{% url 'contracts:contract_image_folder_open' contract.id %}"
+              >{{ contract.contract_number }}</a>{% if contract.display_contract_number != contract.contract_number %}{{ contract.display_contract_number }}{% endif %}
+            </span>
+            <span>{{ labels.contract_type }}：{{ contract.contract_type }}</span>
+            <span>{{ labels.status }}：<span class="status {{ contract.status_class }}">{{ contract.status }}</span></span>
+          </div>
         <table>
           <tbody>
             <tr>
@@ -259,6 +266,19 @@
     document.querySelectorAll(".record-file-trigger .file-preview-name").forEach((item) => {
       item.textContent = baseFileName(item.textContent.trim());
       item.title = item.textContent;
+    });
+
+    document.querySelectorAll(".contract-folder-link").forEach((link) => {
+      link.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const response = await fetch(link.dataset.folderUrl, {
+          credentials: "same-origin",
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        if (!response.ok) {
+          alert("文件夹打开失败，请检查设置中的保存目录。");
+        }
+      });
     });
 
     // 表头复选框只影响当前记录表单里的行，避免误选另一侧记录表。

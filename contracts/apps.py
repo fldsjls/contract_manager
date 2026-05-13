@@ -10,3 +10,28 @@ class ContractsConfig(AppConfig):
     name = "contracts"
     # 后台中显示的应用中文名。
     verbose_name = "合同管理"
+
+    def ready(self):
+        import reversion
+
+        from .models import (
+            AppSetting,
+            Contract,
+            ContractFile,
+            InvoiceRecord,
+            MaintenanceRecord,
+            PaymentRecord,
+            SettlementFile,
+        )
+
+        for model in (
+            Contract,
+            ContractFile,
+            SettlementFile,
+            InvoiceRecord,
+            PaymentRecord,
+            MaintenanceRecord,
+            AppSetting,
+        ):
+            if not reversion.is_registered(model):
+                reversion.register(model)

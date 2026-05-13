@@ -44,6 +44,9 @@
       {% if not is_guest_mode %}
         <button class="button row-action" id="statsButton" type="button" aria-disabled="true">统计</button>
       {% endif %}
+      {% if is_super_admin_mode %}
+        <a class="button row-action" id="snapshotExportButton" href="#" data-url-template="{% url 'contracts:contract_snapshot_export' 0 %}" aria-disabled="true">导出快照</a>
+      {% endif %}
       {% if is_admin_mode %}
         <a class="button row-action" id="settlementButton" href="#" data-url-template="{% url 'contracts:settlement_file_list' 0 %}" aria-disabled="true">结算</a>
       {% endif %}

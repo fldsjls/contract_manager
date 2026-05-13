@@ -53,6 +53,7 @@ from .models import (
     PaymentRecordFileVersion,
     SettlementFile,
     normalize_contract_number_part,
+    safe_project_folder_name,
     safe_text_folder_name,
 )
 
@@ -366,6 +367,18 @@ def contract_image_folder(contract: Contract) -> Path:
 def ensure_contract_image_folder(contract: Contract) -> Path:
     # 新建合同和点击图片查看时都保证目标文件夹已经存在。
     folder = contract_image_folder(contract)
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def contract_file_folder(contract: Contract) -> Path:
+    contract_type_folder = safe_text_folder_name(contract.contract_type)
+    contract_number_folder = safe_project_folder_name(contract)
+    return Path(settings.MEDIA_ROOT) / "contracts" / contract_type_folder / contract_number_folder
+
+
+def ensure_contract_file_folder(contract: Contract) -> Path:
+    folder = contract_file_folder(contract)
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
@@ -2610,6 +2623,20 @@ def contract_image_folder_open(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     try:
         folder = ensure_contract_image_folder(contract)
+        if os.name == "nt":
+            os.startfile(str(folder))
+            center_windows_explorer_for_folder(folder)
+    except OSError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+    return JsonResponse({"ok": True, "path": str(folder)})
+
+
+@admin_required
+def contract_file_folder_open(request, pk: int):
+    # 打开当前合同在 media 中的文件保存根目录。
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    try:
+        folder = ensure_contract_file_folder(contract)
         if os.name == "nt":
             os.startfile(str(folder))
             center_windows_explorer_for_folder(folder)

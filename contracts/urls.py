@@ -33,6 +33,7 @@ urlpatterns = [
     path("contracts/<int:pk>/stats-data/", views.contract_stats_data, name="contract_stats_data"),
     path("contracts/<int:pk>/maintenance-data/", views.maintenance_record_data, name="maintenance_record_data"),
     path("contracts/<int:pk>/image-folder/open/", views.contract_image_folder_open, name="contract_image_folder_open"),
+    path("contracts/<int:pk>/file-folder/open/", views.contract_file_folder_open, name="contract_file_folder_open"),
     path("files/<int:pk>/preview/", views.contract_file_preview, name="contract_file_preview"),
     path("files/<int:pk>/delete/", views.contract_file_delete, name="contract_file_delete"),
     path("configured-files/<str:kind>/<int:pk>/", views.configured_file_content, name="configured_file_content"),

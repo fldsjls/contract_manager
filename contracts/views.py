@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import re
 import socket
+import threading
+import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import zipfile
 import xml.etree.ElementTree as ET
@@ -366,6 +368,64 @@ def ensure_contract_image_folder(contract: Contract) -> Path:
     folder = contract_image_folder(contract)
     folder.mkdir(parents=True, exist_ok=True)
     return folder
+
+
+def center_windows_explorer_for_folder(folder: Path) -> None:
+    if os.name != "nt":
+        return
+
+    def worker():
+        try:
+            import ctypes
+            from ctypes import wintypes
+        except ImportError:
+            return
+
+        user32 = ctypes.windll.user32
+        target_title = folder.name.lower()
+        if not target_title:
+            return
+
+        EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        found_hwnds = []
+
+        def enum_window(hwnd, _lparam):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            class_name = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, class_name, len(class_name))
+            if class_name.value not in {"CabinetWClass", "ExploreWClass"}:
+                return True
+            title = ctypes.create_unicode_buffer(512)
+            user32.GetWindowTextW(hwnd, title, len(title))
+            if target_title in title.value.lower():
+                found_hwnds.append(hwnd)
+            return True
+
+        for _attempt in range(12):
+            found_hwnds.clear()
+            user32.EnumWindows(EnumWindowsProc(enum_window), 0)
+            if found_hwnds:
+                hwnd = found_hwnds[-1]
+                rect = wintypes.RECT()
+                user32.GetWindowRect(hwnd, ctypes.byref(rect))
+                width = max(rect.right - rect.left, 900)
+                height = max(rect.bottom - rect.top, 640)
+                screen_width = user32.GetSystemMetrics(0)
+                screen_height = user32.GetSystemMetrics(1)
+                x = max((screen_width - width) // 2, 0)
+                y = max((screen_height - height) // 2, 0)
+                HWND_TOPMOST = -1
+                HWND_NOTOPMOST = -2
+                SWP_SHOWWINDOW = 0x0040
+                user32.SetWindowPos(hwnd, HWND_TOPMOST, x, y, width, height, SWP_SHOWWINDOW)
+                user32.SetForegroundWindow(hwnd)
+                time.sleep(0.15)
+                user32.SetWindowPos(hwnd, HWND_NOTOPMOST, x, y, width, height, SWP_SHOWWINDOW)
+                return
+            time.sleep(0.15)
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 # 生成带合同类型目录的预览相对路径，保持和当前文件保存规则一致。
@@ -2552,6 +2612,7 @@ def contract_image_folder_open(request, pk: int):
         folder = ensure_contract_image_folder(contract)
         if os.name == "nt":
             os.startfile(str(folder))
+            center_windows_explorer_for_folder(folder)
     except OSError as exc:
         return JsonResponse({"ok": False, "error": str(exc)}, status=400)
     return JsonResponse({"ok": True, "path": str(folder)})

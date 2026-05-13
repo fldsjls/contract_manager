@@ -2258,10 +2258,11 @@ def contract_list(request):
         contracts = [contract for contract in contracts if contract.status not in {"待归档", "已归档"}]
     if filter_status:
         contracts = [contract for contract in contracts if contract.status == filter_status]
-    total_amount = sum((contract.amount for contract in contracts), Decimal("0"))
-    contract_count = len(contracts)
-    active_contracts = [contract for contract in contracts if contract.status == "进行中"]
-    expired_contracts = [contract for contract in contracts if contract.status == "已到期"]
+    summary_contracts = [contract for contract in contracts if contract.status not in {"待归档", "已归档"}]
+    total_amount = sum((contract.amount for contract in summary_contracts), Decimal("0"))
+    contract_count = len(summary_contracts)
+    active_contracts = [contract for contract in summary_contracts if contract.status == "进行中"]
+    expired_contracts = [contract for contract in summary_contracts if contract.status == "已到期"]
     active_total_amount = sum((contract.amount for contract in active_contracts), Decimal("0"))
     expired_total_amount = sum((contract.amount for contract in expired_contracts), Decimal("0"))
     if sort == "contract_number":

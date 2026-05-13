@@ -3,7 +3,19 @@ from django.urls import re_path
 from django.utils.html import format_html
 from reversion.admin import VersionAdmin
 
-from .models import AppSetting, Contract, ContractFile, InvoiceRecord, MaintenanceRecord, OperationLog, PaymentRecord, SettlementFile
+from .models import (
+    AppSetting,
+    Contract,
+    ContractFile,
+    InvoiceRecord,
+    InvoiceRecordFileVersion,
+    MaintenanceRecord,
+    MaintenanceRecordFileVersion,
+    OperationLog,
+    PaymentRecord,
+    PaymentRecordFileVersion,
+    SettlementFile,
+)
 
 
 class HistoryOnlyVersionAdmin(VersionAdmin):
@@ -109,6 +121,27 @@ class MaintenanceRecordAdmin(HistoryOnlyVersionAdmin):
     search_fields = ("contract__contract_name", "contract__contract_number", "month", "remark")
     # 后台按日期筛选维护保养记录。
     list_filter = ("record_date",)
+
+
+@admin.register(InvoiceRecordFileVersion)
+class InvoiceRecordFileVersionAdmin(HistoryOnlyVersionAdmin):
+    list_display = ("record", "original_name", "created_at")
+    search_fields = ("record__contract__contract_name", "record__contract__contract_number", "original_name")
+    list_filter = ("created_at",)
+
+
+@admin.register(PaymentRecordFileVersion)
+class PaymentRecordFileVersionAdmin(HistoryOnlyVersionAdmin):
+    list_display = ("record", "original_name", "created_at")
+    search_fields = ("record__contract__contract_name", "record__contract__contract_number", "original_name")
+    list_filter = ("created_at",)
+
+
+@admin.register(MaintenanceRecordFileVersion)
+class MaintenanceRecordFileVersionAdmin(HistoryOnlyVersionAdmin):
+    list_display = ("record", "original_name", "created_at")
+    search_fields = ("record__contract__contract_name", "record__contract__contract_number", "original_name")
+    list_filter = ("created_at",)
 
 
 # 注册系统设置模型到后台。

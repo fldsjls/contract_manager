@@ -153,4 +153,4 @@ class AppSettingForm(forms.ModelForm):
     # 元数据类：配置字段、排序或显示名称。
     class Meta:
         model = AppSetting
-        fields = ["delete_source_file", "image_root_path", "preview_root_path"]
+        fields = ["delete_source_file", "image_root_path"]

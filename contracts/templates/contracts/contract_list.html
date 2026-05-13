@@ -504,6 +504,18 @@
       });
     }
 
+    // 函数说明：优先从 cookie 读取当前 CSRF token，兼容登录后 token 轮换。
+    function csrfToken() {
+      const cookieToken = document.cookie
+        .split(";")
+        .map((item) => item.trim())
+        .find((item) => item.startsWith("csrftoken="));
+      if (cookieToken) {
+        return decodeURIComponent(cookieToken.split("=").slice(1).join("="));
+      }
+      return document.querySelector("input[name='csrfmiddlewaretoken']")?.value || "";
+    }
+
     document.querySelectorAll(".inline-invoice-status").forEach((select) => {
       function updateInvoiceStatusColor() {
         select.classList.remove("invoice-receipt", "invoice-pending", "invoice-done");
@@ -525,25 +537,32 @@
         event.stopPropagation();
       });
       select.addEventListener("change", async () => {
+        const nextValue = select.value;
         const formData = new FormData();
-        formData.append("invoice_status", select.value);
+        formData.append("invoice_status", nextValue);
+        select.disabled = true;
         try {
           const response = await fetch(select.dataset.updateUrl, {
             method: "POST",
             credentials: "same-origin",
             headers: {
-              "X-CSRFToken": document.querySelector("input[name='csrfmiddlewaretoken']").value,
+              "X-CSRFToken": csrfToken(),
               "X-Requested-With": "XMLHttpRequest",
             },
             body: formData,
           });
+          const contentType = response.headers.get("content-type") || "";
+          const data = contentType.includes("application/json") ? await response.json() : {};
           if (!response.ok) {
-            throw new Error("更新失败");
+            throw new Error(data.error || "更新失败");
           }
-          const data = await response.json();
+          if (!data.ok) {
+            throw new Error(data.error || "更新失败");
+          }
           const row = select.closest(".selectable-row");
           row.dataset.invoiceStatus = data.invoice_status;
           previousValue = data.invoice_status;
+          select.value = data.invoice_status;
           updateInvoiceStatusColor();
           if (row.classList.contains("selected")) {
             selectRow(row);
@@ -551,7 +570,9 @@
         } catch (error) {
           select.value = previousValue;
           updateInvoiceStatusColor();
-          alert("是否开票更新失败，请稍后重试。");
+          alert(error.message || "是否开票更新失败，请稍后重试。");
+        } finally {
+          select.disabled = false;
         }
       });
     });

@@ -19,8 +19,11 @@ class ContractsConfig(AppConfig):
             Contract,
             ContractFile,
             InvoiceRecord,
+            InvoiceRecordFileVersion,
             MaintenanceRecord,
+            MaintenanceRecordFileVersion,
             PaymentRecord,
+            PaymentRecordFileVersion,
             SettlementFile,
         )
 
@@ -31,6 +34,9 @@ class ContractsConfig(AppConfig):
             InvoiceRecord,
             PaymentRecord,
             MaintenanceRecord,
+            InvoiceRecordFileVersion,
+            PaymentRecordFileVersion,
+            MaintenanceRecordFileVersion,
             AppSetting,
         ):
             if not reversion.is_registered(model):

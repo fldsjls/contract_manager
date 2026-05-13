@@ -42,14 +42,18 @@ def add_years(value, years: int):
 # 获取上传对象所属合同。
 # 函数说明：封装可复用的业务处理。
 def upload_contract_for(instance):
+    record = getattr(instance, "record", None)
+    if record is not None:
+        return record.contract
     return getattr(instance, "contract", instance)
 
 
 # 按功能把项目文件保存到 media/contracts/合同类型/项目名称/功能文件夹/文件名。
 def project_file_upload_path(instance, filename: str) -> str:
     contract = upload_contract_for(instance)
+    upload_owner = getattr(instance, "record", instance)
     safe_filename = PurePath(filename).name
-    if instance.__class__.__name__ == "PaymentRecord" and contract.invoice_status == "开收据":
+    if upload_owner.__class__.__name__ == "PaymentRecord" and contract.invoice_status == "开收据":
         subfolder = "收据文件"
     else:
         folder_map = {
@@ -60,7 +64,7 @@ def project_file_upload_path(instance, filename: str) -> str:
             "PaymentRecord": "发票文件",
             "MaintenanceRecord": "维保文件",
         }
-        subfolder = folder_map.get(instance.__class__.__name__, "其他文件")
+        subfolder = folder_map.get(upload_owner.__class__.__name__, "其他文件")
     contract_type_folder = safe_text_folder_name(getattr(contract, "contract_type", ""))
     return f"contracts/{contract_type_folder}/{safe_project_folder_name(contract)}/{subfolder}/{safe_filename}"
 
@@ -352,6 +356,54 @@ class MaintenanceRecord(models.Model):
     def __str__(self) -> str:
         # 后台中显示记录所属合同、日期和月份。
         return f"{self.contract.contract_name} - {self.record_date} - {self.month}"
+
+
+# 保存开票记录附件的每次上传版本，记录本身的 file 字段指向最新版本。
+class InvoiceRecordFileVersion(models.Model):
+    record = models.ForeignKey(InvoiceRecord, related_name="file_versions", on_delete=models.CASCADE, verbose_name="所属开票记录")
+    file = models.FileField("附件", upload_to=project_file_upload_path)
+    original_name = models.CharField("原文件名", max_length=255, blank=True)
+    created_at = models.DateTimeField("上传时间", default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "开票附件版本"
+        verbose_name_plural = "开票附件版本"
+
+    def __str__(self) -> str:
+        return self.original_name or self.file.name
+
+
+# 保存收票/收据记录附件的每次上传版本，记录本身的 file 字段指向最新版本。
+class PaymentRecordFileVersion(models.Model):
+    record = models.ForeignKey(PaymentRecord, related_name="file_versions", on_delete=models.CASCADE, verbose_name="所属收票记录")
+    file = models.FileField("附件", upload_to=project_file_upload_path)
+    original_name = models.CharField("原文件名", max_length=255, blank=True)
+    created_at = models.DateTimeField("上传时间", default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "收票附件版本"
+        verbose_name_plural = "收票附件版本"
+
+    def __str__(self) -> str:
+        return self.original_name or self.file.name
+
+
+# 保存项目记录附件的每次上传版本，记录本身的 file 字段指向最新版本。
+class MaintenanceRecordFileVersion(models.Model):
+    record = models.ForeignKey(MaintenanceRecord, related_name="file_versions", on_delete=models.CASCADE, verbose_name="所属项目记录")
+    file = models.FileField("附件", upload_to=project_file_upload_path)
+    original_name = models.CharField("原文件名", max_length=255, blank=True)
+    created_at = models.DateTimeField("上传时间", default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "项目记录附件版本"
+        verbose_name_plural = "项目记录附件版本"
+
+    def __str__(self) -> str:
+        return self.original_name or self.file.name
 
 
 # 保存系统级开关配置。

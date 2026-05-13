@@ -37,9 +37,12 @@ from .models import (
     Contract,
     ContractFile,
     InvoiceRecord,
+    InvoiceRecordFileVersion,
     MaintenanceRecord,
+    MaintenanceRecordFileVersion,
     OperationLog,
     PaymentRecord,
+    PaymentRecordFileVersion,
     SettlementFile,
     safe_text_folder_name,
 )
@@ -161,6 +164,8 @@ def admin_required(view_func):
     def wrapper(request, *args, **kwargs):
         if can_manage(request):
             return view_func(request, *args, **kwargs)
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({"error": "登录状态已失效，请刷新页面后重新登录。"}, status=401)
         return redirect("contracts:login")
 
     return wrapper
@@ -355,12 +360,6 @@ def ensure_contract_image_folder(contract: Contract) -> Path:
     return folder
 
 
-# 获取文件预览根目录；默认指向项目 media 文件夹。
-def preview_root_path() -> Path:
-    root_path = AppSetting.current().preview_root_path.strip() or str(settings.MEDIA_ROOT)
-    return Path(root_path)
-
-
 # 生成带合同类型目录的预览相对路径，保持和当前文件保存规则一致。
 def typed_preview_file_name(file_field) -> Path:
     file_name = getattr(file_field, "name", "")
@@ -377,17 +376,17 @@ def typed_preview_file_name(file_field) -> Path:
     return Path(file_name)
 
 
-# 用设置中的预览根目录和强制补齐合同类型的相对路径拼出文件实际路径。
+# 文件统一从项目 media 目录读取，图片目录只用于“图片查看”。
 def preview_file_path(file_field) -> Path:
     relative_name = typed_preview_file_name(file_field)
-    return preview_root_path() / relative_name
+    return Path(settings.MEDIA_ROOT) / relative_name
 
 
-# 返回文件内容给预览页，避免预览地址固定死在 MEDIA_ROOT 上。
+# 返回文件内容给预览页，避免局域网用户直接触发浏览器下载。
 def file_response_from_setting(file_field, download: bool = False):
     file_path = preview_file_path(file_field)
     if not file_field or not file_path.exists():
-        raise Http404("文件不存在或预览路径配置不正确。")
+        raise Http404("文件不存在或保存路径不正确。")
     return FileResponse(open(file_path, "rb"), as_attachment=download, filename=Path(file_field.name).name)
 
 
@@ -441,6 +440,52 @@ def delete_contract_files(file_ids) -> None:
         item.delete()
 
 
+RECORD_FILE_VERSION_MODELS = {
+    InvoiceRecord: InvoiceRecordFileVersion,
+    PaymentRecord: PaymentRecordFileVersion,
+    MaintenanceRecord: MaintenanceRecordFileVersion,
+}
+
+
+# 获取记录附件版本模型。
+def record_file_version_model_for(record):
+    for record_model, version_model in RECORD_FILE_VERSION_MODELS.items():
+        if isinstance(record, record_model):
+            return version_model
+    return None
+
+
+# 新增一条记录附件版本，并让记录自身指向最新版本文件。
+def attach_record_file_version(record, uploaded_file):
+    if not uploaded_file:
+        return None
+    version_model = record_file_version_model_for(record)
+    if version_model is None:
+        return None
+    version = version_model.objects.create(
+        record=record,
+        file=uploaded_file,
+        original_name=uploaded_file.name,
+    )
+    record.file = version.file.name
+    record.save(update_fields=["file", "updated_at"])
+    return version
+
+
+# 删除记录时清理它的所有附件版本文件。
+def delete_record_file_versions(record) -> None:
+    version_model = record_file_version_model_for(record)
+    if version_model is None:
+        delete_file_from_storage(record.file)
+        return
+    versions = list(version_model.objects.filter(record=record))
+    if not versions:
+        delete_file_from_storage(record.file)
+        return
+    for version in versions:
+        delete_file_from_storage(version.file)
+
+
 # 函数说明：封装可复用的业务处理。
 def preview_type_for_file(file_name: str) -> str:
     suffix = Path(file_name).suffix.lower()
@@ -460,11 +505,11 @@ def purge_expired_trash() -> None:
         delete_file_from_storage(contract.file)
         delete_contract_files(contract.files.values_list("id", flat=True))
         for record in contract.invoicerecord_set.all():
-            delete_file_from_storage(record.file)
+            delete_record_file_versions(record)
         for record in contract.paymentrecord_set.all():
-            delete_file_from_storage(record.file)
+            delete_record_file_versions(record)
         for record in contract.maintenancerecord_set.all():
-            delete_file_from_storage(record.file)
+            delete_record_file_versions(record)
         for item in contract.settlement_files.all():
             delete_file_from_storage(item.file)
         contract.delete()
@@ -487,15 +532,16 @@ def save_records_from_request(request, contract: Contract, record_model) -> int:
         parsed_record_date = parse_form_date(record_date)
         if not parsed_record_date or amount == "":
             continue
-        record_model.objects.create(
+        uploaded_file = request.FILES.get(f"file_{index}")
+        record = record_model.objects.create(
             contract=contract,
             record_date=parsed_record_date,
             record_type=record_type,
             amount=amount,
             actual_amount=actual_amount or None,
-            file=request.FILES.get(f"file_{index}"),
             remark=remark,
         )
+        attach_record_file_version(record, uploaded_file)
         saved_count += 1
     return saved_count
 
@@ -517,15 +563,16 @@ def save_typed_records_from_request(request, contract: Contract, record_model_by
         parsed_record_date = parse_form_date(record_date)
         if not parsed_record_date or amount == "" or record_model is None:
             continue
-        record_model.objects.create(
+        uploaded_file = request.FILES.get(f"file_{index}")
+        record = record_model.objects.create(
             contract=contract,
             record_date=parsed_record_date,
             record_type=record_type,
             amount=amount,
             actual_amount=actual_amount or None,
-            file=request.FILES.get(f"file_{index}"),
             remark=remark,
         )
+        attach_record_file_version(record, uploaded_file)
         saved_count += 1
     return saved_count
 
@@ -643,13 +690,14 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
         if "-" in month:
             year_text, month_text = month.split("-", 1)
             month = f"{year_text}年{int(month_text):02d}月"
-        MaintenanceRecord.objects.create(
+        uploaded_file = request.FILES.get(f"file_{index}")
+        record = MaintenanceRecord.objects.create(
             contract=contract,
             record_date=parsed_record_date,
             month=month,
-            file=request.FILES.get(f"file_{index}"),
             remark=remark,
         )
+        attach_record_file_version(record, uploaded_file)
         saved_count += 1
     return saved_count
 
@@ -1273,7 +1321,7 @@ def legacy_contract_file_delete(request, pk: int):
     return redirect("contracts:contract_detail", pk=contract.pk)
 
 
-# 按设置中的预览根目录读取文件内容，供 PDF、图片和下载使用。
+# 从 media 目录读取文件内容，供 PDF、图片和下载使用。
 def configured_file_content(request, kind: str, pk: int):
     download = request.GET.get("download") == "1"
     if kind == "contract":
@@ -1650,6 +1698,9 @@ def contract_snapshot_related_groups(contract: Contract) -> list[tuple[str, obje
         ("invoice_records", contract.invoicerecord_set.all()),
         ("payment_records", contract.paymentrecord_set.all()),
         ("maintenance_records", contract.maintenancerecord_set.all()),
+        ("invoice_record_file_versions", InvoiceRecordFileVersion.objects.filter(record__contract=contract)),
+        ("payment_record_file_versions", PaymentRecordFileVersion.objects.filter(record__contract=contract)),
+        ("maintenance_record_file_versions", MaintenanceRecordFileVersion.objects.filter(record__contract=contract)),
     ]
 
 
@@ -1944,7 +1995,7 @@ def record_delete(request, pk: int):
             record = record_model.objects.get(pk=record_id, contract=contract)
         except record_model.DoesNotExist:
             continue
-        delete_file_from_storage(record.file)
+        delete_record_file_versions(record)
         record.delete()
         deleted_count += 1
     if deleted_count:
@@ -1957,7 +2008,7 @@ def record_delete(request, pk: int):
 # 函数说明：封装可复用的业务处理。
 @admin_required
 def record_file_update(request, kind: str, pk: int):
-    # 单条记录只保留一个附件，新上传文件会覆盖并删除旧文件。
+    # 单条记录展示最新附件，新上传文件会新增版本并保留旧文件。
     record_model = record_model_for_kind(kind)
     if record_model is None:
         return redirect("contracts:contract_list")
@@ -1965,9 +2016,7 @@ def record_file_update(request, kind: str, pk: int):
     if request.method == "POST":
         uploaded_file = request.FILES.get("file")
         if uploaded_file:
-            delete_file_from_storage(record.file)
-            record.file = uploaded_file
-            record.save(update_fields=["file", "updated_at"])
+            attach_record_file_version(record, uploaded_file)
             log_operation(request, "上传", record.contract, object_type="记录附件", object_name=uploaded_file.name, object_id=str(record.pk), detail=f"record type: {getattr(record, 'record_type', 'project record')}", version_obj=record)
     next_url = request.POST.get("next", "")
     if next_url.startswith("/"):

@@ -463,11 +463,65 @@ def preview_file_path(file_field) -> Path:
     return Path(settings.MEDIA_ROOT) / relative_name
 
 
+def contract_for_file_field(file_field) -> Contract | None:
+    instance = getattr(file_field, "instance", None)
+    if instance is None:
+        return None
+    record = getattr(instance, "record", None)
+    if record is not None:
+        return getattr(record, "contract", None)
+    return getattr(instance, "contract", instance if isinstance(instance, Contract) else None)
+
+
+def repair_file_field_path(file_field) -> bool:
+    if not file_field or not getattr(file_field, "name", ""):
+        return False
+    current_path = preview_file_path(file_field)
+    if current_path.exists():
+        typed_name = typed_preview_file_name(file_field).as_posix()
+        if typed_name and typed_name != file_field.name:
+            file_field.name = typed_name
+            instance = getattr(file_field, "instance", None)
+            field_name = getattr(getattr(file_field, "field", None), "name", "")
+            if instance is not None and field_name:
+                instance.save(update_fields=[field_name])
+        return True
+
+    contract = contract_for_file_field(file_field)
+    if contract is None:
+        return False
+
+    root = contract_file_folder(contract)
+    if not root.exists():
+        return False
+
+    instance = getattr(file_field, "instance", None)
+    target_names = {
+        Path(file_field.name).name.lower(),
+        Path(getattr(instance, "original_name", "") or "").name.lower(),
+    }
+    target_names.discard("")
+    if not target_names:
+        return False
+
+    matches = [path for path in root.rglob("*") if path.is_file() and path.name.lower() in target_names]
+    if not matches:
+        return False
+
+    chosen = max(matches, key=lambda path: path.stat().st_mtime)
+    relative_name = chosen.relative_to(Path(settings.MEDIA_ROOT)).as_posix()
+    file_field.name = relative_name
+    field_name = getattr(getattr(file_field, "field", None), "name", "")
+    if instance is not None and field_name:
+        instance.save(update_fields=[field_name])
+    return True
+
+
 # 返回文件内容给预览页，避免局域网用户直接触发浏览器下载。
 def file_response_from_setting(file_field, download: bool = False):
-    file_path = preview_file_path(file_field)
-    if not file_field or not file_path.exists():
+    if not repair_file_field_path(file_field):
         raise Http404("文件不存在或保存路径不正确。")
+    file_path = preview_file_path(file_field)
     return FileResponse(open(file_path, "rb"), as_attachment=download, filename=Path(file_field.name).name)
 
 
@@ -1276,6 +1330,7 @@ def maintenance_record_data(request, pk: int):
 # 视图函数：处理页面请求并返回响应。
 def contract_file_preview(request, pk: int):
     item = get_object_or_404(ContractFile, pk=pk, contract__is_deleted=False)
+    file_exists = repair_file_field_path(item.file)
     return_from = request.GET.get("from")
     return_state = list_return_state(request, item.contract_id)
     if return_from == "list":
@@ -1298,7 +1353,8 @@ def contract_file_preview(request, pk: int):
                 "return_id": return_state["return_id"],
             },
         )
-    preview_type = preview_type_for_file(item.file.name)
+    file_content_url = reverse("contracts:configured_file_content", args=["contract", item.id])
+    preview_type = preview_type_for_file(item.file.name) if file_exists else "missing"
     return render(
         request,
         "contracts/file_preview.html",
@@ -1308,8 +1364,8 @@ def contract_file_preview(request, pk: int):
                 "contract": item.contract,
                 "file_item": item,
                 "file_name": item.original_name or Path(item.file.name).name,
-                "file_url": reverse("contracts:configured_file_content", args=["contract", item.id]),
-                "download_url": f"{reverse('contracts:configured_file_content', args=['contract', item.id])}?download=1",
+                "file_url": file_content_url if file_exists else "",
+                "download_url": f"{file_content_url}?download=1" if file_exists else "",
                 "preview_type": preview_type,
                 "return_url": return_url,
                 "delete_url": reverse("contracts:contract_file_delete", args=[item.id]),
@@ -1343,6 +1399,7 @@ def legacy_contract_file_preview(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if not contract.file:
         return redirect("contracts:contract_detail", pk=contract.pk)
+    file_exists = repair_file_field_path(contract.file)
     return_from = request.GET.get("from")
     return_state = list_return_state(request, contract.pk)
     if return_from == "list":
@@ -1365,7 +1422,8 @@ def legacy_contract_file_preview(request, pk: int):
                 "return_id": return_state["return_id"],
             },
         )
-    preview_type = preview_type_for_file(contract.file.name)
+    file_content_url = reverse("contracts:configured_file_content", args=["legacy", contract.id])
+    preview_type = preview_type_for_file(contract.file.name) if file_exists else "missing"
     return render(
         request,
         "contracts/file_preview.html",
@@ -1374,8 +1432,8 @@ def legacy_contract_file_preview(request, pk: int):
             {
                 "contract": contract,
                 "file_name": Path(contract.file.name).name,
-                "file_url": reverse("contracts:configured_file_content", args=["legacy", contract.id]),
-                "download_url": f"{reverse('contracts:configured_file_content', args=['legacy', contract.id])}?download=1",
+                "file_url": file_content_url if file_exists else "",
+                "download_url": f"{file_content_url}?download=1" if file_exists else "",
                 "preview_type": preview_type,
                 "return_url": return_url,
                 "delete_url": reverse("contracts:legacy_contract_file_delete", args=[contract.id]),
@@ -2704,6 +2762,7 @@ def settlement_file_list(request, pk: int):
 @admin_required
 def settlement_file_preview(request, pk: int):
     item = get_object_or_404(SettlementFile, pk=pk, contract__is_deleted=False)
+    file_exists = repair_file_field_path(item.file)
     return_state = list_return_state(request, item.contract_id)
     settlement_return_url = merge_query_params(
         reverse("contracts:settlement_file_list", args=[item.contract_id]),
@@ -2713,6 +2772,7 @@ def settlement_file_preview(request, pk: int):
             "return_id": return_state["return_id"],
         },
     )
+    file_content_url = reverse("contracts:configured_file_content", args=["settlement", item.id])
     return render(
         request,
         "contracts/file_preview.html",
@@ -2721,9 +2781,9 @@ def settlement_file_preview(request, pk: int):
             {
                 "contract": item.contract,
                 "file_name": item.original_name or Path(item.file.name).name,
-                "file_url": reverse("contracts:configured_file_content", args=["settlement", item.id]),
-                "download_url": f"{reverse('contracts:configured_file_content', args=['settlement', item.id])}?download=1",
-                "preview_type": preview_type_for_file(item.file.name),
+                "file_url": file_content_url if file_exists else "",
+                "download_url": f"{file_content_url}?download=1" if file_exists else "",
+                "preview_type": preview_type_for_file(item.file.name) if file_exists else "missing",
                 "return_url": settlement_return_url,
                 "delete_url": reverse("contracts:settlement_file_delete", args=[item.id]),
                 "active_nav": "contracts",

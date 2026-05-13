@@ -517,6 +517,23 @@ def repair_file_field_path(file_field) -> bool:
     return True
 
 
+def hydrate_contract_file_status(contracts: list[Contract]) -> None:
+    for contract in contracts:
+        preview_file = None
+        for item in contract.files.order_by("sort_order", "id"):
+            if repair_file_field_path(item.file):
+                preview_file = item
+                break
+
+        legacy_file_available = False
+        if preview_file is None and contract.file:
+            legacy_file_available = repair_file_field_path(contract.file)
+
+        contract.preview_file = preview_file
+        contract.legacy_file_available = legacy_file_available
+        contract.file_is_uploaded = bool(preview_file or legacy_file_available)
+
+
 # 返回文件内容给预览页，避免局域网用户直接触发浏览器下载。
 def file_response_from_setting(file_field, download: bool = False):
     if not repair_file_field_path(file_field):
@@ -1472,6 +1489,10 @@ def configured_file_content(request, kind: str, pk: int):
     if kind == "settlement":
         item = get_object_or_404(SettlementFile, pk=pk, contract__is_deleted=False)
         return file_response_from_setting(item.file, download)
+    record_model = record_model_for_kind(kind)
+    if record_model is not None:
+        record = get_object_or_404(record_model, pk=pk, contract__is_deleted=False)
+        return file_response_from_setting(record.file, download)
     raise Http404("文件类型不存在。")
 
 
@@ -1952,6 +1973,7 @@ def contract_list(request):
         sort_contracts_by_number(contracts, direction, explicit_sort)
     if sort == "payment_rate":
         contracts.sort(key=lambda item: item.payment_rate, reverse=direction == "desc")
+    hydrate_contract_file_status(contracts)
     query_params = request.GET.copy()
     query_params.pop("sort", None)
     query_params.pop("direction", None)
@@ -1990,6 +2012,7 @@ def contract_list(request):
 def contract_list_export(request):
     # 导出结果遵循当前合同列表的搜索、筛选和排序状态。
     contracts = contracts_for_list_request(request)
+    hydrate_contract_file_status(contracts)
     headers = [
         "序号",
         UI_LABELS["contract_name"],
@@ -2019,7 +2042,7 @@ def contract_list_export(request):
                 contract.end_date.strftime("%Y-%m-%d") if contract.end_date else "",
                 contract.responsible_person or "",
                 contract.status,
-                "已上传" if contract.latest_file or contract.file else "未上传",
+                "已上传" if contract.file_is_uploaded else "未上传",
             ]
         )
 
@@ -2539,6 +2562,48 @@ def record_model_for_kind(kind: str):
     return RECORD_MODEL_MAP.get(kind)
 
 
+def record_file_preview(request, kind: str, pk: int):
+    record_model = record_model_for_kind(kind)
+    if record_model is None:
+        return redirect("contracts:contract_list")
+    record = get_object_or_404(record_model, pk=pk, contract__is_deleted=False)
+    file_exists = repair_file_field_path(record.file) if record.file else False
+    file_content_url = reverse("contracts:configured_file_content", args=[kind, record.id])
+    return_url = request.GET.get("next", "")
+    if not return_url.startswith("/") or return_url.startswith("//"):
+        return_url = reverse("contracts:contract_detail", args=[record.contract_id])
+    upload_url = reverse("contracts:record_file_update", args=[kind, record.id])
+    current_url = request.get_full_path()
+    preview_type = "empty"
+    if record.file:
+        preview_type = preview_type_for_file(record.file.name) if file_exists else "missing"
+    version_model = record_file_version_model_for(record)
+    latest_version = version_model.objects.filter(record=record).first() if version_model else None
+    file_name = (
+        latest_version.original_name
+        if latest_version and latest_version.original_name
+        else Path(record.file.name).name if record.file else "未上传"
+    )
+    return render(
+        request,
+        "contracts/file_preview.html",
+        context_with_auth(
+            request,
+            {
+                "contract": record.contract,
+                "file_name": file_name,
+                "file_url": file_content_url if file_exists else "",
+                "download_url": f"{file_content_url}?download=1" if file_exists else "",
+                "preview_type": preview_type,
+                "return_url": return_url,
+                "upload_url": upload_url,
+                "upload_next_url": current_url,
+                "active_nav": "contracts",
+            },
+        ),
+    )
+
+
 # 视图函数：处理页面请求并返回响应。
 @admin_required
 def record_delete(request, pk: int):
@@ -2936,9 +3001,10 @@ def contract_update(request, pk: int):
 def contract_delete(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if request.method == "POST":
+        return_state = list_return_state(request, contract.pk)
         contract.move_to_trash()
         log_operation(request, "删除", contract, detail="moved to trash")
-        return redirect("contracts:contract_list")
+        return redirect(return_state["return_url"])
     return render(
         request,
         "contracts/contract_confirm_delete.html",

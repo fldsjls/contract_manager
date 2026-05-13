@@ -6,12 +6,29 @@
   <div class="page-content detail-page">
     <!-- 预览页标题和返回入口。 -->
     <h1 class="page-title">文件预览</h1>
+    {% firstof download_url file_url as preview_download_url %}
     <div class="toolbar" style="align-items: center;">
       <a class="button" href="{{ return_url }}">返回</a>
-      <a class="button" href="{{ download_url|default:file_url }}" download>下载文件</a>
-      <span class="file-preview-name" title="{{ file_name }}">{{ file_name }}</span>
+      {% if upload_url and can_manage %}
+        <form id="previewUploadForm" method="post" action="{{ upload_url }}" enctype="multipart/form-data" style="margin: 0;">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ upload_next_url|default:request.get_full_path }}">
+          <label class="button primary file-select-button" for="previewUploadInput">
+            <span class="file-select-label">上传文件</span>
+          </label>
+          <input id="previewUploadInput" name="file" type="file" hidden>
+        </form>
+      {% endif %}
+      <a
+        class="button{% if not preview_download_url %} disabled{% endif %}"
+        id="previewDownloadButton"
+        {% if preview_download_url %}href="{{ preview_download_url }}"{% else %}href="#"{% endif %}
+        aria-disabled="{% if preview_download_url %}false{% else %}true{% endif %}"
+        download
+      >下载文件</a>
+      <span class="file-preview-name preview-toolbar-file-name" title="{{ file_name }}">{{ file_name }}</span>
       <span class="toolbar-spacer"></span>
-      {% if can_manage %}
+      {% if can_manage and delete_url %}
         <form method="post" action="{{ delete_url }}" style="margin: 0;">
           {% csrf_token %}
           <input type="hidden" name="next" value="{{ return_url }}">
@@ -34,6 +51,9 @@
           {% if preview_type == "missing" %}
             未在当前文件保存目录中找到该文件。<br>
             请确认文件已恢复到对应合同的 media 文件夹后重新预览。
+          {% elif preview_type == "empty" %}
+            当前记录还未上传文件。<br>
+            可点击上方“上传文件”添加附件。
           {% else %}
             当前文件类型无法在浏览器中直接预览。<br>
             可在主机电脑上用本地软件打开，或将文件转换为 PDF 后上传。
@@ -42,6 +62,23 @@
       {% endif %}
     </section>
   </div>
+
+  <script>
+    const previewDownloadButton = document.querySelector("#previewDownloadButton");
+    const previewUploadInput = document.querySelector("#previewUploadInput");
+    const previewUploadForm = document.querySelector("#previewUploadForm");
+
+    previewDownloadButton?.addEventListener("click", (event) => {
+      if (previewDownloadButton.getAttribute("aria-disabled") === "true") {
+        event.preventDefault();
+      }
+    });
+    previewUploadInput?.addEventListener("change", () => {
+      if (previewUploadInput.files.length) {
+        previewUploadForm.submit();
+      }
+    });
+  </script>
 
   {% if preview_type == "pdf" %}
     <!-- PDF.js 将 PDF 每一页渲染到 canvas，避免浏览器 PDF 插件不可用时无法预览。 -->

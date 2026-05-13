@@ -133,13 +133,10 @@
                           {% endif %}
                         </td>
                         <td>
-                          <button
-                            class="button file-preview-button record-file-trigger"
-                            type="button"
-                            data-upload-url="{% url 'contracts:record_file_update' 'maintenance' record.id %}"
-                            data-download-url="{% if record.file %}{{ record.file.url }}{% endif %}"
-                            data-file-name="{% if record.file %}{{ record.file.name }}{% else %}未上传{% endif %}"
-                          ><span class="file-preview-name">{% if record.file %}{{ record.file.name }}{% else %}上传文件{% endif %}</span></button>
+                          <a
+                            class="button file-preview-button"
+                            href="{% url 'contracts:record_file_preview' 'maintenance' record.id %}?next={{ request.get_full_path|urlencode }}"
+                          ><span class="file-preview-name">{% if record.file %}{{ record.file.name }}{% else %}上传文件{% endif %}</span></a>
                         </td>
                         {% if can_manage %}<td class="select-col"><input type="checkbox" name="record_ids" value="maintenance:{{ record.id }}"></td>{% endif %}
                       </tr>
@@ -156,32 +153,13 @@
     </div>
   </div>
 
-  <!-- 单条类型记录的附件弹窗，上传新文件会覆盖旧文件。 -->
-  <div class="modal-backdrop" id="recordFileModal" hidden>
-    <div class="modal-card record-file-modal-card" role="dialog" aria-modal="true" aria-labelledby="recordFileModalTitle">
-      <div class="modal-header" id="recordFileModalTitle">{{ labels.record_file }}</div>
-      <form id="recordFileUploadForm" method="post" enctype="multipart/form-data">
-        {% csrf_token %}
-        <input type="hidden" name="next" value="{{ request.path }}">
-        <input id="recordFileInput" name="file" type="file" hidden>
-        <div class="modal-actions record-file-actions">
-          {% if can_manage %}
-            <label class="button primary" for="recordFileInput">{{ labels.upload_file }}</label>
-          {% endif %}
-          <a class="button" id="recordFileDownload" href="#" download>{{ labels.download_file }}</a>
-          <button class="button" id="recordFileCancel" type="button">取消</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
   <script>
     // 附件按钮只展示文件名，完整路径仍保留在下载地址中。
     function baseFileName(value) {
       return (value || "未上传").split(/[\\/]/).pop();
     }
 
-    document.querySelectorAll(".record-file-trigger .file-preview-name").forEach((item) => {
+    document.querySelectorAll(".record-table .file-preview-name").forEach((item) => {
       item.textContent = baseFileName(item.textContent.trim());
       item.title = item.textContent;
     });
@@ -207,42 +185,5 @@
       });
     });
 
-    const recordFileModal = document.querySelector("#recordFileModal");
-    const recordFileUploadForm = document.querySelector("#recordFileUploadForm");
-    const recordFileDownload = document.querySelector("#recordFileDownload");
-    const recordFileCancel = document.querySelector("#recordFileCancel");
-    const recordFileInput = document.querySelector("#recordFileInput");
-
-    // 打开附件弹窗时绑定当前记录对应的上传地址和下载地址。
-    document.querySelectorAll(".record-file-trigger").forEach((button) => {
-      button.addEventListener("click", () => {
-        const downloadUrl = button.dataset.downloadUrl || "";
-        recordFileUploadForm.action = button.dataset.uploadUrl;
-        document.querySelector("#recordFileModalTitle").textContent = `记录文件：${baseFileName(button.dataset.fileName)}`;
-        recordFileDownload.href = downloadUrl || "#";
-        recordFileDownload.setAttribute("aria-disabled", downloadUrl ? "false" : "true");
-        recordFileDownload.classList.toggle("disabled", !downloadUrl);
-        recordFileInput.value = "";
-        recordFileModal.hidden = false;
-      });
-    });
-    recordFileInput.addEventListener("change", () => {
-      if (recordFileInput.files.length) {
-        recordFileUploadForm.submit();
-      }
-    });
-    recordFileCancel.addEventListener("click", () => {
-      recordFileModal.hidden = true;
-    });
-    recordFileModal.addEventListener("click", (event) => {
-      if (event.target === recordFileModal) {
-        recordFileModal.hidden = true;
-      }
-    });
-    recordFileDownload.addEventListener("click", (event) => {
-      if (recordFileDownload.getAttribute("aria-disabled") === "true") {
-        event.preventDefault();
-      }
-    });
   </script>
 {% endblock %}

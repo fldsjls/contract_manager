@@ -58,7 +58,9 @@
               {% endif %}
               <td><input name="remark" type="text"></td>
               <td>
-                <label class="button" for="recordFile0">{{ labels.upload_file }}</label>
+                <label class="button file-select-button" for="recordFile0">
+                  <span class="file-select-label">{{ labels.upload_file }}</span>
+                </label>
                 <input class="hidden-file-input" id="recordFile0" name="file_0" type="file">
               </td>
             </tr>
@@ -152,12 +154,31 @@
         {% endif %}
         <td><input name="remark" type="text"></td>
         <td>
-          <label class="button" for="recordFile_${index}">{{ labels.upload_file }}</label>
+          <label class="button file-select-button" for="recordFile_${index}">
+            <span class="file-select-label">{{ labels.upload_file }}</span>
+          </label>
           <input class="hidden-file-input" id="recordFile_${index}" name="file_${index}" type="file">
         </td>
       `;
       recordTableBody.appendChild(row);
       syncMaintenanceRow(row);
+    });
+
+    function baseFileName(value) {
+      return (value || "").split(/[\\/]/).pop();
+    }
+
+    recordTableBody.addEventListener("change", (event) => {
+      if (!event.target.matches('input[type="file"]')) {
+        return;
+      }
+      const label = recordTableBody.querySelector(`label[for="${event.target.id}"] .file-select-label`);
+      if (!label) {
+        return;
+      }
+      const fileName = event.target.files.length ? baseFileName(event.target.files[0].name) : "{{ labels.upload_file|escapejs }}";
+      label.textContent = fileName;
+      label.title = fileName;
     });
   </script>
 {% endblock %}

@@ -131,6 +131,7 @@
                 data-payment-total="¥ {{ contract.payment_total|floatformat:2 }}"
                 data-payment-rate="{{ contract.payment_rate|floatformat:1 }}%"
                 data-stats-url="{% url 'contracts:contract_stats_data' contract.id %}"
+                data-stats-export-url="{% url 'contracts:contract_stats_export' contract.id %}"
                 data-maintenance-url="{% url 'contracts:maintenance_record_data' contract.id %}"
                 data-file-url="{% if contract.preview_file %}{% url 'contracts:contract_file_preview' contract.preview_file.id %}?from=list{% elif contract.legacy_file_available %}{% url 'contracts:legacy_contract_file_preview' contract.id %}?from=list{% endif %}"
               >
@@ -270,6 +271,32 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="projectExportRangeModal" hidden>
+    <div class="modal-card range-modal-card" role="dialog" aria-modal="true" aria-labelledby="projectExportRangeModalTitle">
+      <div class="modal-header" id="projectExportRangeModalTitle">选择导出日期界限</div>
+      <form id="projectExportRangeForm">
+        <div class="modal-body">
+          <div class="range-section">
+            <label class="field-label" for="projectExportStartDate">开始日期</label>
+            <div class="field-control-row">
+              <input id="projectExportStartDate" name="start_date" type="date" required>
+            </div>
+          </div>
+          <div class="range-section" style="margin-top: 12px;">
+            <label class="field-label" for="projectExportEndDate">结束日期</label>
+            <div class="field-control-row">
+              <input id="projectExportEndDate" name="end_date" type="date" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" id="projectExportRangeCancel" type="button">取消</button>
+          <button class="button primary" type="submit">导出</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- 表格行选择、按钮启用、文件打开和单项目统计弹窗逻辑。 -->
   <script src="{% static 'contracts/vendor/echarts.min.js' %}"></script>
   <script>
@@ -306,9 +333,15 @@
     const projectMonthControl = document.querySelector("#projectMonthControl");
     const projectYearLabel = document.querySelector("#projectYearLabel");
     const projectMonthLabel = document.querySelector("#projectMonthLabel");
+    const projectExportRangeModal = document.querySelector("#projectExportRangeModal");
+    const projectExportRangeForm = document.querySelector("#projectExportRangeForm");
+    const projectExportRangeCancel = document.querySelector("#projectExportRangeCancel");
+    const projectExportStartDate = document.querySelector("#projectExportStartDate");
+    const projectExportEndDate = document.querySelector("#projectExportEndDate");
     let modalConfirmHandler = null;
     let projectStatsState = {
       url: "",
+      exportUrl: "",
       period: "all",
       year: new Date().getFullYear(),
       month: new Date().getMonth() + 1,
@@ -397,6 +430,7 @@
         statsButton.dataset.paymentTotal = "";
         statsButton.dataset.paymentRate = "";
         statsButton.dataset.statsUrl = "";
+        statsButton.dataset.statsExportUrl = "";
         statsButton.dataset.maintenanceUrl = "";
         statsButton.dataset.contractType = "";
       }
@@ -453,6 +487,7 @@
         statsButton.dataset.paymentTotal = row.dataset.paymentTotal;
         statsButton.dataset.paymentRate = row.dataset.paymentRate;
         statsButton.dataset.statsUrl = row.dataset.statsUrl;
+        statsButton.dataset.statsExportUrl = row.dataset.statsExportUrl;
         statsButton.dataset.maintenanceUrl = row.dataset.maintenanceUrl;
         statsButton.dataset.contractType = row.dataset.contractType;
       }
@@ -777,6 +812,7 @@
         centerModal.hidden = false;
         centerModalConfirm.focus();
         projectStatsState.url = statsButton.dataset.statsUrl;
+        projectStatsState.exportUrl = statsButton.dataset.statsExportUrl;
         projectStatsState.period = "all";
         projectStatsState.year = new Date().getFullYear();
         projectStatsState.month = new Date().getMonth() + 1;
@@ -939,6 +975,47 @@
       projectRangeModal.hidden = false;
     }
 
+    function projectStatsExportUrl(extraParams) {
+      const params = new URLSearchParams(extraParams);
+      return `${projectStatsState.exportUrl}?${params.toString()}`;
+    }
+
+    function defaultProjectExportDates() {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - 11);
+      const formatDate = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      };
+      projectExportStartDate.value = formatDate(start);
+      projectExportEndDate.value = formatDate(end);
+    }
+
+    function closeProjectExportRangeModal() {
+      projectExportRangeModal.hidden = true;
+    }
+
+    function exportProjectStats() {
+      if (!projectStatsState.exportUrl) {
+        alert("导出地址未就绪，请重新选择项目后再试。");
+        return;
+      }
+      if (projectStatsState.period === "all") {
+        defaultProjectExportDates();
+        projectExportRangeModal.hidden = false;
+        projectExportStartDate.focus();
+        return;
+      }
+      window.location.href = projectStatsExportUrl({
+        period: projectStatsState.period,
+        year: projectStatsState.year,
+        month: projectStatsState.month,
+      });
+    }
+
     // 函数说明：处理页面交互和数据展示逻辑。
     function renderProjectStats(data) {
       projectStatsState.period = data.period;
@@ -977,15 +1054,26 @@
             <div class="metric-value" data-metric-value="rate"></div>
           </div>
         </section>
-        <div class="project-stats-chart" id="projectStatsChart"></div>
+        <div class="project-stats-chart-wrap">
+          <div class="project-chart-header">
+            <h3 id="projectStatsChartTitle">收入趋势</h3>
+            <button class="button" id="projectStatsExportButton" type="button">导出 Excel</button>
+          </div>
+          <div class="project-stats-chart" id="projectStatsChart"></div>
+        </div>
       `;
       wrapper.querySelector(".project-stats-name").textContent = data.contract_name;
       centerModalBody.appendChild(wrapper);
       centerModalLeftActions.appendChild(projectPopupTabs("stats"));
       wrapper.querySelector("#projectStatsRangeButton").addEventListener("click", openProjectRangeModal);
+      wrapper.querySelector("#projectStatsExportButton").addEventListener("click", exportProjectStats);
+      const chartTitle = wrapper.querySelector("#projectStatsChartTitle");
       const modeToggle = wrapper.querySelector("#projectStatsModeToggle");
       const chartElement = wrapper.querySelector("#projectStatsChart");
       const chart = echarts.init(chartElement);
+      const projectVisiblePointLimit = 12;
+      const projectVisibleEnd = 100;
+      const projectGrid = { left: 42, right: 52, top: 66, bottom: 42 };
       const projectLabels = data.labels || {
         invoice_primary: "开票金额",
         invoice_secondary: "收款金额",
@@ -1008,12 +1096,29 @@
           chart: { primary: data.chart.expense || data.chart.payment, secondary: data.chart.expense || data.chart.payment },
         },
       };
+      const projectVisibleStart = data.chart.labels.length > projectVisiblePointLimit
+        ? Math.max(0, 100 - (projectVisiblePointLimit / data.chart.labels.length) * 100)
+        : 0;
+
+      function projectSliderBounds() {
+        const visibleCount = Math.min(data.chart.labels.length, projectVisiblePointLimit);
+        if (visibleCount <= 1) {
+          return { left: projectGrid.left, right: projectGrid.right };
+        }
+        const plotWidth = Math.max(0, chartElement.clientWidth - projectGrid.left - projectGrid.right);
+        const halfCategoryWidth = Math.round(plotWidth / visibleCount / 2);
+        return {
+          left: projectGrid.left + halfCategoryWidth,
+          right: projectGrid.right + halfCategoryWidth,
+        };
+      }
+
       // 函数说明：处理页面交互和数据展示逻辑。
       function projectSeriesData(values, peerValues, defaultPosition) {
-        return values.map((value, index) => ({
+        return values.map((value) => ({
           value,
           label: {
-            position: Number(value || 0) === 0 && Number(peerValues[index] || 0) === 0 ? "top" : defaultPosition,
+            position: Number(value || 0) === 0 ? "top" : defaultPosition,
           },
         }));
       }
@@ -1024,25 +1129,26 @@
           valueFormatter: (value) => `¥ ${Math.round(Number(value || 0)).toLocaleString("zh-CN")}`,
         },
         legend: {
-          top: 8,
+          top: 16,
           left: 18,
           itemWidth: 18,
           itemHeight: 8,
           data: [projectLabels.invoice_primary, projectLabels.invoice_secondary],
         },
         grid: {
-          left: 34,
-          right: 38,
-          top: 48,
-          bottom: 42,
+          left: projectGrid.left,
+          right: projectGrid.right,
+          top: projectGrid.top,
+          bottom: projectGrid.bottom,
           containLabel: false,
         },
         xAxis: {
           type: "category",
-          boundaryGap: false,
+          boundaryGap: true,
           data: data.chart.labels,
           axisLine: {
             symbol: ["none", "arrow"],
+            symbolOffset: [0, 10],
             lineStyle: { color: "#98a2b3" },
           },
           axisTick: { alignWithLabel: true },
@@ -1058,6 +1164,7 @@
           axisLine: {
             show: true,
             symbol: ["none", "arrow"],
+            symbolOffset: [0, 10],
             lineStyle: { color: "#98a2b3" },
           },
           axisLabel: { show: false },
@@ -1065,23 +1172,25 @@
         },
         dataZoom: [
           {
+            id: "project-inside-zoom",
             type: "inside",
             filterMode: "filter",
-            start: 0,
-            end: 100,
+            start: projectVisibleStart,
+            end: projectVisibleEnd,
             zoomOnMouseWheel: true,
             moveOnMouseMove: true,
             moveOnMouseWheel: false,
           },
           {
+            id: "project-slider-zoom",
             type: "slider",
             filterMode: "filter",
-            left: 34,
-            right: 38,
+            left: projectSliderBounds().left,
+            right: projectSliderBounds().right,
             height: 14,
             bottom: 4,
-            start: 0,
-            end: 100,
+            start: projectVisibleStart,
+            end: projectVisibleEnd,
             brushSelect: false,
           },
         ],
@@ -1168,6 +1277,7 @@
               rate: projectLabels.receipt_rate,
             };
         const modeData = projectModes[mode];
+        chartTitle.textContent = mode === "invoice" ? "收入趋势" : "支出趋势";
         wrapper.querySelector("[data-metric-title='primary']").textContent = labels.primary;
         wrapper.querySelector("[data-metric-value='primary']").textContent = formatMoney(modeData.primary_total);
         wrapper.querySelector("[data-metric-title='secondary']").textContent = labels.secondary;
@@ -1192,7 +1302,19 @@
       }
       modeToggle.addEventListener("change", applyProjectStatsMode);
       applyProjectStatsMode();
-      setTimeout(() => chart.resize(), 0);
+      setTimeout(() => {
+        chart.resize();
+        const nextSliderBounds = projectSliderBounds();
+        chart.setOption({
+          dataZoom: [
+            {
+              id: "project-slider-zoom",
+              left: nextSliderBounds.left,
+              right: nextSliderBounds.right,
+            },
+          ],
+        });
+      }, 0);
     }
 
     centerModalCancel.addEventListener("click", closeCenterModal);
@@ -1244,6 +1366,22 @@
       if (event.target === projectRangeModal) {
         projectRangeModal.hidden = true;
       }
+    });
+    projectExportRangeCancel.addEventListener("click", closeProjectExportRangeModal);
+    projectExportRangeModal.addEventListener("click", (event) => {
+      if (event.target === projectExportRangeModal) {
+        closeProjectExportRangeModal();
+      }
+    });
+    projectExportRangeForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const formData = new FormData(projectExportRangeForm);
+      window.location.href = projectStatsExportUrl({
+        period: "all",
+        start_date: formData.get("start_date"),
+        end_date: formData.get("end_date"),
+      });
+      closeProjectExportRangeModal();
     });
   </script>
 {% endblock %}

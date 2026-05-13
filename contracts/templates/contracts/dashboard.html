@@ -45,8 +45,9 @@
       <!-- 左侧趋势图和右侧即将到期项目共用同一行布局。 -->
       <section class="chart-grid">
         <div class="chart-area">
-          <div class="file-list-header" style="margin-bottom: 8px;">
+          <div class="dashboard-panel-title">
             <h2 id="trendChartTitle">收入趋势</h2>
+            <button class="button" id="trendExportButton" type="button">导出 Excel</button>
           </div>
           {% if chart_rows %}
             <div class="echarts-trend" id="trendChart" role="img" aria-label="收入和支出趋势图"></div>
@@ -151,6 +152,32 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="exportRangeModal" hidden>
+    <div class="modal-card range-modal-card" role="dialog" aria-modal="true" aria-labelledby="exportRangeModalTitle">
+      <div class="modal-header" id="exportRangeModalTitle">选择导出日期界限</div>
+      <form id="exportRangeForm">
+        <div class="modal-body">
+          <div class="range-section">
+            <label class="field-label" for="exportStartDate">开始日期</label>
+            <div class="field-control-row">
+              <input id="exportStartDate" name="start_date" type="date" value="{{ chart_export_start_date|date:'Y-m-d' }}" required>
+            </div>
+          </div>
+          <div class="range-section" style="margin-top: 12px;">
+            <label class="field-label" for="exportEndDate">结束日期</label>
+            <div class="field-control-row">
+              <input id="exportEndDate" name="end_date" type="date" value="{{ chart_export_end_date|date:'Y-m-d' }}" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" id="exportRangeCancel" type="button">取消</button>
+          <button class="button primary" type="submit">导出</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- 统计范围弹窗：全部、按年和按月使用同一套前端状态。 -->
   <div class="modal-backdrop" id="rangeModal" hidden>
     <div class="modal-card range-modal-card" role="dialog" aria-modal="true" aria-labelledby="rangeModalTitle">
@@ -204,6 +231,10 @@
     const yearLabel = document.querySelector("#yearLabel");
     const monthLabel = document.querySelector("#monthLabel");
     const periodOptions = document.querySelectorAll(".period-option");
+    const trendExportButton = document.querySelector("#trendExportButton");
+    const exportRangeModal = document.querySelector("#exportRangeModal");
+    const exportRangeForm = document.querySelector("#exportRangeForm");
+    const exportRangeCancel = document.querySelector("#exportRangeCancel");
 
     // 根据统计方式切换年份/月度选择控件，并同步按钮选中状态。
     function updateRangeLabels() {
@@ -256,6 +287,44 @@
       updateRangeLabels();
     });
 
+    function dashboardExportUrl(extraParams) {
+      const params = new URLSearchParams(extraParams);
+      return `{% url 'contracts:dashboard_export' %}?${params.toString()}`;
+    }
+
+    function closeExportRangeModal() {
+      exportRangeModal.hidden = true;
+    }
+
+    trendExportButton.addEventListener("click", () => {
+      if (periodInput.value === "all") {
+        exportRangeModal.hidden = false;
+        exportRangeModal.querySelector("input").focus();
+        return;
+      }
+      window.location.href = dashboardExportUrl({
+        period: periodInput.value,
+        year: yearInput.value,
+        month: monthInput.value,
+      });
+    });
+    exportRangeCancel.addEventListener("click", closeExportRangeModal);
+    exportRangeModal.addEventListener("click", (event) => {
+      if (event.target === exportRangeModal) {
+        closeExportRangeModal();
+      }
+    });
+    exportRangeForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const formData = new FormData(exportRangeForm);
+      window.location.href = dashboardExportUrl({
+        period: "all",
+        start_date: formData.get("start_date"),
+        end_date: formData.get("end_date"),
+      });
+      closeExportRangeModal();
+    });
+
     const trendChartElement = document.querySelector("#trendChart");
     const trendChartDataElement = document.querySelector("#trendChartData");
     const dashboardModeToggle = document.querySelector("#dashboardModeToggle");
@@ -287,16 +356,30 @@
       const visiblePointLimit = 12;
       const visibleEnd = 100;
       const contractAmountLabel = "合同签订金额";
+      const trendGrid = { left: 42, right: 52, top: 42, bottom: 36 };
       const visibleStart = trendData.labels.length > visiblePointLimit
         ? Math.max(0, 100 - (visiblePointLimit / trendData.labels.length) * 100)
         : 0;
 
+      function trendSliderBounds() {
+        const visibleCount = Math.min(trendData.labels.length, visiblePointLimit);
+        if (visibleCount <= 1) {
+          return { left: trendGrid.left, right: trendGrid.right };
+        }
+        const plotWidth = Math.max(0, trendChartElement.clientWidth - trendGrid.left - trendGrid.right);
+        const halfCategoryWidth = Math.round(plotWidth / visibleCount / 2);
+        return {
+          left: trendGrid.left + halfCategoryWidth,
+          right: trendGrid.right + halfCategoryWidth,
+        };
+      }
+
       // 函数说明：处理页面交互和数据展示逻辑。
       function trendSeriesData(values, peerValues, defaultPosition) {
-        return values.map((value, index) => ({
+        return values.map((value) => ({
           value,
           label: {
-            position: Number(value || 0) === 0 && Number(peerValues[index] || 0) === 0 ? "top" : defaultPosition,
+            position: Number(value || 0) === 0 ? "top" : defaultPosition,
           },
         }));
       }
@@ -375,6 +458,8 @@
         return series;
       }
 
+      const sliderBounds = trendSliderBounds();
+
       trendChart.setOption({
         color: ["#2563eb", "#14b8a6", "#dc2626"],
         tooltip: {
@@ -389,18 +474,19 @@
           data: trendLegendData(trendData.modes.invoice),
         },
         grid: {
-          left: 32,
-          right: 38,
-          top: 42,
-          bottom: 36,
+          left: trendGrid.left,
+          right: trendGrid.right,
+          top: trendGrid.top,
+          bottom: trendGrid.bottom,
           containLabel: false,
         },
         xAxis: {
           type: "category",
-          boundaryGap: false,
+          boundaryGap: true,
           data: trendData.labels,
           axisLine: {
             symbol: ["none", "arrow"],
+            symbolOffset: [0, 10],
             lineStyle: { color: "#98a2b3" },
           },
           axisTick: { alignWithLabel: true },
@@ -416,6 +502,7 @@
           axisLine: {
             show: true,
             symbol: ["none", "arrow"],
+            symbolOffset: [0, 10],
             lineStyle: { color: "#98a2b3" },
           },
           axisLabel: { show: false },
@@ -423,6 +510,7 @@
         },
         dataZoom: [
           {
+            id: "trend-inside-zoom",
             type: "inside",
             filterMode: "filter",
             start: visibleStart,
@@ -432,10 +520,11 @@
             moveOnMouseWheel: false,
           },
           {
+            id: "trend-slider-zoom",
             type: "slider",
             filterMode: "filter",
-            left: 32,
-            right: 38,
+            left: sliderBounds.left,
+            right: sliderBounds.right,
             height: 14,
             bottom: 0,
             start: visibleStart,
@@ -465,7 +554,19 @@
 
       dashboardModeToggle.addEventListener("change", applyDashboardMode);
       applyDashboardMode();
-      window.addEventListener("resize", () => trendChart.resize());
+      window.addEventListener("resize", () => {
+        trendChart.resize();
+        const nextSliderBounds = trendSliderBounds();
+        trendChart.setOption({
+          dataZoom: [
+            {
+              id: "trend-slider-zoom",
+              left: nextSliderBounds.left,
+              right: nextSliderBounds.right,
+            },
+          ],
+        });
+      });
     }
   </script>
 {% endblock %}

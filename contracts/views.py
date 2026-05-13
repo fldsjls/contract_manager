@@ -1076,6 +1076,183 @@ def scoped_querysets(period: str, year: int, month: int):
     return contracts, invoice_records, payment_records
 
 
+def dashboard_export_units(period: str, year: int, start_date=None, end_date=None):
+    if period == "all":
+        today = timezone.localdate()
+        start = start_date or today - timedelta(days=11)
+        end = end_date or today
+        if start > end:
+            start, end = end, start
+        day_count = (end - start).days + 1
+        units = [start + timedelta(days=offset) for offset in range(day_count)]
+        labels = [unit.strftime("%Y-%m-%d") for unit in units]
+        return units, labels, lambda record: record.record_date, lambda record: start <= record.record_date <= end
+    if period == "year":
+        start_year = year - 11
+        units = list(range(start_year, year + 1))
+        labels = [f"{unit}年" for unit in units]
+        return units, labels, lambda record: record.record_date.year, lambda record: start_year <= record.record_date.year <= year
+    units = list(range(1, 13))
+    labels = [f"{unit:02d}月" for unit in units]
+    return units, labels, lambda record: record.record_date.month, lambda record: record.record_date.year == year
+
+
+def dashboard_project_export_rows(period: str, year: int, start_date=None, end_date=None):
+    units, labels, unit_for_record, record_in_scope = dashboard_export_units(period, year, start_date, end_date)
+    unit_index = {unit: index for index, unit in enumerate(units)}
+    contracts = Contract.objects.filter(is_deleted=False).order_by("contract_name", "id").prefetch_related(
+        "invoicerecord_set",
+        "paymentrecord_set",
+    )
+    face_rows = []
+    actual_rows = []
+    merge_refs = []
+    for contract_index, contract in enumerate(contracts):
+        face_totals = {
+            "invoice": [Decimal("0") for _unit in units],
+            "receipt": [Decimal("0") for _unit in units],
+        }
+        actual_totals = {
+            "income": [Decimal("0") for _unit in units],
+            "payment": [Decimal("0") for _unit in units],
+        }
+        records = list(contract.invoicerecord_set.all()) + list(contract.paymentrecord_set.all())
+        for record in records:
+            if not record_in_scope(record):
+                continue
+            index = unit_index.get(unit_for_record(record))
+            if index is None:
+                continue
+            if record_side(record) == "income":
+                face_totals["invoice"][index] += record.amount
+                actual_totals["income"][index] += record_amount_for_stats(record)
+            else:
+                face_totals["receipt"][index] += record.amount
+                actual_totals["payment"][index] += record_amount_for_stats(record)
+        first_row = 2 + contract_index * 2
+        second_row = first_row + 1
+        merge_refs.append(f"A{first_row}:A{second_row}")
+        face_rows.append([contract.contract_name, "开票/开据", *face_totals["invoice"]])
+        face_rows.append(["", "收票/收据", *face_totals["receipt"]])
+        actual_rows.append([contract.contract_name, "收款", *actual_totals["income"]])
+        actual_rows.append(["", "付款", *actual_totals["payment"]])
+    headers = ["项目名称", "类型", *labels]
+    numeric_columns = set(range(3, len(headers) + 1))
+    return headers, face_rows, actual_rows, merge_refs, numeric_columns
+
+
+def contract_stats_export_rows(contract: Contract, period: str, year: int, start_date=None, end_date=None):
+    units, labels, unit_for_record, record_in_scope = dashboard_export_units(period, year, start_date, end_date)
+    unit_index = {unit: index for index, unit in enumerate(units)}
+    face_totals = {
+        "invoice": [Decimal("0") for _unit in units],
+        "receipt": [Decimal("0") for _unit in units],
+    }
+    actual_totals = {
+        "income": [Decimal("0") for _unit in units],
+        "payment": [Decimal("0") for _unit in units],
+    }
+    records = list(contract.invoicerecord_set.all()) + list(contract.paymentrecord_set.all())
+    for record in records:
+        if not record_in_scope(record):
+            continue
+        index = unit_index.get(unit_for_record(record))
+        if index is None:
+            continue
+        if record_side(record) == "income":
+            face_totals["invoice"][index] += record.amount
+            actual_totals["income"][index] += record_amount_for_stats(record)
+        else:
+            face_totals["receipt"][index] += record.amount
+            actual_totals["payment"][index] += record_amount_for_stats(record)
+    labels_for_contract = project_mode_labels(contract)
+    face_headers = ["日期", labels_for_contract["invoice_primary"], labels_for_contract["receipt_primary"]]
+    actual_headers = ["日期", labels_for_contract["invoice_secondary"], labels_for_contract["receipt_secondary"]]
+    face_rows = [
+        [label, face_totals["invoice"][index], face_totals["receipt"][index]]
+        for index, label in enumerate(labels)
+    ]
+    actual_rows = [
+        [label, actual_totals["income"][index], actual_totals["payment"][index]]
+        for index, label in enumerate(labels)
+    ]
+    return face_headers, face_rows, actual_headers, actual_rows, {2, 3}
+
+
+@true_admin_required
+def dashboard_export(request):
+    period = request.GET.get("period", "all")
+    if period not in ("all", "year", "month"):
+        period = "all"
+    today = timezone.localdate()
+    try:
+        year = int(request.GET.get("year", today.year))
+    except (TypeError, ValueError):
+        year = today.year
+    start_date = parse_form_date(request.GET.get("start_date")) if period == "all" else None
+    end_date = parse_form_date(request.GET.get("end_date")) if period == "all" else None
+    headers, face_rows, actual_rows, merge_refs, numeric_columns = dashboard_project_export_rows(
+        period,
+        year,
+        start_date,
+        end_date,
+    )
+    sheets = [
+        {
+            "name": "开票收票",
+            "xml": build_project_stats_sheet_xml(headers, face_rows, merge_refs, numeric_columns),
+        },
+        {
+            "name": "收款付款",
+            "xml": build_project_stats_sheet_xml(headers, actual_rows, merge_refs, numeric_columns),
+        },
+    ]
+    response = HttpResponse(
+        build_project_stats_xlsx(sheets),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="dashboard_project_stats.xlsx"'
+    return response
+
+
+@true_admin_required
+def contract_stats_export(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    period = request.GET.get("period", "all")
+    if period not in ("all", "year", "month"):
+        period = "all"
+    today = timezone.localdate()
+    try:
+        year = int(request.GET.get("year", today.year))
+    except (TypeError, ValueError):
+        year = today.year
+    start_date = parse_form_date(request.GET.get("start_date")) if period == "all" else None
+    end_date = parse_form_date(request.GET.get("end_date")) if period == "all" else None
+    face_headers, face_rows, actual_headers, actual_rows, numeric_columns = contract_stats_export_rows(
+        contract,
+        period,
+        year,
+        start_date,
+        end_date,
+    )
+    sheets = [
+        {
+            "name": "开票收票",
+            "xml": build_project_stats_sheet_xml(face_headers, face_rows, [], numeric_columns, title=contract.contract_name),
+        },
+        {
+            "name": "收款付款",
+            "xml": build_project_stats_sheet_xml(actual_headers, actual_rows, [], numeric_columns, title=contract.contract_name),
+        },
+    ]
+    response = HttpResponse(
+        build_project_stats_xlsx(sheets),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="contract_{contract.pk}_stats.xlsx"'
+    return response
+
+
 # 按统计范围生成单个合同的开票/收票趋势数据。
 # 函数说明：封装可复用的业务处理。
 def build_contract_chart_rows(contract: Contract, period: str, year: int, month: int) -> list[dict]:
@@ -1587,6 +1764,8 @@ def dashboard(request):
             "chart_year": chart_year,
             "chart_month": chart_month,
             "chart_range_label": chart_range_label,
+            "chart_export_start_date": timezone.localdate() - timedelta(days=11),
+            "chart_export_end_date": timezone.localdate(),
             "prev_range_params": prev_range_params,
             "next_range_params": next_range_params,
             "expiring_contracts": expiring_contract_queryset(),
@@ -1794,6 +1973,122 @@ def build_contract_list_xlsx(headers, rows, numeric_columns: set[int] | None = N
         xlsx.writestr("xl/workbook.xml", workbook_xml)
         xlsx.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
         xlsx.writestr("xl/worksheets/sheet1.xml", worksheet_xml)
+        xlsx.writestr("xl/styles.xml", styles_xml)
+    return output.getvalue()
+
+
+def safe_xlsx_sheet_name(name: str) -> str:
+    cleaned = re.sub(r"[\[\]:*?/\\]", "", str(name or "Sheet")).strip() or "Sheet"
+    return cleaned[:31]
+
+
+def build_project_stats_sheet_xml(
+    headers: list[str],
+    rows: list[list],
+    merge_refs: list[str],
+    numeric_columns: set[int],
+    title: str = "",
+) -> str:
+    column_widths = []
+    for column_index, header in enumerate(headers, start=1):
+        if column_index == 1:
+            column_widths.append(34)
+        elif column_index == 2:
+            column_widths.append(12)
+        else:
+            column_widths.append(max(12, min(text_display_width(header) + 4, 18)))
+    cols = "".join(
+        f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
+        for index, width in enumerate(column_widths, start=1)
+    )
+    header_row_index = 2 if title else 1
+    data_start_index = header_row_index + 1
+    sheet_rows = []
+    title_merge_ref = ""
+    if title:
+        sheet_rows.append(f'<row r="1">{xlsx_text_cell(1, 1, title, style=1)}</row>')
+        title_merge_ref = f"A1:{xlsx_cell_ref(1, len(headers))}"
+    header_cells = "".join(
+        xlsx_text_cell(header_row_index, index, header, style=1)
+        for index, header in enumerate(headers, start=1)
+    )
+    sheet_rows.append(f'<row r="{header_row_index}">{header_cells}</row>')
+    for row_index, row in enumerate(rows, start=data_start_index):
+        cells = []
+        for column_index, value in enumerate(row, start=1):
+            if column_index in numeric_columns:
+                cells.append(xlsx_number_cell(row_index, column_index, value, style=2))
+            else:
+                cells.append(xlsx_text_cell(row_index, column_index, value))
+        sheet_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
+    merge_xml = ""
+    all_merge_refs = [title_merge_ref] if title_merge_ref else []
+    all_merge_refs.extend(merge_refs)
+    if all_merge_refs:
+        merge_xml = (
+            f'<mergeCells count="{len(all_merge_refs)}">'
+            + "".join(f'<mergeCell ref="{ref}"/>' for ref in all_merge_refs)
+            + "</mergeCells>"
+        )
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <cols>{cols}</cols>
+  <sheetData>{"".join(sheet_rows)}</sheetData>
+  {merge_xml}
+</worksheet>"""
+
+
+def build_project_stats_xlsx(sheets: list[dict]) -> bytes:
+    sheet_entries = []
+    rel_entries = []
+    content_overrides = []
+    for index, sheet in enumerate(sheets, start=1):
+        sheet_name = escape(safe_xlsx_sheet_name(sheet["name"]))
+        sheet_entries.append(f'<sheet name="{sheet_name}" sheetId="{index}" r:id="rId{index}"/>')
+        rel_entries.append(
+            f'<Relationship Id="rId{index}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{index}.xml"/>'
+        )
+        content_overrides.append(
+            f'<Override PartName="/xl/worksheets/sheet{index}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        )
+    style_rid = len(sheets) + 1
+    workbook_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>{"".join(sheet_entries)}</sheets>
+</workbook>"""
+    workbook_rels = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  {"".join(rel_entries)}
+  <Relationship Id="rId{style_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>"""
+    root_rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>"""
+    content_types = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  {"".join(content_overrides)}
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>"""
+    styles_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font></fonts>
+  <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE9EEF5"/><bgColor indexed="64"/></patternFill></fill></fills>
+  <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFCBD3DF"/></left><right style="thin"><color rgb="FFCBD3DF"/></right><top style="thin"><color rgb="FFCBD3DF"/></top><bottom style="thin"><color rgb="FFCBD3DF"/></bottom><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="2" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1"/></cellXfs>
+</styleSheet>"""
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as xlsx:
+        xlsx.writestr("[Content_Types].xml", content_types)
+        xlsx.writestr("_rels/.rels", root_rels)
+        xlsx.writestr("xl/workbook.xml", workbook_xml)
+        xlsx.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        for index, sheet in enumerate(sheets, start=1):
+            xlsx.writestr(f"xl/worksheets/sheet{index}.xml", sheet["xml"])
         xlsx.writestr("xl/styles.xml", styles_xml)
     return output.getvalue()
 

@@ -406,7 +406,7 @@
     }
     .modal-card.wide {
       width: min(860px, calc(100vw - 48px));
-      height: min(640px, calc(100vh - 48px));
+      height: min(760px, calc(100vh - 32px));
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -864,31 +864,44 @@
     }
     .project-stats {
       display: grid;
-      gap: 10px;
+      gap: 8px;
       white-space: normal;
     }
     .project-stats-name {
       color: #475467;
-      font-size: 15px;
+      font-size: 14px;
     }
     .project-stats .metric-grid {
       margin-bottom: 0;
       gap: 10px;
     }
     .project-stats .metric-card {
-      min-height: 76px;
-      padding: 10px 12px;
+      min-height: 62px;
+      padding: 8px 12px;
     }
     .project-stats .metric-title {
-      margin-bottom: 6px;
-      font-size: 13px;
+      margin-bottom: 4px;
+      font-size: 12px;
     }
     .project-stats .metric-value {
-      font-size: 24px;
+      font-size: 20px;
       line-height: 1.15;
     }
+    .project-chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 36px;
+      margin-bottom: 4px;
+    }
+    .project-chart-header h3 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.2;
+    }
     .project-stats-chart {
-        height: clamp(260px, 46vh, 340px);
+        height: clamp(240px, 40vh, 300px);
         width: 100%;
         border: 1px solid #d9dee7;
         background: #fff;

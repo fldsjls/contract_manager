@@ -1,6 +1,5 @@
 from django.contrib import admin
 from django.urls import re_path
-from django.utils.html import format_html
 from reversion.admin import VersionAdmin
 
 from .models import (
@@ -162,7 +161,6 @@ class OperationLogAdmin(admin.ModelAdmin):
         "object_type",
         "object_name",
         "ip_address",
-        "object_history_link",
     )
     list_filter = ("action", "role", "object_type", "created_at")
     search_fields = ("username", "object_name", "detail", "ip_address")
@@ -176,7 +174,6 @@ class OperationLogAdmin(admin.ModelAdmin):
         "object_id",
         "content_type",
         "object_pk",
-        "object_history_link",
         "detail",
         "ip_address",
         "created_at",
@@ -187,13 +184,3 @@ class OperationLogAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
-
-    def object_history_link(self, obj):
-        if obj and obj.history_url:
-            return format_html(
-                '<a class="button" style="white-space: nowrap;" href="{}">查看对象历史</a>',
-                obj.history_url,
-            )
-        return "-"
-
-    object_history_link.short_description = "对象历史"

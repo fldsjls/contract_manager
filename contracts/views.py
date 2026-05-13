@@ -3207,8 +3207,6 @@ def operation_logs_for_request(request):
 
 @true_admin_required
 def operation_log_list(request):
-    if not is_super_admin_mode(request):
-        return redirect("contracts:contract_list")
     logs, keyword, action = operation_logs_for_request(request)
     action_choices = OperationLog.objects.order_by().values_list("action", flat=True).distinct()
     return render(
@@ -3221,7 +3219,6 @@ def operation_log_list(request):
                 "keyword": keyword,
                 "action_filter": action,
                 "action_choices": action_choices,
-                "export_query": request.GET.urlencode(),
                 "active_nav": "operation_logs",
             },
         ),

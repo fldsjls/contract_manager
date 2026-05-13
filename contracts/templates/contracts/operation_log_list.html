@@ -19,7 +19,7 @@
     </form>
 
     <div class="table-wrap fill">
-      <table class="operation-log-table">
+      <table class="operation-log-table {% if is_super_admin_mode %}has-history{% endif %}">
         <thead>
           <tr>
             <th>时间</th>
@@ -29,6 +29,9 @@
             <th>对象类型</th>
             <th>对象名称</th>
             <th>详情</th>
+            {% if is_super_admin_mode %}
+              <th>历史记录</th>
+            {% endif %}
           </tr>
         </thead>
         <tbody>
@@ -41,10 +44,17 @@
               <td>{{ log.object_type }}</td>
               <td class="log-object-name" title="{{ log.object_name }}">{{ log.object_name }}</td>
               <td class="log-detail" title="{{ log.detail }}">{{ log.detail }}</td>
+              {% if is_super_admin_mode %}
+                <td>
+                  {% if log.history_url %}
+                    <a class="inline-remark-display log-snapshot-link" href="{{ log.history_url }}">快照</a>
+                  {% endif %}
+                </td>
+              {% endif %}
             </tr>
           {% empty %}
             <tr>
-              <td colspan="7" class="empty">暂无操作日志</td>
+              <td colspan="{% if is_super_admin_mode %}8{% else %}7{% endif %}" class="empty">暂无操作日志</td>
             </tr>
           {% endfor %}
         </tbody>

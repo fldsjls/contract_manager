@@ -75,7 +75,7 @@
                   <tbody>
                     {% for contract in expiring_contracts %}
                       <tr>
-                        <td class="name">{{ contract.contract_name }}</td>
+                        <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
                         <td>{{ contract.end_date|date:"Y-m-d" }}</td>
                       </tr>
                     {% endfor %}
@@ -99,7 +99,7 @@
                 <tbody>
                   {% for contract in archive_pending_contracts %}
                     <tr>
-                      <td class="name">{{ contract.contract_name }}</td>
+                      <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
                       <td>{{ contract.end_date|date:"Y-m-d" }}</td>
                     </tr>
                   {% endfor %}

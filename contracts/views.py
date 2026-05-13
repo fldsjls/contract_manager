@@ -1453,9 +1453,13 @@ def dashboard(request):
 
 # 函数说明：封装可复用的业务处理。
 def sort_contracts_by_number(contracts: list[Contract], direction: str, explicit_sort: bool) -> None:
-    # 默认列表仍按原始编号倒序；用户点击表头时按页面显示编号升降序切换。
+    # 默认列表仍按原始编号倒序；用户点击表头时红色默认编号固定在前，其余按显示编号升降序切换。
     if explicit_sort:
-        contracts.sort(key=lambda item: item.display_contract_number, reverse=direction == "desc")
+        default_number_contracts = [contract for contract in contracts if contract.uses_default_display_contract_number]
+        display_number_contracts = [contract for contract in contracts if not contract.uses_default_display_contract_number]
+        default_number_contracts.sort(key=lambda item: item.display_contract_number, reverse=direction == "desc")
+        display_number_contracts.sort(key=lambda item: item.display_contract_number, reverse=direction == "desc")
+        contracts[:] = default_number_contracts + display_number_contracts
     else:
         contracts.sort(key=lambda item: item.contract_number, reverse=True)
 

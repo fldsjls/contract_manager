@@ -50,6 +50,7 @@ from .models import (
 
 # 回收站内合同默认保留 7 天。
 TRASH_RETENTION_DAYS = 7
+RECORD_FILE_VERSION_LIMIT = 10
 SUPER_ADMIN_USERNAME = "superuser"
 SUPER_ADMIN_PASSWORD = "superuser123"
 ROLE_GROUPS = {
@@ -469,7 +470,19 @@ def attach_record_file_version(record, uploaded_file):
     )
     record.file = version.file.name
     record.save(update_fields=["file", "updated_at"])
+    prune_record_file_versions(record)
     return version
+
+
+# 只保留单条记录最近的附件版本，超出的旧版本连同磁盘文件一起清理。
+def prune_record_file_versions(record, limit: int = RECORD_FILE_VERSION_LIMIT) -> None:
+    version_model = record_file_version_model_for(record)
+    if version_model is None:
+        return
+    stale_versions = list(version_model.objects.filter(record=record).order_by("-created_at", "-id")[limit:])
+    for version in stale_versions:
+        delete_file_from_storage(version.file)
+        version.delete()
 
 
 # 删除记录时清理它的所有附件版本文件。

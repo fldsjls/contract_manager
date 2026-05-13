@@ -1452,6 +1452,15 @@ def dashboard(request):
 
 
 # 函数说明：封装可复用的业务处理。
+def sort_contracts_by_number(contracts: list[Contract], direction: str, explicit_sort: bool) -> None:
+    # 默认列表仍按原始编号倒序；用户点击表头时按页面显示编号升降序切换。
+    if explicit_sort:
+        contracts.sort(key=lambda item: item.display_contract_number, reverse=direction == "desc")
+    else:
+        contracts.sort(key=lambda item: item.contract_number, reverse=True)
+
+
+# 函数说明：封装可复用的业务处理。
 def contracts_for_list_request(request):
     # 合同列表和 Excel 导出共用这一套搜索、筛选、排序规则，避免两处结果不一致。
     keyword = request.GET.get("q", "").strip()
@@ -1463,8 +1472,6 @@ def contracts_for_list_request(request):
     sort = request.GET.get("sort", "contract_number").strip()
     direction = request.GET.get("direction", "desc").strip()
     if direction not in ("asc", "desc"):
-        direction = "desc"
-    if sort == "contract_number":
         direction = "desc"
 
     sort_fields = {
@@ -1513,10 +1520,7 @@ def contracts_for_list_request(request):
     if filter_status in status_choices:
         contracts = [contract for contract in contracts if contract.status == filter_status]
     if sort == "contract_number":
-        if explicit_sort:
-            contracts.sort(key=lambda item: item.contract_number_sort_key, reverse=True)
-        else:
-            contracts.sort(key=lambda item: item.contract_number, reverse=True)
+        sort_contracts_by_number(contracts, direction, explicit_sort)
     if sort == "payment_rate":
         contracts.sort(key=lambda item: item.payment_rate, reverse=direction == "desc")
     return contracts
@@ -1758,8 +1762,6 @@ def contract_list(request):
     direction = request.GET.get("direction", "desc").strip()
     if direction not in ("asc", "desc"):
         direction = "desc"
-    if sort == "contract_number":
-        direction = "desc"
     sort_fields = {
         "id": "id",
         "contract_name": "contract_name",
@@ -1815,10 +1817,7 @@ def contract_list(request):
     active_total_amount = sum((contract.amount for contract in active_contracts), Decimal("0"))
     expired_total_amount = sum((contract.amount for contract in expired_contracts), Decimal("0"))
     if sort == "contract_number":
-        if explicit_sort:
-            contracts.sort(key=lambda item: item.contract_number_sort_key, reverse=True)
-        else:
-            contracts.sort(key=lambda item: item.contract_number, reverse=True)
+        sort_contracts_by_number(contracts, direction, explicit_sort)
     if sort == "payment_rate":
         contracts.sort(key=lambda item: item.payment_rate, reverse=direction == "desc")
     query_params = request.GET.copy()

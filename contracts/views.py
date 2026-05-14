@@ -2775,6 +2775,38 @@ def build_project_stats_xlsx(sheets: list[dict]) -> bytes:
     return output.getvalue()
 
 
+def build_commented_import_template_xlsx(sheets: list[dict]) -> bytes:
+    from openpyxl import Workbook
+    from openpyxl.comments import Comment
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+    workbook = Workbook()
+    default_sheet = workbook.active
+    workbook.remove(default_sheet)
+    header_fill = PatternFill("solid", fgColor="E9EEF5")
+    border_side = Side(style="thin", color="CBD3DF")
+    header_border = Border(left=border_side, right=border_side, top=border_side, bottom=border_side)
+    for sheet in sheets:
+        worksheet = workbook.create_sheet(title=safe_xlsx_sheet_name(sheet["name"]))
+        headers = sheet["headers"]
+        comments = sheet.get("comments", {})
+        widths = contract_export_column_widths(headers, [])
+        for column_index, header in enumerate(headers, start=1):
+            cell = worksheet.cell(row=1, column=column_index, value=header)
+            cell.font = Font(name="Arial", size=11, bold=True)
+            cell.fill = header_fill
+            cell.border = header_border
+            cell.alignment = Alignment(vertical="center")
+            comment_text = comments.get(header)
+            if comment_text:
+                cell.comment = Comment(comment_text, "合同管理系统")
+            worksheet.column_dimensions[cell.column_letter].width = widths[column_index - 1]
+        worksheet.freeze_panes = "A2"
+    output = io.BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
 def json_safe_value(value):
     if hasattr(value, "isoformat"):
         return value.isoformat()
@@ -3496,6 +3528,19 @@ def import_contract_lookup() -> dict[str, Contract]:
     return lookup
 
 
+def project_code_lookup_items() -> list[dict]:
+    contracts = Contract.objects.filter(is_deleted=False).order_by("contract_name", "id")
+    return [
+        {
+            "code": contract.display_contract_number,
+            "name": contract.contract_name,
+            "party": contract.party_name,
+            "type": contract.contract_type,
+        }
+        for contract in contracts
+    ]
+
+
 def parse_record_import_rows_from_sheet(rows, field_map, row_builder):
     if not rows:
         return [], ["Excel 文件为空。"]
@@ -3727,6 +3772,7 @@ def contract_import_preview_context(
             "import_kind": import_kind,
             "selected_contract": selected_contract,
             "selected_contract_id": selected_contract.pk if selected_contract else "",
+            "project_lookup_items": project_code_lookup_items(),
             "active_nav": "contracts",
         },
     )
@@ -3735,26 +3781,26 @@ def contract_import_preview_context(
 @admin_required
 def contract_import_template(request):
     headers = [label for _field, label in CONTRACT_IMPORT_COLUMNS]
-    rows = [
-        [
-            "示例维保合同",
-            "维保",
-            "某某单位",
-            10000,
-            "开收据",
-            timezone.localdate().strftime("%Y-%m-%d"),
-            timezone.localdate().strftime("%Y-%m-%d"),
-            (timezone.localdate() + timedelta(days=365)).strftime("%Y-%m-%d"),
-            "张三",
-            "01",
-            "0001",
-            "00",
-            3,
-            "",
-        ]
-    ]
+    comments = {
+        "合同名称": "必填。填写要导入的合同名称。",
+        "合同类型": "必填。填写维保、项目或其他系统支持的合同类型。",
+        "甲方名称": "必填。填写甲方单位名称。",
+        "合同金额": "填写数字金额，例如 10000。",
+        "是否开票": "填写开票状态，例如 开收据、待开票或票已给。",
+        "签订日期": "日期格式：YYYY-MM-DD。",
+        "开始日期": "日期格式：YYYY-MM-DD。",
+        "截止日期": "日期格式：YYYY-MM-DD。",
+        "负责人": "填写负责人姓名。",
+        "文件夹编号": "填写 2 位文件夹编号，例如 01。",
+        "文件编号": "填写 4 位文件编号，例如 0001。",
+        "存储编号": "填写 2 位存储编号，例如 00。",
+        "归档时间（年）": "填写归档年限数字，例如 3。",
+        "备注": "可选。填写合同备注。",
+    }
     response = HttpResponse(
-        build_contract_list_xlsx(headers, rows, numeric_columns={4, 12}),
+        build_commented_import_template_xlsx(
+            [{"name": "合同列表", "headers": headers, "comments": comments}]
+        ),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     response["Content-Disposition"] = 'attachment; filename="contract_import_template.xlsx"'
@@ -3763,20 +3809,26 @@ def contract_import_template(request):
 
 @true_admin_required
 def invoice_import_template(request):
-    today = timezone.localdate().strftime("%Y-%m-%d")
     sheets = []
     for record_type in ("开票", "收票"):
         amount_label, actual_amount_label = INVOICE_IMPORT_SHEET_LABELS[record_type]
         headers = ["合同编号", "日期", amount_label, actual_amount_label, "备注"]
-        rows = [["在这里填写合同编号或合同名称", today, 10000, 8000, ""]]
+        comments = {
+            "合同编号": "填写已有合同编号或合同名称，用于匹配合同。",
+            "日期": "必填。日期格式：YYYY-MM-DD。",
+            amount_label: "必填。填写数字金额。",
+            actual_amount_label: "必填。填写数字金额。",
+            "备注": "可选。填写票据备注。",
+        }
         sheets.append(
             {
                 "name": record_type,
-                "xml": build_project_stats_sheet_xml(headers, rows, [], {3, 4}),
+                "headers": headers,
+                "comments": comments,
             }
         )
     response = HttpResponse(
-        build_project_stats_xlsx(sheets),
+        build_commented_import_template_xlsx(sheets),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     response["Content-Disposition"] = 'attachment; filename="invoice_import_template.xlsx"'
@@ -3786,9 +3838,16 @@ def invoice_import_template(request):
 @true_admin_required
 def record_import_template(request):
     headers = ["合同编号", "日期", "存储编号", "备注"]
-    rows = [["在这里填写合同编号或合同名称", timezone.localdate().strftime("%Y-%m-%d"), "00", ""]]
+    comments = {
+        "合同编号": "填写已有合同编号或合同名称，用于匹配合同。",
+        "日期": "必填。日期格式：YYYY-MM-DD。",
+        "存储编号": "填写 2 位存储编号，例如 00。",
+        "备注": "可选。填写项目记录备注。",
+    }
     response = HttpResponse(
-        build_contract_list_xlsx(headers, rows, numeric_columns=set()),
+        build_commented_import_template_xlsx(
+            [{"name": "记录", "headers": headers, "comments": comments}]
+        ),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     response["Content-Disposition"] = 'attachment; filename="record_import_template.xlsx"'

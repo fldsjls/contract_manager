@@ -60,103 +60,216 @@
       cursor: not-allowed;
       pointer-events: none;
     }
+    .contract-import-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 380px;
+      gap: 16px;
+      align-items: start;
+    }
+    .contract-import-upload-panel,
+    .project-code-panel {
+      box-sizing: border-box;
+      height: 118px !important;
+      max-height: 118px !important;
+      min-height: 0 !important;
+    }
+    .contract-import-upload-panel {
+      padding: 14px 18px;
+      overflow: hidden;
+    }
+    .project-code-panel {
+      background: #fff;
+      border: 1px solid #d9dee7;
+      overflow: hidden;
+      padding: 10px 18px;
+      margin-bottom: 16px;
+    }
+    .project-code-panel.has-results {
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible;
+    }
+    .project-code-title {
+      margin: 0 0 8px;
+      font-size: 15px;
+      line-height: 1.25;
+    }
+    #projectCodeSearch {
+      height: 38px;
+      padding: 7px 10px;
+      font-size: 14px;
+    }
+    .project-code-results {
+      margin-top: 12px;
+      border: 1px solid #e5e7eb;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .project-code-results:empty {
+      display: none;
+    }
+    .project-code-row {
+      display: grid;
+      grid-template-columns: minmax(88px, 110px) minmax(0, 1fr) 54px;
+      gap: 8px;
+      align-items: center;
+      padding: 10px;
+      border-bottom: 1px solid #eef1f5;
+      font-size: 13px;
+    }
+    .project-code-row:last-child {
+      border-bottom: 0;
+    }
+    .project-code-value {
+      font-weight: 700;
+      color: #1d4ed8;
+      overflow-wrap: anywhere;
+    }
+    .project-code-name {
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .project-code-meta {
+      margin-top: 4px;
+      color: #667085;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .project-code-empty {
+      padding: 18px 10px;
+      color: #667085;
+      font-size: 13px;
+      text-align: center;
+    }
+    .project-code-copy {
+      min-height: 32px;
+      padding: 5px 8px;
+      font-size: 12px;
+    }
+    @media (max-width: 1100px) {
+      .contract-import-layout {
+        grid-template-columns: 1fr;
+      }
+      .project-code-panel {
+        max-height: none;
+      }
+    }
   </style>
 
-  <form class="panel" id="contractImportUploadForm" method="post" enctype="multipart/form-data">
-    {% csrf_token %}
-    <input type="hidden" name="action" value="preview">
-    <input type="hidden" name="import_kind" id="contractImportKind" value="contract">
-    <input type="hidden" name="contract_id" value="{{ selected_contract_id }}">
-    {% if selected_contract %}
-      <div class="summary" style="margin-bottom: 12px;">
-        <span>当前合同：{{ selected_contract.contract_name }}</span>
-        <span>合同编号：{{ selected_contract.display_contract_number }}</span>
-      </div>
-    {% endif %}
-    {% if form.non_field_errors %}
-      {{ form.non_field_errors }}
-    {% endif %}
-    {{ form.excel_file }}
-    {{ form.excel_file.errors }}
-    <div class="toolbar" style="margin-top: 18px;">
-      {% if selected_contract and can_add_money_records %}
-        <button class="button primary import-preview-button" type="button" data-import-kind="invoice">票据预览</button>
-        <button class="button import-preview-button" type="button" data-import-kind="maintenance">记录预览</button>
-      {% else %}
-        <button class="button primary import-preview-button" type="button" data-import-kind="contract">合同预览</button>
-      {% endif %}
-      <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
-    </div>
-  </form>
-
-  {% if parse_errors %}
-    <div class="panel" style="margin-top: 16px;">
-      {% for error in parse_errors %}
-        <p>{{ error }}</p>
-      {% endfor %}
-    </div>
-  {% endif %}
-
-  {% if results %}
-    <div class="panel" style="margin-top: 16px;">
-      <div class="toolbar" style="margin-bottom: 12px;">
-        <span>共 {{ results|length }} 行</span>
-        <span>可导入 {{ valid_count }} 行</span>
-        <span>错误 {{ error_count }} 行</span>
-      </div>
-      {% if confirm_error %}
-        <ul class="errorlist"><li>{{ confirm_error }}</li></ul>
-      {% endif %}
-      <div class="table-wrap">
-        <table class="contract-import-preview-table">
-          <thead>
-            <tr>
-              {% for label in preview_columns %}
-                <th>{{ label }}</th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in results %}
-              <tr>
-                {% for cell in row.preview_cells %}
-                  <td{% if cell.css_class %} class="{{ cell.css_class }}"{% endif %}{% if cell.title %} title="{{ cell.title }}"{% endif %}>{{ cell.value }}</td>
-                {% endfor %}
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% if completed %}
-        <div class="toolbar" style="margin-top: 16px;">
-          <a class="button primary" href="{% url 'contracts:contract_list' %}">返回列表</a>
-          <a class="button" href="{% url 'contracts:contract_import' %}">继续导入</a>
-        </div>
-      {% else %}
-        <form method="post" style="margin-top: 16px;">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="confirm">
-          <input type="hidden" name="import_kind" value="{{ import_kind }}">
-          <input type="hidden" name="contract_id" value="{{ selected_contract_id }}">
-          <input type="hidden" name="payload" value="{{ payload }}">
-          <div class="toolbar" style="margin-top: 12px;">
-            <button
-              class="button primary contract-import-confirm-button"
-              id="contractImportConfirmButton"
-              type="submit"
-              {% if not can_confirm_import %}disabled{% endif %}
-            >确认导入</button>
+  <div class="contract-import-layout">
+    <div class="contract-import-main">
+      <form class="panel contract-import-upload-panel" id="contractImportUploadForm" method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="preview">
+        <input type="hidden" name="import_kind" id="contractImportKind" value="contract">
+        <input type="hidden" name="contract_id" value="{{ selected_contract_id }}">
+        {% if selected_contract %}
+          <div class="summary" style="margin-bottom: 12px;">
+            <span>当前合同：{{ selected_contract.contract_name }}</span>
+            <span>合同编号：{{ selected_contract.display_contract_number }}</span>
           </div>
-        </form>
+        {% endif %}
+        {% if form.non_field_errors %}
+          {{ form.non_field_errors }}
+        {% endif %}
+        {{ form.excel_file }}
+        {{ form.excel_file.errors }}
+        <div class="toolbar" style="margin-top: 18px;">
+          <button class="button primary import-preview-button" type="button" data-import-kind="contract">合同预览</button>
+          {% if can_add_money_records %}
+            <button class="button import-preview-button" type="button" data-import-kind="invoice">票据预览</button>
+            <button class="button import-preview-button" type="button" data-import-kind="maintenance">记录预览</button>
+          {% endif %}
+          <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
+        </div>
+      </form>
+
+      {% if parse_errors %}
+        <div class="panel" style="margin-top: 16px;">
+          {% for error in parse_errors %}
+            <p>{{ error }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if results %}
+        <div class="panel" style="margin-top: 16px;">
+          <div class="toolbar" style="margin-bottom: 12px;">
+            <span>共 {{ results|length }} 行</span>
+            <span>可导入 {{ valid_count }} 行</span>
+            <span>错误 {{ error_count }} 行</span>
+          </div>
+          {% if confirm_error %}
+            <ul class="errorlist"><li>{{ confirm_error }}</li></ul>
+          {% endif %}
+          <div class="table-wrap">
+            <table class="contract-import-preview-table">
+              <thead>
+                <tr>
+                  {% for label in preview_columns %}
+                    <th>{{ label }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in results %}
+                  <tr>
+                    {% for cell in row.preview_cells %}
+                      <td{% if cell.css_class %} class="{{ cell.css_class }}"{% endif %}{% if cell.title %} title="{{ cell.title }}"{% endif %}>{{ cell.value }}</td>
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% if completed %}
+            <div class="toolbar" style="margin-top: 16px;">
+              <a class="button primary" href="{% url 'contracts:contract_list' %}">返回列表</a>
+              <a class="button" href="{% url 'contracts:contract_import' %}">继续导入</a>
+            </div>
+          {% else %}
+            <form method="post" style="margin-top: 16px;">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="confirm">
+              <input type="hidden" name="import_kind" value="{{ import_kind }}">
+              <input type="hidden" name="contract_id" value="{{ selected_contract_id }}">
+              <input type="hidden" name="payload" value="{{ payload }}">
+              <div class="toolbar" style="margin-top: 12px;">
+                <button
+                  class="button primary contract-import-confirm-button"
+                  id="contractImportConfirmButton"
+                  type="submit"
+                  {% if not can_confirm_import %}disabled{% endif %}
+                >确认导入</button>
+              </div>
+            </form>
+          {% endif %}
+        </div>
       {% endif %}
     </div>
-  {% endif %}
+
+    <aside class="project-code-panel">
+      <h2 class="project-code-title">项目编码查找</h2>
+      <input id="projectCodeSearch" type="search" placeholder="输入项目名称" autocomplete="off">
+      <div class="project-code-results" id="projectCodeResults"></div>
+    </aside>
+  </div>
+
+  {{ project_lookup_items|json_script:"projectLookupData" }}
 
   <script>
     const importUploadForm = document.querySelector("#contractImportUploadForm");
     const importFileInput = document.querySelector("#id_excel_file");
     const importKindInput = document.querySelector("#contractImportKind");
     const importFileButtons = document.querySelectorAll(".import-preview-button");
+    const projectLookupInput = document.querySelector("#projectCodeSearch");
+    const projectLookupResults = document.querySelector("#projectCodeResults");
+    const projectLookupPanel = document.querySelector(".project-code-panel");
+    const projectLookupData = JSON.parse(document.querySelector("#projectLookupData").textContent || "[]");
+    let projectLookupComposing = false;
 
     if (importUploadForm && importFileInput && importKindInput) {
       importFileButtons.forEach((button) => {
@@ -169,6 +282,85 @@
       importFileInput.addEventListener("change", () => {
         if (importFileInput.files.length) {
           importUploadForm.submit();
+        }
+      });
+    }
+
+    function normalizeProjectQuery(value) {
+      return (value || "").trim().toLowerCase();
+    }
+
+    function renderProjectLookupResults() {
+      if (!projectLookupInput || !projectLookupResults) {
+        return;
+      }
+      const query = normalizeProjectQuery(projectLookupInput.value);
+      projectLookupResults.innerHTML = "";
+      projectLookupPanel?.classList.toggle("has-results", Boolean(query));
+      if (!query) {
+        return;
+      }
+      const matches = projectLookupData
+        .filter((item) => normalizeProjectQuery(item.name).includes(query))
+        .slice(0, 30);
+      if (!matches.length) {
+        projectLookupResults.innerHTML = '<div class="project-code-empty">未找到匹配项目</div>';
+        return;
+      }
+      matches.forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "project-code-row";
+
+        const code = document.createElement("div");
+        code.className = "project-code-value";
+        code.textContent = item.code || "";
+
+        const detail = document.createElement("div");
+        const name = document.createElement("div");
+        name.className = "project-code-name";
+        name.title = item.name || "";
+        name.textContent = item.name || "";
+        const meta = document.createElement("div");
+        meta.className = "project-code-meta";
+        meta.title = `${item.party || ""} ${item.type || ""}`.trim();
+        meta.textContent = [item.party, item.type].filter(Boolean).join(" / ");
+        detail.append(name, meta);
+
+        const copyButton = document.createElement("button");
+        copyButton.className = "button compact project-code-copy";
+        copyButton.type = "button";
+        copyButton.textContent = "复制";
+        copyButton.addEventListener("click", async () => {
+          const value = item.code || "";
+          try {
+            await navigator.clipboard.writeText(value);
+            copyButton.textContent = "已复制";
+            window.setTimeout(() => { copyButton.textContent = "复制"; }, 1200);
+          } catch (error) {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(code);
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        });
+
+        row.append(code, detail, copyButton);
+        projectLookupResults.append(row);
+      });
+    }
+
+    if (projectLookupInput && projectLookupResults) {
+      projectLookupInput.addEventListener("compositionstart", () => {
+        projectLookupComposing = true;
+      });
+      projectLookupInput.addEventListener("compositionend", () => {
+        projectLookupComposing = false;
+        renderProjectLookupResults();
+      });
+      projectLookupInput.addEventListener("input", () => {
+        if (!projectLookupComposing) {
+          renderProjectLookupResults();
         }
       });
     }

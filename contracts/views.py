@@ -535,6 +535,83 @@ def log_operation(
     )
 
 
+UNDO_LIMIT = 10
+
+
+def undo_target_queryset_for_request(request):
+    logs = OperationLog.objects.filter(is_undone=False)
+    if request.user.is_authenticated:
+        logs = logs.filter(user=request.user)
+    else:
+        logs = logs.filter(username="游客")
+    return logs.order_by("-created_at", "-id")[:UNDO_LIMIT]
+
+
+def undo_log_object(log: OperationLog):
+    if not log.content_type_id or not log.object_pk:
+        return None
+    model_class = log.content_type.model_class()
+    if model_class is None:
+        return None
+    try:
+        return model_class.objects.get(pk=log.object_pk)
+    except model_class.DoesNotExist:
+        return None
+
+
+def undo_operation_log(request, log: OperationLog) -> tuple[bool, str]:
+    obj = undo_log_object(log)
+    if obj is None:
+        return False, "最近操作的对象已不存在，无法撤回。"
+
+    with transaction.atomic():
+        if isinstance(obj, Contract):
+            if log.action == "新增" and not obj.is_deleted:
+                obj.move_to_trash()
+                log.is_undone = True
+                log.undone_at = timezone.now()
+                log.save(update_fields=["is_undone", "undone_at"])
+                log_operation(request, "撤回", obj, detail=f"undo log #{log.pk}: moved created contract to trash")
+                return True, f"已撤回新增合同：{obj.contract_name}"
+            if log.action == "删除" and obj.is_deleted:
+                obj.restore_from_trash()
+                log.is_undone = True
+                log.undone_at = timezone.now()
+                log.save(update_fields=["is_undone", "undone_at"])
+                log_operation(request, "撤回", obj, detail=f"undo log #{log.pk}: restored deleted contract")
+                return True, f"已撤回删除合同：{obj.contract_name}"
+            if log.action == "恢复" and not obj.is_deleted:
+                obj.move_to_trash()
+                log.is_undone = True
+                log.undone_at = timezone.now()
+                log.save(update_fields=["is_undone", "undone_at"])
+                log_operation(request, "撤回", obj, detail=f"undo log #{log.pk}: moved restored contract back to trash")
+                return True, f"已撤回恢复合同：{obj.contract_name}"
+
+        if log.action == "新增" and isinstance(obj, (InvoiceRecord, PaymentRecord, MaintenanceRecord)):
+            contract_name = obj.contract.contract_name
+            delete_record_file_versions(obj)
+            obj.delete()
+            log.is_undone = True
+            log.undone_at = timezone.now()
+            log.save(update_fields=["is_undone", "undone_at"])
+            log_operation(request, "撤回", obj.contract, object_type=log.object_type, detail=f"undo log #{log.pk}: deleted created record")
+            return True, f"已撤回 {contract_name} 的{log.object_type or '记录'}。"
+
+    return False, "最近操作暂不支持撤回。"
+
+
+@admin_required
+def undo_last_operation(request):
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "只允许 POST 撤回操作。"}, status=405)
+    for log in undo_target_queryset_for_request(request):
+        ok, message = undo_operation_log(request, log)
+        if ok:
+            return JsonResponse({"ok": True, "message": message})
+    return JsonResponse({"ok": False, "error": "最近 10 条操作中没有可撤回项。"}, status=400)
+
+
 def permissions_for_models(codenames: list[str], actions: list[str]):
     permission_codenames = [
         f"{action}_{model_codename}"
@@ -948,6 +1025,7 @@ def save_records_from_request(request, contract: Contract, record_model) -> int:
             remark=remark,
         )
         attach_record_file_version(record, uploaded_file)
+        log_operation(request, "新增", contract, object_type="票据记录", object_name=str(record), object_id=str(record.pk), version_obj=record)
         saved_count += 1
     return saved_count
 
@@ -979,6 +1057,7 @@ def save_typed_records_from_request(request, contract: Contract, record_model_by
             remark=remark,
         )
         attach_record_file_version(record, uploaded_file)
+        log_operation(request, "新增", contract, object_type="票据记录", object_name=str(record), object_id=str(record.pk), version_obj=record)
         saved_count += 1
     return saved_count
 
@@ -1107,6 +1186,7 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
             remark=remark,
         )
         attach_record_file_version(record, uploaded_file)
+        log_operation(request, "新增", contract, object_type="项目记录", object_name=str(record), object_id=str(record.pk), version_obj=record)
         saved_count += 1
     return saved_count
 
@@ -3931,7 +4011,7 @@ def contract_import(request):
                         actual_amount=decimal_from_import_or_zero(data.get("actual_amount")),
                         remark=data.get("remark", ""),
                     )
-                    log_operation(request, "新增", contract, object_type="票据记录", detail=f"Excel import row: {row['row_number']}")
+                    log_operation(request, "新增", contract, object_type="票据记录", object_name=str(record), object_id=str(record.pk), detail=f"Excel import row: {row['row_number']}", version_obj=record)
                 elif import_kind == "maintenance":
                     data = row["data"].copy()
                     contract = Contract.objects.get(pk=row["contract_id"])
@@ -3944,7 +4024,7 @@ def contract_import(request):
                         storage_location_number=normalize_storage_location_number(data.get("storage_location_number")),
                         remark=data.get("remark", ""),
                     )
-                    log_operation(request, "新增", contract, object_type="项目记录", detail=f"Excel import row: {row['row_number']}")
+                    log_operation(request, "新增", contract, object_type="项目记录", object_name=str(record), object_id=str(record.pk), detail=f"Excel import row: {row['row_number']}", version_obj=record)
                 else:
                     data = row["data"].copy()
                     data["contract_number"] = contract_numbers[index]

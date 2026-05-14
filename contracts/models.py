@@ -489,6 +489,8 @@ class OperationLog(models.Model):
     detail = models.TextField("详情", blank=True)
     ip_address = models.GenericIPAddressField("IP地址", null=True, blank=True)
     created_at = models.DateTimeField("操作时间", default=timezone.now)
+    is_undone = models.BooleanField("是否已撤回", default=False)
+    undone_at = models.DateTimeField("撤回时间", null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at", "-id"]

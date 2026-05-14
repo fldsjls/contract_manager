@@ -161,9 +161,10 @@ class OperationLogAdmin(admin.ModelAdmin):
         "action",
         "object_type",
         "object_name",
+        "is_undone",
         "ip_address",
     )
-    list_filter = ("action", "role", "object_type", "created_at")
+    list_filter = ("action", "role", "object_type", "is_undone", "created_at")
     search_fields = ("username", "object_name", "detail", "ip_address")
     readonly_fields = (
         "user",
@@ -178,6 +179,8 @@ class OperationLogAdmin(admin.ModelAdmin):
         "detail",
         "ip_address",
         "created_at",
+        "is_undone",
+        "undone_at",
     )
 
     def has_add_permission(self, request):

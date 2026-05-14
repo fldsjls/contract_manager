@@ -7,7 +7,16 @@
 {% block content %}
   <!-- 合同列表主页面，包含搜索、操作按钮和合同表格。 -->
   <div class="page-content contract-list-page">
-    <h1 class="page-title">合同列表</h1>
+    <div class="contract-list-title-row">
+      <h1 class="page-title">合同列表</h1>
+      {% if can_manage %}
+        <button class="button undo-button" id="undoOperationButton" type="button" title="撤回最近操作，最多可连续撤回最近 10 条" aria-label="撤回最近操作" data-url="{% url 'contracts:undo_last_operation' %}">
+          <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+            <path d="M20 18v9h18a17 17 0 1 1-12 29l5-5a10 10 0 1 0 7-17H20v9L4 30z"></path>
+          </svg>
+        </button>
+      {% endif %}
+    </div>
 
     <!-- 搜索栏按合同名称、编号和甲方名称过滤列表。 -->
     <form class="search-toolbar" method="get" autocomplete="off">
@@ -69,6 +78,9 @@
 
     <!-- 删除合同使用隐藏表单提交 POST，避免跳转到单独确认页。 -->
     <form id="deleteForm" method="post" style="display: none;">
+      {% csrf_token %}
+    </form>
+    <form id="undoForm" method="post" style="display: none;">
       {% csrf_token %}
     </form>
 
@@ -360,11 +372,13 @@
     const imageFolderButton = document.querySelector("#imageFolderButton");
     const statsButton = document.querySelector("#statsButton");
     const deleteButton = document.querySelector("#deleteButton");
+    const undoOperationButton = document.querySelector("#undoOperationButton");
     const filterButton = document.querySelector("#filterButton");
     const summaryModeToggle = document.querySelector("#summaryModeToggle");
     const summaryInvoiceItems = document.querySelectorAll("[data-summary-mode='invoice']");
     const summaryReceiptItems = document.querySelectorAll("[data-summary-mode='receipt']");
     const deleteForm = document.querySelector("#deleteForm");
+    const undoForm = document.querySelector("#undoForm");
     const centerModal = document.querySelector("#centerModal");
     const centerModalCard = document.querySelector("#centerModalCard");
     const centerModalTitle = document.querySelector("#centerModalTitle");
@@ -797,6 +811,43 @@
           onConfirm: () => {
             deleteForm.action = deleteButton.dataset.currentUrl;
             deleteForm.submit();
+          },
+        });
+      });
+    }
+
+    if (undoOperationButton && undoForm) {
+      undoOperationButton.addEventListener("click", () => {
+        openCenterModal({
+          title: "撤回操作",
+          body: "将撤回当前用户最近 10 条操作中的最新一条可撤回操作。可连续点击撤回多条记录。",
+          confirmText: "撤回",
+          onConfirm: async () => {
+            centerModalConfirm.disabled = true;
+            try {
+              const response = await fetch(undoOperationButton.dataset.url, {
+                method: "POST",
+                headers: {
+                  "X-CSRFToken": undoForm.querySelector("input[name='csrfmiddlewaretoken']").value,
+                  "X-Requested-With": "XMLHttpRequest",
+                },
+              });
+              const data = await response.json();
+              if (!response.ok || !data.ok) {
+                throw new Error(data.error || "撤回失败。");
+              }
+              centerModalBody.textContent = data.message || "已撤回最近操作。";
+              centerModalConfirm.textContent = "刷新";
+              modalConfirmHandler = () => {
+                window.location.reload();
+              };
+            } catch (error) {
+              centerModalBody.textContent = error.message || "撤回失败。";
+              centerModalConfirm.textContent = "关闭";
+              modalConfirmHandler = closeCenterModal;
+            } finally {
+              centerModalConfirm.disabled = false;
+            }
           },
         });
       });

@@ -1862,13 +1862,16 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
 
     production_rows = []
     production_total = Decimal("0")
+    is_single_day_cumulative = effective_start_date == effective_end_date
     for contract in contracts:
         contract_days = max((contract.end_date - contract.start_date).days, 0)
         if not contract_days or effective_end_date > contract.end_date:
             continue
-        range_start = max(contract.start_date, effective_start_date or contract.start_date)
-        range_end = effective_end_date
-        production_days = max((range_end - range_start).days, 0)
+        if is_single_day_cumulative:
+            production_days = max((effective_end_date - contract.start_date).days, 0)
+        else:
+            range_start = max(contract.start_date, effective_start_date or contract.start_date)
+            production_days = max((effective_end_date - range_start).days, 0)
         daily_amount = contract.amount / Decimal(contract_days)
         production_amount = daily_amount * Decimal(production_days)
         production_total += production_amount

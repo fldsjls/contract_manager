@@ -165,7 +165,7 @@
       <section class="chart-area recent-panel">
         <h2>最近项目</h2>
         {% if recent_contracts %}
-          <div class="table-wrap">
+          <div class="table-wrap" id="recentProjectsWrap">
             <table>
               <thead>
                 <tr>
@@ -179,10 +179,12 @@
               </thead>
               <tbody>
                 {% for contract in recent_contracts %}
-                  <tr>
-                    <td class="name">
-                      <a href="{% url 'contracts:contract_detail' contract.id %}">{{ contract.contract_name }}</a>
-                    </td>
+                  <tr
+                    class="selectable-row recent-project-row"
+                    data-contract-id="{{ contract.id }}"
+                    data-detail-url="{% url 'contracts:contract_detail' contract.id %}"
+                  >
+                    <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
                     <td>{{ contract.display_contract_number }}</td>
                     <td class="party">{{ contract.party_name }}</td>
                     <td>¥ {{ contract.amount|floatformat:2 }}</td>
@@ -480,6 +482,53 @@
     const expiringPanels = document.querySelectorAll("[data-expiring-panel]");
     const productionSearchDataElement = document.querySelector("#productionSearchData");
     const productionSearchData = productionSearchDataElement ? JSON.parse(productionSearchDataElement.textContent) : [];
+    const recentProjectsWrap = document.querySelector("#recentProjectsWrap");
+    const recentProjectRows = document.querySelectorAll(".recent-project-row");
+
+    function currentDashboardUrl() {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("restore_scroll");
+      url.searchParams.delete("return_id");
+      return url.pathname + url.search;
+    }
+
+    function recentDetailUrl(row) {
+      const url = new URL(row.dataset.detailUrl, window.location.origin);
+      url.searchParams.set("next", currentDashboardUrl());
+      url.searchParams.set("scroll", String(Math.round(recentProjectsWrap?.scrollTop || 0)));
+      url.searchParams.set("return_id", row.dataset.contractId);
+      return url.pathname + url.search;
+    }
+
+    function selectRecentProjectRow(row) {
+      recentProjectRows.forEach((item) => {
+        item.classList.toggle("selected", item === row);
+      });
+    }
+
+    recentProjectRows.forEach((row) => {
+      row.addEventListener("click", () => {
+        selectRecentProjectRow(row);
+      });
+      row.addEventListener("dblclick", () => {
+        window.location.href = recentDetailUrl(row);
+      });
+    });
+
+    if (recentProjectsWrap) {
+      const restoreScroll = Number.parseInt(new URLSearchParams(window.location.search).get("restore_scroll") || "", 10);
+      if (!Number.isNaN(restoreScroll)) {
+        recentProjectsWrap.scrollTop = restoreScroll;
+      }
+      const returnId = new URLSearchParams(window.location.search).get("return_id");
+      if (returnId) {
+        const row = document.querySelector(`.recent-project-row[data-contract-id="${CSS.escape(returnId)}"]`);
+        if (row) {
+          selectRecentProjectRow(row);
+          row.scrollIntoView({ block: "nearest" });
+        }
+      }
+    }
 
     function escapeHtml(value) {
       return String(value || "")

@@ -17,7 +17,7 @@
         </label>
         {% if is_admin_mode or is_super_admin_mode %}
           <div class="toolbar" style="margin-top: 12px; margin-bottom: 0;">
-            <a class="button" href="{% url 'contracts:contract_import_template' %}">下载导入模板</a>
+            <button class="button" id="importTemplateModalButton" type="button">下载导入模板</button>
           </div>
         {% endif %}
         <p style="color: #667085;">
@@ -70,4 +70,40 @@
       {% endif %}
     </div>
   </div>
+
+  {% if is_admin_mode or is_super_admin_mode %}
+    <div class="modal-backdrop" id="importTemplateModal" hidden>
+      <div class="modal-card import-template-modal-card" role="dialog" aria-modal="true" aria-label="下载导入模板">
+        <div class="toolbar import-template-actions">
+          <a class="button" href="{% url 'contracts:contract_import_template' %}">下载合同模板</a>
+          <a class="button" href="{% url 'contracts:invoice_import_template' %}">下载票据模板</a>
+          <a class="button" href="{% url 'contracts:record_import_template' %}">下载记录模板</a>
+        </div>
+        <div class="toolbar import-template-close-actions">
+          <button class="button primary" id="importTemplateModalClose" type="button">关闭</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      const importTemplateModalButton = document.querySelector("#importTemplateModalButton");
+      const importTemplateModal = document.querySelector("#importTemplateModal");
+      const importTemplateModalClose = document.querySelector("#importTemplateModalClose");
+
+      if (importTemplateModalButton && importTemplateModal && importTemplateModalClose) {
+        importTemplateModalButton.addEventListener("click", () => {
+          importTemplateModal.hidden = false;
+          importTemplateModalClose.focus();
+        });
+        importTemplateModalClose.addEventListener("click", () => {
+          importTemplateModal.hidden = true;
+          importTemplateModalButton.focus();
+        });
+        importTemplateModal.addEventListener("click", (event) => {
+          if (event.target === importTemplateModal) {
+            importTemplateModal.hidden = true;
+          }
+        });
+      }
+    </script>
+  {% endif %}
 {% endblock %}

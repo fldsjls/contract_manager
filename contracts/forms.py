@@ -50,6 +50,7 @@ class ContractForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         for name in ("sign_date", "start_date", "end_date"):
             self.fields[name].input_formats = ["%Y-%m-%d"]
+        self.fields["end_date"].required = True
         for field in self.fields.values():
             field.widget.attrs.setdefault("class", "form-control")
         self.fields["original_contract_folder"].label = "文件夹编号"
@@ -116,12 +117,12 @@ class ContractForm(forms.ModelForm):
 
     # 方法说明：执行表单字段或整表校验。
     def clean(self):
-        # 校验维保合同必须填写截止日期。
+        # 截止日期用于状态、归档和产值计算，所有合同都必须填写。
         cleaned_data = super().clean()
         contract_type = cleaned_data.get("contract_type")
         end_date = cleaned_data.get("end_date")
-        if contract_type == "维保" and not end_date:
-            self.add_error("end_date", "维保合同必须填写截止日期。")
+        if not end_date:
+            self.add_error("end_date", "必须填写截止日期。")
 
         folder = normalize_contract_number_part(cleaned_data.get("original_contract_folder"), 2)
         file_number = normalize_contract_number_part(cleaned_data.get("original_contract_inner_number"), 4)

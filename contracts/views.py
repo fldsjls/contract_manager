@@ -1,3 +1,4 @@
+import calendar
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from functools import wraps
@@ -779,10 +780,10 @@ def project_mode_labels(contract: Contract) -> dict:
     return {
         "invoice_primary": "开票金额" if has_invoice else "开据金额",
         "invoice_secondary": "收款金额" if has_invoice else "收款金额",
-        "invoice_rate": "收款率",
+        "invoice_rate": "开票未收款金额",
         "receipt_primary": "收票金额" if has_invoice else "收据金额",
         "receipt_secondary": "付款金额",
-        "receipt_rate": "利润率",
+        "receipt_rate": "收票未付款金额",
     }
 
 
@@ -1052,6 +1053,28 @@ def yearly_signed_contract_amounts(year: int) -> list[float]:
     return [float(totals_by_year[unit]) for unit in range(start_year, year + 1)]
 
 
+def build_production_cumulative_rows() -> list[dict]:
+    today = timezone.localdate()
+    units = [today - timedelta(days=offset) for offset in range(11, -1, -1)]
+    contracts = Contract.objects.filter(
+        is_deleted=False,
+        amount__gt=0,
+        start_date__isnull=False,
+        end_date__isnull=False,
+    )
+    rows = []
+    for unit in units:
+        total = Decimal("0")
+        for contract in contracts:
+            contract_days = max((contract.end_date - contract.start_date).days, 0)
+            if not contract_days or unit <= contract.start_date or unit > contract.end_date:
+                continue
+            production_days = max((unit - contract.start_date).days, 0)
+            total += (contract.amount / Decimal(contract_days)) * Decimal(production_days)
+        rows.append({"label": unit.strftime("%m-%d"), "amount": total})
+    return rows
+
+
 # 获取当前主机的局域网 IP，用于设置页提示其他用户访问地址。
 # 函数说明：封装可复用的业务处理。
 def local_ip_address() -> str:
@@ -1109,17 +1132,32 @@ def dashboard_project_export_rows(period: str, year: int, start_date=None, end_d
         "invoicerecord_set",
         "paymentrecord_set",
     )
-    face_rows = []
-    actual_rows = []
-    merge_refs = []
-    for contract_index, contract in enumerate(contracts):
-        face_totals = {
+    rows_by_sheet = {
+        "开票": [],
+        "收票": [],
+        "开据": [],
+        "收据": [],
+    }
+    merge_refs_by_sheet = {
+        "开票": [],
+        "收票": [],
+        "开据": [],
+        "收据": [],
+    }
+    row_counts_by_sheet = {
+        "开票": 0,
+        "收票": 0,
+        "开据": 0,
+        "收据": 0,
+    }
+    for contract in contracts:
+        primary_totals = {
             "invoice": [Decimal("0") for _unit in units],
             "receipt": [Decimal("0") for _unit in units],
         }
-        actual_totals = {
-            "income": [Decimal("0") for _unit in units],
-            "payment": [Decimal("0") for _unit in units],
+        secondary_totals = {
+            "invoice": [Decimal("0") for _unit in units],
+            "receipt": [Decimal("0") for _unit in units],
         }
         records = list(contract.invoicerecord_set.all()) + list(contract.paymentrecord_set.all())
         for record in records:
@@ -1129,33 +1167,42 @@ def dashboard_project_export_rows(period: str, year: int, start_date=None, end_d
             if index is None:
                 continue
             if record_side(record) == "income":
-                face_totals["invoice"][index] += record.amount
-                actual_totals["income"][index] += record_amount_for_stats(record)
+                primary_totals["invoice"][index] += record.amount
+                secondary_totals["invoice"][index] += record_amount_for_stats(record)
             else:
-                face_totals["receipt"][index] += record.amount
-                actual_totals["payment"][index] += record_amount_for_stats(record)
-        first_row = 2 + contract_index * 2
+                primary_totals["receipt"][index] += record.amount
+                secondary_totals["receipt"][index] += record_amount_for_stats(record)
+        invoice_sheet_name = "开据" if contract.invoice_status == "开收据" else "开票"
+        receipt_sheet_name = "收据" if contract.invoice_status == "开收据" else "收票"
+        first_row = 2 + row_counts_by_sheet[invoice_sheet_name]
         second_row = first_row + 1
-        merge_refs.append(f"A{first_row}:A{second_row}")
-        face_rows.append([contract.contract_name, "开票/开据", *face_totals["invoice"]])
-        face_rows.append(["", "收票/收据", *face_totals["receipt"]])
-        actual_rows.append([contract.contract_name, "收款", *actual_totals["income"]])
-        actual_rows.append(["", "付款", *actual_totals["payment"]])
-    headers = ["项目名称", "类型", *labels]
+        mode_labels = project_mode_labels(contract)
+        merge_refs_by_sheet[invoice_sheet_name].append(f"A{first_row}:A{second_row}")
+        rows_by_sheet[invoice_sheet_name].append([contract.contract_name, mode_labels["invoice_primary"], *primary_totals["invoice"]])
+        rows_by_sheet[invoice_sheet_name].append(["", mode_labels["invoice_secondary"], *secondary_totals["invoice"]])
+        row_counts_by_sheet[invoice_sheet_name] += 2
+
+        first_row = 2 + row_counts_by_sheet[receipt_sheet_name]
+        second_row = first_row + 1
+        merge_refs_by_sheet[receipt_sheet_name].append(f"A{first_row}:A{second_row}")
+        rows_by_sheet[receipt_sheet_name].append([contract.contract_name, mode_labels["receipt_primary"], *primary_totals["receipt"]])
+        rows_by_sheet[receipt_sheet_name].append(["", mode_labels["receipt_secondary"], *secondary_totals["receipt"]])
+        row_counts_by_sheet[receipt_sheet_name] += 2
+    headers = ["项目名称", "金额类型", *labels]
     numeric_columns = set(range(3, len(headers) + 1))
-    return headers, face_rows, actual_rows, merge_refs, numeric_columns
+    return headers, rows_by_sheet, merge_refs_by_sheet, numeric_columns
 
 
 def contract_stats_export_rows(contract: Contract, period: str, year: int, start_date=None, end_date=None):
     units, labels, unit_for_record, record_in_scope = dashboard_export_units(period, year, start_date, end_date)
     unit_index = {unit: index for index, unit in enumerate(units)}
-    face_totals = {
+    primary_totals = {
         "invoice": [Decimal("0") for _unit in units],
         "receipt": [Decimal("0") for _unit in units],
     }
-    actual_totals = {
-        "income": [Decimal("0") for _unit in units],
-        "payment": [Decimal("0") for _unit in units],
+    secondary_totals = {
+        "invoice": [Decimal("0") for _unit in units],
+        "receipt": [Decimal("0") for _unit in units],
     }
     records = list(contract.invoicerecord_set.all()) + list(contract.paymentrecord_set.all())
     for record in records:
@@ -1165,27 +1212,32 @@ def contract_stats_export_rows(contract: Contract, period: str, year: int, start
         if index is None:
             continue
         if record_side(record) == "income":
-            face_totals["invoice"][index] += record.amount
-            actual_totals["income"][index] += record_amount_for_stats(record)
+            primary_totals["invoice"][index] += record.amount
+            secondary_totals["invoice"][index] += record_amount_for_stats(record)
         else:
-            face_totals["receipt"][index] += record.amount
-            actual_totals["payment"][index] += record_amount_for_stats(record)
+            primary_totals["receipt"][index] += record.amount
+            secondary_totals["receipt"][index] += record_amount_for_stats(record)
     labels_for_contract = project_mode_labels(contract)
-    face_headers = ["日期", labels_for_contract["invoice_primary"], labels_for_contract["receipt_primary"]]
-    actual_headers = ["日期", labels_for_contract["invoice_secondary"], labels_for_contract["receipt_secondary"]]
-    face_rows = [
-        [label, face_totals["invoice"][index], face_totals["receipt"][index]]
+    invoice_headers = ["日期", labels_for_contract["invoice_primary"], labels_for_contract["invoice_secondary"]]
+    receipt_headers = ["日期", labels_for_contract["receipt_primary"], labels_for_contract["receipt_secondary"]]
+    invoice_rows = [
+        [label, primary_totals["invoice"][index], secondary_totals["invoice"][index]]
         for index, label in enumerate(labels)
     ]
-    actual_rows = [
-        [label, actual_totals["income"][index], actual_totals["payment"][index]]
+    receipt_rows = [
+        [label, primary_totals["receipt"][index], secondary_totals["receipt"][index]]
         for index, label in enumerate(labels)
     ]
-    return face_headers, face_rows, actual_headers, actual_rows, {2, 3}
+    invoice_sheet_name = "开据" if contract.invoice_status == "开收据" else "开票"
+    receipt_sheet_name = "收据" if contract.invoice_status == "开收据" else "收票"
+    return invoice_sheet_name, invoice_headers, invoice_rows, receipt_sheet_name, receipt_headers, receipt_rows, {2, 3}
 
 
 @true_admin_required
 def dashboard_export(request):
+    chart_type = request.GET.get("chart_type", "ticket").strip()
+    if chart_type not in {"ticket", "contract_amount", "production_cumulative"}:
+        chart_type = "ticket"
     period = request.GET.get("period", "all")
     if period not in ("all", "year", "month"):
         period = "all"
@@ -1194,9 +1246,40 @@ def dashboard_export(request):
         year = int(request.GET.get("year", today.year))
     except (TypeError, ValueError):
         year = today.year
+    if chart_type == "contract_amount":
+        labels = [f"{unit}年" for unit in range(year - 11, year + 1)]
+        rows = [[label, amount] for label, amount in zip(labels, yearly_signed_contract_amounts(year))]
+        response = HttpResponse(
+            build_project_stats_xlsx(
+                [
+                    {
+                        "name": "合同金额图",
+                        "xml": build_project_stats_sheet_xml(["日期", "合同金额"], rows, [], {2}),
+                    }
+                ]
+            ),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="contract_amount_chart.xlsx"'
+        return response
+    if chart_type == "production_cumulative":
+        rows = [[row["label"], row["amount"]] for row in build_production_cumulative_rows()]
+        response = HttpResponse(
+            build_project_stats_xlsx(
+                [
+                    {
+                        "name": "产值累计图",
+                        "xml": build_project_stats_sheet_xml(["日期", "产值累计"], rows, [], {2}),
+                    }
+                ]
+            ),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="production_cumulative_chart.xlsx"'
+        return response
     start_date = parse_form_date(request.GET.get("start_date")) if period == "all" else None
     end_date = parse_form_date(request.GET.get("end_date")) if period == "all" else None
-    headers, face_rows, actual_rows, merge_refs, numeric_columns = dashboard_project_export_rows(
+    headers, rows_by_sheet, merge_refs_by_sheet, numeric_columns = dashboard_project_export_rows(
         period,
         year,
         start_date,
@@ -1204,12 +1287,20 @@ def dashboard_export(request):
     )
     sheets = [
         {
-            "name": "开票收票",
-            "xml": build_project_stats_sheet_xml(headers, face_rows, merge_refs, numeric_columns),
+            "name": "开票",
+            "xml": build_project_stats_sheet_xml(headers, rows_by_sheet["开票"], merge_refs_by_sheet["开票"], numeric_columns),
         },
         {
-            "name": "收款付款",
-            "xml": build_project_stats_sheet_xml(headers, actual_rows, merge_refs, numeric_columns),
+            "name": "收票",
+            "xml": build_project_stats_sheet_xml(headers, rows_by_sheet["收票"], merge_refs_by_sheet["收票"], numeric_columns),
+        },
+        {
+            "name": "开据",
+            "xml": build_project_stats_sheet_xml(headers, rows_by_sheet["开据"], merge_refs_by_sheet["开据"], numeric_columns),
+        },
+        {
+            "name": "收据",
+            "xml": build_project_stats_sheet_xml(headers, rows_by_sheet["收据"], merge_refs_by_sheet["收据"], numeric_columns),
         },
     ]
     response = HttpResponse(
@@ -1233,7 +1324,15 @@ def contract_stats_export(request, pk: int):
         year = today.year
     start_date = parse_form_date(request.GET.get("start_date")) if period == "all" else None
     end_date = parse_form_date(request.GET.get("end_date")) if period == "all" else None
-    face_headers, face_rows, actual_headers, actual_rows, numeric_columns = contract_stats_export_rows(
+    (
+        invoice_sheet_name,
+        invoice_headers,
+        invoice_rows,
+        receipt_sheet_name,
+        receipt_headers,
+        receipt_rows,
+        numeric_columns,
+    ) = contract_stats_export_rows(
         contract,
         period,
         year,
@@ -1242,12 +1341,12 @@ def contract_stats_export(request, pk: int):
     )
     sheets = [
         {
-            "name": "开票收票",
-            "xml": build_project_stats_sheet_xml(face_headers, face_rows, [], numeric_columns, title=contract.contract_name),
+            "name": invoice_sheet_name,
+            "xml": build_project_stats_sheet_xml(invoice_headers, invoice_rows, [], numeric_columns, title=contract.contract_name),
         },
         {
-            "name": "收款付款",
-            "xml": build_project_stats_sheet_xml(actual_headers, actual_rows, [], numeric_columns, title=contract.contract_name),
+            "name": receipt_sheet_name,
+            "xml": build_project_stats_sheet_xml(receipt_headers, receipt_rows, [], numeric_columns, title=contract.contract_name),
         },
     ]
     response = HttpResponse(
@@ -1460,6 +1559,7 @@ def contract_stats_data(request, pk: int):
                 "invoice": {
                     "primary_total": float(mode_totals["invoice_primary"]),
                     "secondary_total": float(mode_totals["invoice_secondary"]),
+                    "outstanding_total": float(mode_totals["invoice_primary"] - mode_totals["invoice_secondary"]),
                     "rate": float(income_rate),
                     "chart": {
                         "primary": [float(row["invoice_primary"]) for row in mode_chart_rows],
@@ -1469,6 +1569,7 @@ def contract_stats_data(request, pk: int):
                 "receipt": {
                     "primary_total": float(mode_totals["receipt_primary"]),
                     "secondary_total": float(mode_totals["receipt_secondary"]),
+                    "outstanding_total": float(mode_totals["receipt_primary"] - mode_totals["receipt_secondary"]),
                     "rate": float(expense_rate),
                     "chart": {
                         "primary": [float(row["receipt_primary"]) for row in mode_chart_rows],
@@ -1684,10 +1785,150 @@ def configured_file_content(request, kind: str, pk: int):
 
 # 渲染统计总览页面。
 # 视图函数：处理页面请求并返回响应。
+def production_contracts_from_dashboard_request(request) -> tuple[list[Contract], dict]:
+    today = timezone.localdate()
+    project_code = request.GET.get("production_project_code", "").strip()
+    start_date_value = request.GET.get("production_start_date", "").strip()
+    end_date_value = request.GET.get("production_end_date", "").strip()
+    keyword = request.GET.get("production_q", "").strip()
+    filter_contract_type = request.GET.get("production_contract_type", "").strip()
+    filter_invoice_status = request.GET.get("production_invoice_status", "").strip()
+    filter_status = request.GET.get("production_status", "").strip()
+    filter_responsible_person = request.GET.get("production_responsible_person", "").strip()
+    has_filter_values = any(
+        [keyword, filter_contract_type, filter_invoice_status, filter_status, filter_responsible_person]
+    )
+    has_production_inputs = bool(project_code) or bool(start_date_value) or bool(end_date_value) or has_filter_values
+    filter_active = has_filter_values or not has_production_inputs
+    project_mode = bool(project_code) and not filter_active
+    filter_mode = filter_active and not project_code
+    parsed_start_date = parse_date(start_date_value) if start_date_value else None
+    parsed_end_date = parse_date(end_date_value) if end_date_value else None
+
+    contracts = Contract.objects.filter(
+        is_deleted=False,
+        amount__gt=0,
+        start_date__isnull=False,
+        end_date__isnull=False,
+    )
+    message = ""
+    mode = "idle"
+
+    if project_mode:
+        mode = "project"
+        contracts = [contract for contract in contracts if contract.display_contract_number == project_code]
+        if not contracts:
+            message = "未找到该项目显示编码，或项目缺少合同金额、起始日期、截止日期。"
+    elif filter_mode:
+        mode = "filter"
+        if keyword:
+            contracts = contracts.filter(
+                Q(contract_name__icontains=keyword)
+                | Q(contract_number__icontains=keyword)
+                | Q(original_contract_folder__icontains=keyword)
+                | Q(original_contract_inner_number__icontains=keyword)
+                | Q(party_name__icontains=keyword)
+                | Q(responsible_person__icontains=keyword)
+            )
+
+        valid_contract_types = {value for value, _ in Contract.CONTRACT_TYPES}
+        valid_invoice_statuses = {value for value, _ in Contract.INVOICE_STATUS}
+        if filter_contract_type in valid_contract_types:
+            contracts = contracts.filter(contract_type=filter_contract_type)
+        if filter_invoice_status in valid_invoice_statuses:
+            contracts = contracts.filter(invoice_status=filter_invoice_status)
+        if filter_responsible_person:
+            contracts = contracts.filter(responsible_person__icontains=filter_responsible_person)
+
+        status_choices = {"进行中", "即将到期", "已到期", "待归档", "已归档"}
+        contracts = list(contracts)
+        if not keyword and filter_status not in {"待归档", "已归档"}:
+            contracts = [contract for contract in contracts if contract.status not in {"待归档", "已归档"}]
+        if filter_status in status_choices:
+            contracts = [contract for contract in contracts if contract.status == filter_status]
+    else:
+        contracts = []
+        if project_code and filter_active:
+            message = "项目显示编码和筛选不能同时使用。"
+
+    contracts = list(contracts)
+    if project_mode and contracts:
+        effective_start_date = parsed_start_date or contracts[0].start_date
+    elif filter_mode:
+        effective_start_date = parsed_start_date or today
+    else:
+        effective_start_date = parsed_start_date or today
+    effective_end_date = parsed_end_date or today
+
+    production_rows = []
+    production_total = Decimal("0")
+    for contract in contracts:
+        contract_days = max((contract.end_date - contract.start_date).days, 0)
+        if not contract_days or effective_end_date > contract.end_date:
+            continue
+        range_start = max(contract.start_date, effective_start_date or contract.start_date)
+        range_end = effective_end_date
+        production_days = max((range_end - range_start).days, 0)
+        daily_amount = contract.amount / Decimal(contract_days)
+        production_amount = daily_amount * Decimal(production_days)
+        production_total += production_amount
+        production_rows.append(
+            {
+                "contract": contract,
+                "daily_amount": daily_amount,
+                "production_days": production_days,
+                "production_amount": production_amount,
+            }
+        )
+
+    if project_mode and production_rows:
+        project_title = production_rows[0]["contract"].contract_name
+    elif filter_mode and production_rows:
+        project_title = f"已筛选 {len(production_rows)} 个项目"
+    else:
+        project_title = ""
+
+    return production_rows, {
+        "total": production_total,
+        "count": len(production_rows),
+        "project_title": project_title,
+        "start_date": effective_start_date,
+        "end_date": effective_end_date,
+        "project_code": project_code,
+        "keyword": keyword,
+        "contract_type": filter_contract_type,
+        "invoice_status": filter_invoice_status,
+        "status": filter_status,
+        "responsible_person": filter_responsible_person,
+        "filter_active": has_filter_values,
+        "project_mode": project_mode,
+        "filter_mode": filter_mode,
+        "mode": mode,
+        "message": message,
+    }
+
+
 @true_admin_required
 def dashboard(request):
     purge_expired_trash()
+    chart_type = request.GET.get("chart_type", "production_cumulative").strip()
+    valid_chart_types = {"ticket", "contract_amount", "production_cumulative"}
+    if chart_type not in valid_chart_types:
+        chart_type = "production_cumulative"
     chart_period, chart_year, chart_month, prev_range_params, next_range_params, chart_range_label = chart_range_from_request(request)
+    if chart_type == "contract_amount":
+        chart_period = "year"
+        prev_range_params = f"chart_type=contract_amount&period=year&year={chart_year - 1}&month={chart_month}"
+        next_range_params = f"chart_type=contract_amount&period=year&year={chart_year + 1}&month={chart_month}"
+        chart_range_label = f"{chart_year - 11} - {chart_year} 年"
+    elif chart_type == "production_cumulative":
+        chart_period = "all"
+        prev_range_params = "chart_type=production_cumulative&period=all"
+        next_range_params = "chart_type=production_cumulative&period=all"
+        chart_range_label = "全部"
+    else:
+        prev_range_params = f"chart_type=ticket&{prev_range_params}"
+        next_range_params = f"chart_type=ticket&{next_range_params}"
     active_contracts, scoped_invoice_records, scoped_payment_records = scoped_querysets(chart_period, chart_year, chart_month)
     total_amount = active_contracts.aggregate(total=Sum("amount"))["total"] or Decimal("0")
     total_income, total_expense = income_expense_totals(scoped_invoice_records, scoped_payment_records)
@@ -1704,10 +1945,15 @@ def dashboard(request):
         chart_year,
         chart_month,
     )
+    contract_amount_rows = yearly_signed_contract_amounts(chart_year)
+    production_cumulative_rows = build_production_cumulative_rows()
     chart_data = {
         "labels": [row["label"] for row in mode_chart_rows],
-        "show_contract_amount_line": chart_period == "year",
-        "contract_amounts": yearly_signed_contract_amounts(chart_year) if chart_period == "year" else [],
+        "chart_type": chart_type,
+        "contract_amount_labels": [f"{unit}年" for unit in range(chart_year - 11, chart_year + 1)],
+        "contract_amounts": contract_amount_rows,
+        "production_cumulative_labels": [row["label"] for row in production_cumulative_rows],
+        "production_cumulative_amounts": [float(row["amount"]) for row in production_cumulative_rows],
         "income": [float(row["income"]) for row in chart_rows],
         "expense": [float(row["expense"]) for row in chart_rows],
         "invoice": [float(row["income"]) for row in chart_rows],
@@ -1749,7 +1995,17 @@ def dashboard(request):
     ) or Decimal("1")
     chart_rows = enrich_chart_rows(chart_rows, max_amount)
 
-    recent_contracts = list(active_contracts.order_by("-contract_number", "-id")[:6])
+    production_rows, production_summary = production_contracts_from_dashboard_request(request)
+    recent_contracts = list(active_contracts.order_by("-contract_number", "-id")[:100])
+    production_search_contracts = [
+        {
+            "name": contract.contract_name,
+            "number": contract.display_contract_number,
+            "party": contract.party_name,
+            "responsible": contract.responsible_person,
+        }
+        for contract in active_contracts.order_by("-contract_number", "-id")
+    ]
     context = context_with_auth(
         request,
         {
@@ -1772,11 +2028,18 @@ def dashboard(request):
             "chart_period": chart_period,
             "chart_year": chart_year,
             "chart_month": chart_month,
+            "chart_type": chart_type,
             "chart_range_label": chart_range_label,
             "chart_export_start_date": timezone.localdate() - timedelta(days=11),
             "chart_export_end_date": timezone.localdate(),
             "prev_range_params": prev_range_params,
             "next_range_params": next_range_params,
+            "production_rows": production_rows,
+            "production_summary": production_summary,
+            "production_search_contracts": production_search_contracts,
+            "contract_type_choices": Contract.CONTRACT_TYPES,
+            "invoice_status_choices": Contract.INVOICE_STATUS,
+            "status_choices": ["进行中", "即将到期", "已到期", "待归档", "已归档"],
             "expiring_contracts": expiring_contract_queryset(),
             "archive_pending_contracts": archive_pending_contracts(),
             "recent_contracts": recent_contracts,
@@ -2274,6 +2537,11 @@ def contract_list(request):
     expired_contracts = [contract for contract in summary_contracts if contract.status == "已到期"]
     active_total_amount = sum((contract.amount for contract in active_contracts), Decimal("0"))
     expired_total_amount = sum((contract.amount for contract in expired_contracts), Decimal("0"))
+    summary_records = []
+    for contract in summary_contracts:
+        summary_records.extend(contract.invoicerecord_set.all())
+        summary_records.extend(contract.paymentrecord_set.all())
+    summary_mode_totals = project_mode_totals(summary_records)
     if sort == "contract_number":
         sort_contracts_by_number(contracts, direction, explicit_sort)
     if sort == "payment_rate":
@@ -2296,6 +2564,12 @@ def contract_list(request):
             "active_total_amount": active_total_amount,
             "expired_contract_count": len(expired_contracts),
             "expired_total_amount": expired_total_amount,
+            "summary_invoice_amount": summary_mode_totals["invoice_primary"],
+            "summary_income_amount": summary_mode_totals["invoice_secondary"],
+            "summary_invoice_unpaid_amount": summary_mode_totals["invoice_primary"] - summary_mode_totals["invoice_secondary"],
+            "summary_receipt_amount": summary_mode_totals["receipt_primary"],
+            "summary_payment_amount": summary_mode_totals["receipt_secondary"],
+            "summary_receipt_unpaid_amount": summary_mode_totals["receipt_primary"] - summary_mode_totals["receipt_secondary"],
             "contract_type_filter": filter_contract_type,
             "invoice_status_filter": filter_invoice_status,
             "status_filter": filter_status,
@@ -2359,6 +2633,70 @@ def contract_list_export(request):
     return response
 
 
+def contract_record_export_key(contract: Contract) -> str:
+    return contract.display_contract_number or contract.contract_number or contract.contract_name
+
+
+def contract_records_export(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    contract_key = contract_record_export_key(contract)
+    record_headers = ["合同编号", "日期", "存储编号", "备注"]
+    record_rows = [
+        [
+            contract_key,
+            record.record_date.strftime("%Y-%m-%d") if record.record_date else "",
+            record.storage_location_number or "00",
+            record.remark or "",
+        ]
+        for record in contract.maintenancerecord_set.all().order_by("record_date", "id")
+    ]
+
+    sheets = [
+        {
+            "name": "记录",
+            "xml": build_project_stats_sheet_xml(record_headers, record_rows, [], set()),
+        }
+    ]
+    if contract.invoice_status == "开收据":
+        invoice_sheet_names = ("开据", "收据")
+    else:
+        invoice_sheet_names = ("开票", "收票")
+
+    all_money_records = sorted(
+        list(contract.invoicerecord_set.all()) + list(contract.paymentrecord_set.all()),
+        key=lambda record: (record.record_date, record.id),
+    )
+    for sheet_name in invoice_sheet_names:
+        amount_label, actual_amount_label = INVOICE_IMPORT_SHEET_LABELS[sheet_name]
+        headers = ["合同编号", "日期", amount_label, actual_amount_label, "备注"]
+        rows = []
+        for record in all_money_records:
+            if record.record_type != sheet_name:
+                continue
+            rows.append(
+                [
+                    contract_key,
+                    record.record_date.strftime("%Y-%m-%d") if record.record_date else "",
+                    record.amount,
+                    record_amount_for_stats(record),
+                    record.remark or "",
+                ]
+            )
+        sheets.append(
+            {
+                "name": sheet_name,
+                "xml": build_project_stats_sheet_xml(headers, rows, [], {3, 4}),
+            }
+        )
+
+    response = HttpResponse(
+        build_project_stats_xlsx(sheets),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="contract_{contract.pk}_records.xlsx"'
+    return response
+
+
 CONTRACT_IMPORT_COLUMNS = [
     ("contract_name", "合同名称"),
     ("contract_type", "合同类型"),
@@ -2389,6 +2727,27 @@ CONTRACT_IMPORT_PREVIEW_COLUMNS = [
     UI_LABELS["status"],
     "错误",
 ]
+INVOICE_IMPORT_PREVIEW_COLUMNS = [
+    "序号",
+    UI_LABELS["contract_name"],
+    UI_LABELS["contract_number"],
+    "类型",
+    UI_LABELS["date"],
+    UI_LABELS["face_amount"],
+    UI_LABELS["actual_amount"],
+    UI_LABELS["remark"],
+    "错误",
+]
+MAINTENANCE_IMPORT_PREVIEW_COLUMNS = [
+    "序号",
+    UI_LABELS["contract_name"],
+    UI_LABELS["contract_number"],
+    UI_LABELS["date"],
+    "记录编号",
+    "存储编号",
+    UI_LABELS["remark"],
+    "错误",
+]
 CONTRACT_IMPORT_HEADER_ALIASES = {
     "金额": "amount",
     "合同金额": "amount",
@@ -2402,6 +2761,18 @@ CONTRACT_IMPORT_HEADER_ALIASES = {
     "存储位置": "storage_location_number",
     "存储编号": "storage_location_number",
     "存储位置编号": "storage_location_number",
+}
+INVOICE_IMPORT_TYPES = {
+    "开票": InvoiceRecord,
+    "收票": PaymentRecord,
+    "开据": PaymentRecord,
+    "收据": PaymentRecord,
+}
+INVOICE_IMPORT_SHEET_LABELS = {
+    "开票": ("开票金额", "收款金额"),
+    "收票": ("收票金额", "付款金额"),
+    "开据": ("开据金额", "收款金额"),
+    "收据": ("收据金额", "付款金额"),
 }
 
 
@@ -2424,7 +2795,7 @@ def normalize_import_value(field_name: str, value):
     if not text:
         return ""
 
-    if field_name in {"sign_date", "start_date", "end_date"}:
+    if field_name in {"sign_date", "start_date", "end_date", "record_date"}:
         normalized = text.replace("年", "/").replace("月", "/").replace("日", "")
         normalized = normalized.replace(".", "/").replace("-", "/")
         match = re.fullmatch(r"(\d{4})/(\d{1,2})/(\d{1,2})", normalized)
@@ -2472,49 +2843,83 @@ def xlsx_plain_text(element) -> str:
     return "".join(element.itertext())
 
 
-def parse_contract_import_xlsx_with_stdlib(uploaded_file):
-    uploaded_file.seek(0)
-    namespace = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
-    with zipfile.ZipFile(uploaded_file) as archive:
-        shared_strings = []
-        if "xl/sharedStrings.xml" in archive.namelist():
-            shared_root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
-            shared_strings = [xlsx_plain_text(item) for item in shared_root.findall("x:si", namespace)]
-        sheet_root = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+def xlsx_cell_value(cell, shared_strings, namespace) -> str:
+    cell_type = cell.attrib.get("t", "")
+    if cell_type == "inlineStr":
+        return xlsx_plain_text(cell.find("x:is", namespace))
+    raw_value = xlsx_plain_text(cell.find("x:v", namespace))
+    if cell_type == "s" and raw_value.isdigit() and int(raw_value) < len(shared_strings):
+        return shared_strings[int(raw_value)]
+    return raw_value
 
+
+def xlsx_rows_from_sheet_root(sheet_root, shared_strings, namespace) -> list[list]:
     parsed_rows = []
     for row_element in sheet_root.findall(".//x:sheetData/x:row", namespace):
         row_values = {}
         for cell in row_element.findall("x:c", namespace):
-            ref = cell.attrib.get("r", "")
-            column_number = xlsx_column_number(ref)
-            cell_type = cell.attrib.get("t", "")
-            value = ""
-            if cell_type == "inlineStr":
-                value = xlsx_plain_text(cell.find("x:is", namespace))
-            else:
-                raw_value = xlsx_plain_text(cell.find("x:v", namespace))
-                if cell_type == "s" and raw_value.isdigit() and int(raw_value) < len(shared_strings):
-                    value = shared_strings[int(raw_value)]
-                else:
-                    value = raw_value
-            row_values[column_number] = value
+            column_number = xlsx_column_number(cell.attrib.get("r", ""))
+            row_values[column_number] = xlsx_cell_value(cell, shared_strings, namespace)
         if row_values:
             max_column = max(row_values)
             parsed_rows.append([row_values.get(index, "") for index in range(1, max_column + 1)])
     return parsed_rows
 
 
-def parse_contract_import_xlsx(uploaded_file):
+def parse_xlsx_sheets_with_stdlib(uploaded_file) -> dict[str, list[list]]:
+    uploaded_file.seek(0)
+    namespace = {
+        "x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
+    }
+    with zipfile.ZipFile(uploaded_file) as archive:
+        shared_strings = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            shared_root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+            shared_strings = [xlsx_plain_text(item) for item in shared_root.findall("x:si", namespace)]
+        workbook_root = ET.fromstring(archive.read("xl/workbook.xml"))
+        rel_root = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+        targets_by_id = {
+            rel.attrib["Id"]: rel.attrib["Target"].lstrip("/")
+            for rel in rel_root.findall("rel:Relationship", namespace)
+            if "Id" in rel.attrib and "Target" in rel.attrib
+        }
+        sheets = {}
+        for sheet in workbook_root.findall(".//x:sheet", namespace):
+            name = sheet.attrib.get("name", "Sheet")
+            rel_id = sheet.attrib.get(f"{{{namespace['r']}}}id")
+            target = targets_by_id.get(rel_id, "")
+            sheet_path = target if target.startswith("xl/") else f"xl/{target}"
+            if sheet_path in archive.namelist():
+                sheet_root = ET.fromstring(archive.read(sheet_path))
+                sheets[name] = xlsx_rows_from_sheet_root(sheet_root, shared_strings, namespace)
+        if not sheets and "xl/worksheets/sheet1.xml" in archive.namelist():
+            sheet_root = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+            sheets["Sheet1"] = xlsx_rows_from_sheet_root(sheet_root, shared_strings, namespace)
+        return sheets
+
+
+def parse_xlsx_sheets(uploaded_file) -> dict[str, list[list]]:
     try:
         from openpyxl import load_workbook
     except ImportError:
-        rows = parse_contract_import_xlsx_with_stdlib(uploaded_file)
-    else:
-        uploaded_file.seek(0)
-        workbook = load_workbook(uploaded_file, read_only=True, data_only=True)
-        worksheet = workbook.active
-        rows = list(worksheet.iter_rows(values_only=True))
+        return parse_xlsx_sheets_with_stdlib(uploaded_file)
+    uploaded_file.seek(0)
+    workbook = load_workbook(uploaded_file, read_only=True, data_only=True)
+    return {
+        worksheet.title: list(worksheet.iter_rows(values_only=True))
+        for worksheet in workbook.worksheets
+    }
+
+
+def parse_contract_import_xlsx_with_stdlib(uploaded_file):
+    sheets = parse_xlsx_sheets_with_stdlib(uploaded_file)
+    return next(iter(sheets.values()), [])
+
+
+def parse_contract_import_xlsx(uploaded_file):
+    rows = next(iter(parse_xlsx_sheets(uploaded_file).values()), [])
     if not rows:
         return [], ["Excel 文件为空。"]
 
@@ -2634,6 +3039,231 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
     return results
 
 
+def decimal_from_import(value):
+    text = normalize_import_cell(value).replace(",", "")
+    if text == "":
+        return None
+    try:
+        return Decimal(text)
+    except Exception:
+        return None
+
+
+def date_from_import(value):
+    text = normalize_import_value("record_date", value)
+    if not text:
+        return None
+    return parse_form_date(text)
+
+
+def import_contract_lookup() -> dict[str, Contract]:
+    lookup = {}
+    for contract in Contract.objects.filter(is_deleted=False):
+        keys = {
+            contract.contract_number,
+            contract.display_contract_number,
+            contract.full_display_contract_number,
+            contract.contract_name,
+        }
+        for key in keys:
+            normalized = normalize_import_cell(key)
+            if normalized:
+                lookup.setdefault(normalized, contract)
+    return lookup
+
+
+def parse_record_import_rows_from_sheet(rows, field_map, row_builder):
+    if not rows:
+        return [], ["Excel 文件为空。"]
+    headers = [normalize_import_cell(value) for value in rows[0]]
+    header_map = {}
+    for index, header in enumerate(headers):
+        field_name = field_map.get(header)
+        if field_name:
+            header_map[field_name] = index
+    missing_headers = [
+        label
+        for label, field_name in field_map.items()
+        if field_name in {"contract_key", "record_date"} and field_name not in header_map
+    ]
+    if missing_headers:
+        return [], [f"缺少必需列：{', '.join(missing_headers)}。"]
+    parsed_rows = []
+    for excel_row_number, values in enumerate(rows[1:], start=2):
+        if not any(normalize_import_cell(value) for value in values):
+            continue
+        parsed_rows.append(row_builder(excel_row_number, values, header_map))
+    return parsed_rows, []
+
+
+def parse_invoice_import_xlsx(uploaded_file):
+    sheets = parse_xlsx_sheets(uploaded_file)
+    parsed_rows = []
+    parse_errors = []
+    for sheet_name, rows in sheets.items():
+        record_type = normalize_import_cell(sheet_name)
+        if record_type not in INVOICE_IMPORT_TYPES:
+            continue
+        amount_label, actual_amount_label = INVOICE_IMPORT_SHEET_LABELS[record_type]
+        field_map = {
+            "合同编号": "contract_key",
+            "合同名称": "contract_key",
+            "日期": "record_date",
+            "记录日期": "record_date",
+            amount_label: "amount",
+            "票面金额": "amount",
+            actual_amount_label: "actual_amount",
+            "实际金额": "actual_amount",
+            "备注": "remark",
+        }
+
+        def build_row(excel_row_number, values, header_map):
+            def value_for(field_name):
+                index = header_map.get(field_name)
+                return values[index] if index is not None and index < len(values) else ""
+
+            return {
+                "row_number": excel_row_number,
+                "sheet_name": record_type,
+                "data": {
+                    "contract_key": normalize_import_cell(value_for("contract_key")),
+                    "record_type": record_type,
+                    "record_date": normalize_import_value("record_date", value_for("record_date")),
+                    "amount": normalize_import_cell(value_for("amount")),
+                    "actual_amount": normalize_import_cell(value_for("actual_amount")),
+                    "remark": normalize_import_cell(value_for("remark")),
+                },
+            }
+
+        rows_for_sheet, errors = parse_record_import_rows_from_sheet(rows, field_map, build_row)
+        parse_errors.extend([f"{record_type}：{error}" for error in errors])
+        parsed_rows.extend(rows_for_sheet)
+    if not parsed_rows and not parse_errors:
+        parse_errors.append("未找到可导入的票据工作表，请使用“开票/收票”或“开据/收据”工作表。")
+    if len(parsed_rows) > 300:
+        parse_errors.append("一次最多导入 300 条票据记录，请拆分 Excel 后再导入。")
+    return parsed_rows, parse_errors
+
+
+def validate_invoice_import_rows(parsed_rows):
+    contract_lookup = import_contract_lookup()
+    results = []
+    for item in parsed_rows:
+        data = item["data"].copy()
+        errors = []
+        contract = contract_lookup.get(data.get("contract_key", ""))
+        record_date = date_from_import(data.get("record_date"))
+        amount = decimal_from_import(data.get("amount"))
+        actual_amount = decimal_from_import(data.get("actual_amount"))
+        if contract is None:
+            errors.append("未找到对应合同。")
+        elif contract.invoice_status == "开收据" and data.get("record_type") not in {"开据", "收据"}:
+            errors.append("该合同是开收据模式，请使用“开据/收据”工作表。")
+        elif contract.invoice_status != "开收据" and data.get("record_type") not in {"开票", "收票"}:
+            errors.append("该合同是开票模式，请使用“开票/收票”工作表。")
+        if record_date is None:
+            errors.append("日期格式不正确。")
+        if amount is None:
+            errors.append("票面金额不能为空且必须是数字。")
+        if actual_amount is None:
+            errors.append("实际金额不能为空且必须是数字。")
+        if amount is not None and amount < 0:
+            errors.append("票面金额不能小于 0。")
+        if actual_amount is not None and actual_amount < 0:
+            errors.append("实际金额不能小于 0。")
+        results.append(
+            {
+                "row_number": item["row_number"],
+                "data": data,
+                "contract_id": contract.pk if contract else None,
+                "preview_cells": [
+                    {"value": len(results) + 1},
+                    {"value": contract.contract_name if contract else data.get("contract_key", ""), "css_class": "truncate-cell", "title": contract.contract_name if contract else data.get("contract_key", "")},
+                    {"value": contract.display_contract_number if contract else ""},
+                    {"value": data.get("record_type", "")},
+                    {"value": record_date.strftime("%Y-%m-%d") if record_date else data.get("record_date", "")},
+                    {"value": f"¥ {amount:.2f}" if amount is not None else data.get("amount", "")},
+                    {"value": f"¥ {actual_amount:.2f}" if actual_amount is not None else data.get("actual_amount", "")},
+                    {"value": data.get("remark", ""), "css_class": "truncate-cell", "title": data.get("remark", "")},
+                    {"value": "；".join(errors), "css_class": "truncate-cell error-cell", "title": "；".join(errors)},
+                ],
+                "errors": errors,
+                "ok": not errors,
+            }
+        )
+    return results
+
+
+def parse_maintenance_import_xlsx(uploaded_file):
+    rows = next(iter(parse_xlsx_sheets(uploaded_file).values()), [])
+    field_map = {
+        "合同编号": "contract_key",
+        "合同名称": "contract_key",
+        "日期": "record_date",
+        "记录日期": "record_date",
+        "存储编号": "storage_location_number",
+        "备注": "remark",
+    }
+
+    def build_row(excel_row_number, values, header_map):
+        def value_for(field_name):
+            index = header_map.get(field_name)
+            return values[index] if index is not None and index < len(values) else ""
+
+        return {
+            "row_number": excel_row_number,
+            "data": {
+                "contract_key": normalize_import_cell(value_for("contract_key")),
+                "record_date": normalize_import_value("record_date", value_for("record_date")),
+                "storage_location_number": normalize_import_value("storage_location_number", value_for("storage_location_number")),
+                "remark": normalize_import_cell(value_for("remark")),
+            },
+        }
+
+    parsed_rows, parse_errors = parse_record_import_rows_from_sheet(rows, field_map, build_row)
+    if len(parsed_rows) > 300:
+        parse_errors.append("一次最多导入 300 条项目记录，请拆分 Excel 后再导入。")
+    return parsed_rows, parse_errors
+
+
+def validate_maintenance_import_rows(parsed_rows):
+    contract_lookup = import_contract_lookup()
+    results = []
+    for item in parsed_rows:
+        data = item["data"].copy()
+        errors = []
+        contract = contract_lookup.get(data.get("contract_key", ""))
+        record_date = date_from_import(data.get("record_date"))
+        storage_location = normalize_storage_location_number(data.get("storage_location_number"))
+        if contract is None:
+            errors.append("未找到对应合同。")
+        elif not str(contract.original_contract_inner_number or "").strip():
+            errors.append("合同缺少文件编号，不能生成记录编号。")
+        if record_date is None:
+            errors.append("日期格式不正确。")
+        record_number = maintenance_record_number(contract, record_date, storage_location) if contract and record_date else ""
+        results.append(
+            {
+                "row_number": item["row_number"],
+                "data": data,
+                "contract_id": contract.pk if contract else None,
+                "preview_cells": [
+                    {"value": len(results) + 1},
+                    {"value": contract.contract_name if contract else data.get("contract_key", ""), "css_class": "truncate-cell", "title": contract.contract_name if contract else data.get("contract_key", "")},
+                    {"value": contract.display_contract_number if contract else ""},
+                    {"value": record_date.strftime("%Y-%m-%d") if record_date else data.get("record_date", "")},
+                    {"value": record_number},
+                    {"value": storage_location},
+                    {"value": data.get("remark", ""), "css_class": "truncate-cell", "title": data.get("remark", "")},
+                    {"value": "；".join(errors), "css_class": "truncate-cell error-cell", "title": "；".join(errors)},
+                ],
+                "errors": errors,
+                "ok": not errors,
+            }
+        )
+    return results
+
+
 def contract_import_preview_context(
     request,
     upload_form,
@@ -2642,18 +3272,25 @@ def contract_import_preview_context(
     parse_errors=None,
     confirm_error="",
     completed=False,
+    import_kind="contract",
+    selected_contract=None,
 ):
     results = results or []
     valid_count = sum(1 for row in results if row["ok"])
     error_count = len(results) - valid_count
     allow_partial_import_with_errors = AppSetting.current().allow_partial_import_with_errors
     can_confirm_import = valid_count > 0 and (not error_count or allow_partial_import_with_errors)
+    preview_columns = {
+        "contract": CONTRACT_IMPORT_PREVIEW_COLUMNS,
+        "invoice": INVOICE_IMPORT_PREVIEW_COLUMNS,
+        "maintenance": MAINTENANCE_IMPORT_PREVIEW_COLUMNS,
+    }.get(import_kind, CONTRACT_IMPORT_PREVIEW_COLUMNS)
     return context_with_auth(
         request,
         {
             "form": upload_form,
             "columns": CONTRACT_IMPORT_COLUMNS,
-            "preview_columns": CONTRACT_IMPORT_PREVIEW_COLUMNS,
+            "preview_columns": preview_columns,
             "results": results,
             "payload": payload,
             "parse_errors": parse_errors or [],
@@ -2663,12 +3300,15 @@ def contract_import_preview_context(
             "can_confirm_import": can_confirm_import,
             "confirm_error": confirm_error,
             "completed": completed,
+            "import_kind": import_kind,
+            "selected_contract": selected_contract,
+            "selected_contract_id": selected_contract.pk if selected_contract else "",
             "active_nav": "contracts",
         },
     )
 
 
-@true_admin_required
+@admin_required
 def contract_import_template(request):
     headers = [label for _field, label in CONTRACT_IMPORT_COLUMNS]
     rows = [
@@ -2684,6 +3324,7 @@ def contract_import_template(request):
             "张三",
             "01",
             "0001",
+            "00",
             3,
             "",
         ]
@@ -2697,8 +3338,49 @@ def contract_import_template(request):
 
 
 @true_admin_required
+def invoice_import_template(request):
+    today = timezone.localdate().strftime("%Y-%m-%d")
+    sheets = []
+    for record_type in ("开票", "收票"):
+        amount_label, actual_amount_label = INVOICE_IMPORT_SHEET_LABELS[record_type]
+        headers = ["合同编号", "日期", amount_label, actual_amount_label, "备注"]
+        rows = [["在这里填写合同编号或合同名称", today, 10000, 8000, ""]]
+        sheets.append(
+            {
+                "name": record_type,
+                "xml": build_project_stats_sheet_xml(headers, rows, [], {3, 4}),
+            }
+        )
+    response = HttpResponse(
+        build_project_stats_xlsx(sheets),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="invoice_import_template.xlsx"'
+    return response
+
+
+@true_admin_required
+def record_import_template(request):
+    headers = ["合同编号", "日期", "存储编号", "备注"]
+    rows = [["在这里填写合同编号或合同名称", timezone.localdate().strftime("%Y-%m-%d"), "00", ""]]
+    response = HttpResponse(
+        build_contract_list_xlsx(headers, rows, numeric_columns=set()),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="record_import_template.xlsx"'
+    return response
+
+
+@admin_required
 def contract_import(request):
+    selected_contract = None
+    selected_contract_id = request.POST.get("contract_id") or request.GET.get("contract_id")
+    if selected_contract_id:
+        selected_contract = get_object_or_404(Contract, pk=selected_contract_id, is_deleted=False)
     if request.method == "POST" and request.POST.get("action") == "confirm":
+        import_kind = request.POST.get("import_kind", "contract")
+        if is_normal_mode(request) and import_kind != "contract":
+            return redirect("contracts:login")
         try:
             parsed_rows = signing.loads(request.POST.get("payload", ""), max_age=3600)
         except signing.BadSignature:
@@ -2706,17 +3388,26 @@ def contract_import(request):
                 request,
                 ContractImportUploadForm(),
                 parse_errors=["导入预览已失效，请重新上传 Excel。"],
+                import_kind=import_kind,
+                selected_contract=selected_contract,
             )
             return render(request, "contracts/contract_import.html", context)
 
         try:
-            contract_numbers = default_contract_numbers(max(len(parsed_rows), 1))
-            results = validate_contract_import_rows(parsed_rows, contract_numbers)
+            contract_numbers = default_contract_numbers(max(len(parsed_rows), 1)) if import_kind == "contract" else []
+            if import_kind == "invoice":
+                results = validate_invoice_import_rows(parsed_rows)
+            elif import_kind == "maintenance":
+                results = validate_maintenance_import_rows(parsed_rows)
+            else:
+                results = validate_contract_import_rows(parsed_rows, contract_numbers)
         except DjangoValidationError as exc:
             context = contract_import_preview_context(
                 request,
                 ContractImportUploadForm(),
                 parse_errors=[str(exc)],
+                import_kind=import_kind,
+                selected_contract=selected_contract,
             )
             return render(request, "contracts/contract_import.html", context)
         invalid_rows = [row for row in results if not row["ok"]]
@@ -2729,6 +3420,8 @@ def contract_import(request):
                 results=results,
                 payload=payload,
                 confirm_error="存在错误行，请在系统设置中开启“Excel 导入存在错误时仍导入通过行”，或返回修改 Excel。",
+                import_kind=import_kind,
+                selected_contract=selected_contract,
             )
             return render(request, "contracts/contract_import.html", context)
 
@@ -2737,15 +3430,43 @@ def contract_import(request):
             for index, row in enumerate(results):
                 if not row["ok"]:
                     continue
-                data = row["data"].copy()
-                data["contract_number"] = contract_numbers[index]
-                form = ContractForm(data=data)
-                if not form.is_valid():
-                    raise RuntimeError("确认导入时数据校验失败，请重新上传 Excel。")
-                contract = form.save()
-                ensure_contract_image_folder(contract)
-                log_operation(request, "新增", contract, detail=f"Excel import row: {row['row_number']}")
+                if import_kind == "invoice":
+                    data = row["data"].copy()
+                    contract = Contract.objects.get(pk=row["contract_id"])
+                    record_model = INVOICE_IMPORT_TYPES[data["record_type"]]
+                    record = record_model.objects.create(
+                        contract=contract,
+                        record_date=date_from_import(data["record_date"]),
+                        record_type=data["record_type"],
+                        amount=decimal_from_import(data["amount"]),
+                        actual_amount=decimal_from_import(data["actual_amount"]),
+                        remark=data.get("remark", ""),
+                    )
+                    log_operation(request, "新增", contract, object_type="票据记录", detail=f"Excel import row: {row['row_number']}")
+                elif import_kind == "maintenance":
+                    data = row["data"].copy()
+                    contract = Contract.objects.get(pk=row["contract_id"])
+                    record_date = date_from_import(data["record_date"])
+                    month = record_date.strftime("%Y年%m月")
+                    record = MaintenanceRecord.objects.create(
+                        contract=contract,
+                        record_date=record_date,
+                        month=month,
+                        storage_location_number=normalize_storage_location_number(data.get("storage_location_number")),
+                        remark=data.get("remark", ""),
+                    )
+                    log_operation(request, "新增", contract, object_type="项目记录", detail=f"Excel import row: {row['row_number']}")
+                else:
+                    data = row["data"].copy()
+                    data["contract_number"] = contract_numbers[index]
+                    form = ContractForm(data=data)
+                    if not form.is_valid():
+                        raise RuntimeError("确认导入时数据校验失败，请重新上传 Excel。")
+                    contract = form.save()
+                    ensure_contract_image_folder(contract)
+                    log_operation(request, "新增", contract, detail=f"Excel import row: {row['row_number']}")
                 created_count += 1
+        import_name = {"contract": "合同", "invoice": "票据记录", "maintenance": "项目记录"}.get(import_kind, "数据")
         return render(
             request,
             "contracts/contract_import.html",
@@ -2753,18 +3474,36 @@ def contract_import(request):
                 request,
                 ContractImportUploadForm(),
                 results=results,
-                parse_errors=[f"已导入 {created_count} 条合同。"],
+                parse_errors=[f"已导入 {created_count} 条{import_name}。"],
                 completed=True,
+                import_kind=import_kind,
+                selected_contract=selected_contract,
             ),
         )
 
     if request.method == "POST":
+        import_kind = request.POST.get("import_kind", "contract")
+        if is_normal_mode(request) and import_kind != "contract":
+            return redirect("contracts:login")
         upload_form = ContractImportUploadForm(request.POST, request.FILES)
         if upload_form.is_valid():
             try:
-                parsed_rows, parse_errors = parse_contract_import_xlsx(upload_form.cleaned_data["excel_file"])
+                if import_kind == "invoice":
+                    parsed_rows, parse_errors = parse_invoice_import_xlsx(upload_form.cleaned_data["excel_file"])
+                elif import_kind == "maintenance":
+                    parsed_rows, parse_errors = parse_maintenance_import_xlsx(upload_form.cleaned_data["excel_file"])
+                else:
+                    parsed_rows, parse_errors = parse_contract_import_xlsx(upload_form.cleaned_data["excel_file"])
                 try:
-                    results = validate_contract_import_rows(parsed_rows) if parsed_rows and not parse_errors else []
+                    if parsed_rows and not parse_errors:
+                        if import_kind == "invoice":
+                            results = validate_invoice_import_rows(parsed_rows)
+                        elif import_kind == "maintenance":
+                            results = validate_maintenance_import_rows(parsed_rows)
+                        else:
+                            results = validate_contract_import_rows(parsed_rows)
+                    else:
+                        results = []
                     payload = signing.dumps(parsed_rows) if parsed_rows and not parse_errors else ""
                 except DjangoValidationError as exc:
                     results = []
@@ -2780,6 +3519,8 @@ def contract_import(request):
                 results=results,
                 payload=payload,
                 parse_errors=parse_errors,
+                import_kind=import_kind,
+                selected_contract=selected_contract,
             )
             return render(request, "contracts/contract_import.html", context)
     else:
@@ -2787,7 +3528,7 @@ def contract_import(request):
     return render(
         request,
         "contracts/contract_import.html",
-        contract_import_preview_context(request, upload_form),
+        contract_import_preview_context(request, upload_form, selected_contract=selected_contract),
     )
 
 
@@ -3016,6 +3757,14 @@ def maintenance_record_list(request, pk: int):
     return render(request, "contracts/maintenance_record_list.html", context)
 
 
+def add_months(value: date, months: int) -> date:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
 # 视图函数：处理页面请求并返回响应。
 @admin_required
 # 新增合同并保存随表单上传的合同文件。
@@ -3038,6 +3787,7 @@ def contract_create(request):
                 "contract_type": "维保",
                 "sign_date": today,
                 "start_date": today,
+                "end_date": add_months(today, 1),
             }
         )
     return render(

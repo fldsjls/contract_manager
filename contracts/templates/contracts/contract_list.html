@@ -28,7 +28,7 @@
       {% if can_manage %}
       <a class="button primary" id="newContractButton" href="{% url 'contracts:contract_create' %}">新增合同</a>
       {% else %}
-        <a class="button muted" href="{% url 'contracts:login' %}">登录后新增</a>
+        <a class="button" href="{% url 'contracts:login' %}">登录后新增</a>
       {% endif %}
       {% if can_add_money_records %}
         <a class="button row-action" id="moneyRecordButton" href="#" data-invoice-url-template="{% url 'contracts:invoice_record_create' 0 %}" data-receipt-url-template="{% url 'contracts:payment_record_create' 0 %}" aria-disabled="true">添加发票</a>
@@ -55,10 +55,14 @@
         <button class="button row-action" id="imageFolderButton" type="button" data-url-template="{% url 'contracts:contract_image_folder_open' 0 %}" aria-disabled="true">图片查看</button>
         <button class="button{% if has_filters %} primary{% endif %}" id="filterButton" type="button">筛选</button>
         <a class="button" href="{% url 'contracts:contract_list' %}{% if keyword %}?q={{ keyword|urlencode }}{% endif %}">清除筛选</a>
-        <a class="button" href="{% url 'contracts:contract_list_export' %}{% if export_query %}?{{ export_query }}{% endif %}">导出 Excel</a>
-        {% if is_admin_mode or is_super_admin_mode %}
-          <a class="button" href="{% url 'contracts:contract_import' %}">导入 Excel</a>
-        {% endif %}
+        <a
+          class="button"
+          id="contractExportButton"
+          href="{% url 'contracts:contract_list_export' %}{% if export_query %}?{{ export_query }}{% endif %}"
+          data-base-url="{% url 'contracts:contract_list_export' %}{% if export_query %}?{{ export_query }}{% endif %}"
+          data-record-url-template="{% url 'contracts:contract_records_export' 0 %}"
+        >导出 Excel</a>
+        <a class="button" id="contractImportButton" href="{% url 'contracts:contract_import' %}" data-base-url="{% url 'contracts:contract_import' %}">导入 Excel</a>
         <button class="button danger row-action" id="deleteButton" type="button" data-url-template="{% url 'contracts:contract_delete' 0 %}" aria-disabled="true">删除合同</button>
       {% endif %}
     </div>
@@ -70,13 +74,25 @@
 
     <!-- 当前列表的数量和金额汇总。 -->
     {% if is_admin_mode or is_super_admin_mode %}
-      <div class="summary">
+      <div class="summary contract-list-summary">
         <span>共 {{ contract_count }} 份合同</span>
         <span>总金额：¥ {{ total_amount|floatformat:2 }}</span>
         <span>进行中：{{ active_contract_count }} 份</span>
-        <span>进行中金额：¥ {{ active_total_amount|floatformat:2 }}</span>
+        <span>金额：¥ {{ active_total_amount|floatformat:2 }}</span>
         <span>到期：{{ expired_contract_count }} 份</span>
-        <span>到期金额：¥ {{ expired_total_amount|floatformat:2 }}</span>
+        <span>金额：¥ {{ expired_total_amount|floatformat:2 }}</span>
+        <span class="summary-mode-group">
+          <span data-summary-mode="invoice">开票金额：¥ {{ summary_invoice_amount|floatformat:2 }}</span>
+          <span data-summary-mode="invoice">收款金额：¥ {{ summary_income_amount|floatformat:2 }}</span>
+          <span data-summary-mode="invoice">开票未收款金额：¥ {{ summary_invoice_unpaid_amount|floatformat:2 }}</span>
+          <span data-summary-mode="receipt" hidden>收票金额：¥ {{ summary_receipt_amount|floatformat:2 }}</span>
+          <span data-summary-mode="receipt" hidden>付款金额：¥ {{ summary_payment_amount|floatformat:2 }}</span>
+          <span data-summary-mode="receipt" hidden>收票未付款金额：¥ {{ summary_receipt_unpaid_amount|floatformat:2 }}</span>
+        </span>
+        <label class="switch-control summary-mode-switch" for="summaryModeToggle" title="切换开票/收票汇总">
+          <input id="summaryModeToggle" type="checkbox">
+          <span class="switch-track"></span>
+        </label>
       </div>
     {% endif %}
 
@@ -307,12 +323,18 @@
     const searchPreview = document.querySelector("#searchPreview");
     const rowButtons = document.querySelectorAll(".row-action");
     const recordButton = document.querySelector("#recordButton");
+    const detailButton = document.querySelector("#detailButton");
     const fileButton = document.querySelector("#fileButton");
     const moneyRecordButton = document.querySelector("#moneyRecordButton");
+    const contractExportButton = document.querySelector("#contractExportButton");
+    const contractImportButton = document.querySelector("#contractImportButton");
     const imageFolderButton = document.querySelector("#imageFolderButton");
     const statsButton = document.querySelector("#statsButton");
     const deleteButton = document.querySelector("#deleteButton");
     const filterButton = document.querySelector("#filterButton");
+    const summaryModeToggle = document.querySelector("#summaryModeToggle");
+    const summaryInvoiceItems = document.querySelectorAll("[data-summary-mode='invoice']");
+    const summaryReceiptItems = document.querySelectorAll("[data-summary-mode='receipt']");
     const deleteForm = document.querySelector("#deleteForm");
     const centerModal = document.querySelector("#centerModal");
     const centerModalCard = document.querySelector("#centerModalCard");
@@ -342,6 +364,7 @@
     let projectStatsState = {
       url: "",
       exportUrl: "",
+      detailUrl: "",
       period: "all",
       year: new Date().getFullYear(),
       month: new Date().getMonth() + 1,
@@ -351,6 +374,18 @@
       year: new Date().getFullYear(),
       enabled: false,
     };
+
+    if (summaryModeToggle) {
+      summaryModeToggle.addEventListener("change", () => {
+        const showReceipt = summaryModeToggle.checked;
+        summaryInvoiceItems.forEach((item) => {
+          item.hidden = showReceipt;
+        });
+        summaryReceiptItems.forEach((item) => {
+          item.hidden = !showReceipt;
+        });
+      });
+    }
 
     // 函数说明：处理页面交互和数据展示逻辑。
     function setDisabled(button, disabled) {
@@ -433,6 +468,13 @@
         statsButton.dataset.statsExportUrl = "";
         statsButton.dataset.maintenanceUrl = "";
         statsButton.dataset.contractType = "";
+        statsButton.dataset.detailUrl = "";
+      }
+      if (contractImportButton) {
+        contractImportButton.href = contractImportButton.dataset.baseUrl;
+      }
+      if (contractExportButton) {
+        contractExportButton.href = contractExportButton.dataset.baseUrl;
       }
     }
 
@@ -490,6 +532,16 @@
         statsButton.dataset.statsExportUrl = row.dataset.statsExportUrl;
         statsButton.dataset.maintenanceUrl = row.dataset.maintenanceUrl;
         statsButton.dataset.contractType = row.dataset.contractType;
+        statsButton.dataset.detailUrl = detailButton?.dataset.currentUrl || "";
+      }
+
+      if (contractImportButton) {
+        const url = new URL(contractImportButton.dataset.baseUrl, window.location.origin);
+        url.searchParams.set("contract_id", id);
+        contractImportButton.href = url.pathname + url.search;
+      }
+      if (contractExportButton) {
+        contractExportButton.href = contractExportButton.dataset.recordUrlTemplate.replace("/0/", `/${id}/`);
       }
     }
 
@@ -813,6 +865,7 @@
         centerModalConfirm.focus();
         projectStatsState.url = statsButton.dataset.statsUrl;
         projectStatsState.exportUrl = statsButton.dataset.statsExportUrl;
+        projectStatsState.detailUrl = statsButton.dataset.detailUrl;
         projectStatsState.period = "all";
         projectStatsState.year = new Date().getFullYear();
         projectStatsState.month = new Date().getMonth() + 1;
@@ -1056,8 +1109,10 @@
         </section>
         <div class="project-stats-chart-wrap">
           <div class="project-chart-header">
-            <h3 id="projectStatsChartTitle">收入趋势</h3>
+            <h3 id="projectStatsChartTitle">票据业务图</h3>
+            <button class="button" id="projectStatsDetailButton" type="button">查看详情</button>
             <button class="button" id="projectStatsExportButton" type="button">导出 Excel</button>
+            <button class="button" id="projectStatsImportButton" type="button">导入 Excel</button>
           </div>
           <div class="project-stats-chart" id="projectStatsChart"></div>
         </div>
@@ -1066,7 +1121,15 @@
       centerModalBody.appendChild(wrapper);
       centerModalLeftActions.appendChild(projectPopupTabs("stats"));
       wrapper.querySelector("#projectStatsRangeButton").addEventListener("click", openProjectRangeModal);
+      wrapper.querySelector("#projectStatsDetailButton").addEventListener("click", () => {
+        if (projectStatsState.detailUrl) {
+          window.location.href = projectStatsState.detailUrl;
+        }
+      });
       wrapper.querySelector("#projectStatsExportButton").addEventListener("click", exportProjectStats);
+      wrapper.querySelector("#projectStatsImportButton").addEventListener("click", () => {
+        window.location.href = "{% url 'contracts:contract_import' %}";
+      });
       const chartTitle = wrapper.querySelector("#projectStatsChartTitle");
       const modeToggle = wrapper.querySelector("#projectStatsModeToggle");
       const chartElement = wrapper.querySelector("#projectStatsChart");
@@ -1077,10 +1140,10 @@
       const projectLabels = data.labels || {
         invoice_primary: "开票金额",
         invoice_secondary: "收款金额",
-        invoice_rate: "收款率",
+        invoice_rate: "开票未收款金额",
         receipt_primary: "收票金额",
         receipt_secondary: "付款金额",
-        receipt_rate: "利润率",
+        receipt_rate: "收票未付款金额",
       };
       const projectModes = data.modes || {
         invoice: {
@@ -1277,13 +1340,14 @@
               rate: projectLabels.receipt_rate,
             };
         const modeData = projectModes[mode];
-        chartTitle.textContent = mode === "invoice" ? "收入趋势" : "支出趋势";
+        const outstandingTotal = modeData.outstanding_total ?? (Number(modeData.primary_total || 0) - Number(modeData.secondary_total || 0));
+        chartTitle.textContent = "票据业务图";
         wrapper.querySelector("[data-metric-title='primary']").textContent = labels.primary;
         wrapper.querySelector("[data-metric-value='primary']").textContent = formatMoney(modeData.primary_total);
         wrapper.querySelector("[data-metric-title='secondary']").textContent = labels.secondary;
         wrapper.querySelector("[data-metric-value='secondary']").textContent = formatMoney(modeData.secondary_total);
         wrapper.querySelector("[data-metric-title='rate']").textContent = labels.rate;
-        wrapper.querySelector("[data-metric-value='rate']").textContent = `${Number(modeData.rate || 0).toFixed(1)}%`;
+        wrapper.querySelector("[data-metric-value='rate']").textContent = formatMoney(outstandingTotal);
         chart.setOption({
           legend: { data: [labels.primary, labels.secondary] },
           series: [

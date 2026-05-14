@@ -165,6 +165,42 @@
       margin-bottom: 12px;
       font-weight: 600;
     }
+    .contract-list-summary {
+      gap: 12px;
+      flex-wrap: nowrap;
+      overflow: hidden;
+      white-space: nowrap;
+      font-size: 14px;
+      line-height: 1.25;
+    }
+    .contract-list-summary span {
+      flex: 0 0 auto;
+    }
+    .contract-list-summary .summary-mode-group {
+      display: inline-flex;
+      gap: 12px;
+      align-items: center;
+      margin-left: auto;
+      min-width: 0;
+    }
+    .contract-list-summary .summary-mode-switch {
+      flex: 0 0 auto;
+      width: 44px;
+      height: 26px;
+    }
+    .contract-list-summary .summary-mode-switch .switch-track {
+      width: 30px;
+      height: 16px;
+    }
+    .contract-list-summary .summary-mode-switch .switch-track::after {
+      top: 2px;
+      left: 2px;
+      width: 12px;
+      height: 12px;
+    }
+    .contract-list-summary .summary-mode-switch input:checked + .switch-track::after {
+      transform: translateX(14px);
+    }
     input, select, textarea {
       width: 100%;
       padding: 9px 10px;
@@ -403,6 +439,21 @@
       background: #fff;
       border: 1px solid #d9dee7;
       box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+    }
+    .import-template-modal-card {
+      width: fit-content;
+      min-width: 0;
+      max-width: calc(100vw - 48px);
+      padding: 28px 32px 22px;
+    }
+    .import-template-actions,
+    .import-template-close-actions {
+      justify-content: center;
+      margin: 0;
+      flex-wrap: wrap;
+    }
+    .import-template-close-actions {
+      margin-top: 18px;
     }
     .modal-card.wide {
       width: min(860px, calc(100vw - 48px));
@@ -864,19 +915,22 @@
     }
     .expiring-list {
       margin: 0 0 14px;
-      padding: 12px 16px;
+      padding: 8px 14px;
       background: #fff8e1;
       border: 1px solid #f4d06f;
       display: flex;
       gap: 12px;
-      align-items: flex-start;
-      max-height: 118px;
+      align-items: center;
+      max-height: 56px;
       overflow-y: auto;
       overflow-x: hidden;
     }
+    .contract-list-page .expiring-list {
+      font-size: 14px;
+    }
     .expiring-list-title {
       flex: 0 0 auto;
-      line-height: 1.8;
+      line-height: 1.4;
     }
     .expiring-list-items {
       display: flex;
@@ -889,12 +943,12 @@
       align-items: center;
       gap: 8px;
       max-width: 100%;
-      padding: 4px 8px;
+      padding: 3px 8px;
       border: 1px solid #f4d06f;
       border-radius: 4px;
       background: #fffdf3;
       color: #1f2937;
-      line-height: 1.5;
+      line-height: 1.35;
     }
     .expiring-name {
       min-width: 0;
@@ -954,13 +1008,14 @@
     .project-chart-header {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-start;
       gap: 10px;
       min-height: 36px;
       margin-bottom: 4px;
     }
     .project-chart-header h3 {
       margin: 0;
+      margin-right: auto;
       font-size: 17px;
       line-height: 1.2;
     }
@@ -1319,6 +1374,87 @@
     .dashboard-page .metric-value {
       font-size: 20px;
     }
+    .production-panel {
+      display: grid;
+      grid-template-columns: minmax(210px, 0.75fr) minmax(0, 1.55fr) auto;
+      gap: 10px;
+      align-items: stretch;
+      padding: 12px 14px;
+      border: 1px solid #d9dee7;
+      background: #fff;
+      min-height: 96px;
+    }
+    .production-summary {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-width: 0;
+      border-right: 1px solid #eef1f5;
+      padding-right: 12px;
+    }
+    .production-project-name {
+      min-height: 28px;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #eef1f5;
+      color: #101828;
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.35;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .production-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 10px;
+      margin-top: 6px;
+      color: #667085;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .production-message {
+      color: #dc2626;
+    }
+    .production-controls {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(150px, 1fr));
+      gap: 8px 10px;
+      min-width: 0;
+      align-content: center;
+    }
+    .production-controls label {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+      color: #475467;
+      font-size: 12px;
+    }
+    .production-controls input {
+      width: 100%;
+      min-width: 0;
+      padding: 7px 8px;
+      font-size: 13px;
+    }
+    .production-controls input:disabled {
+      background: #f2f4f7;
+      color: #98a2b3;
+      cursor: not-allowed;
+    }
+    .production-actions {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .production-actions button:disabled {
+      border-color: #d0d5dd;
+      background: #f2f4f7;
+      color: #98a2b3;
+      cursor: not-allowed;
+    }
     .dashboard-page .chart-grid {
       min-height: 0;
       gap: 10px;
@@ -1343,6 +1479,16 @@
       justify-content: space-between;
       gap: 10px;
       margin-bottom: 8px;
+    }
+    .dashboard-chart-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      white-space: nowrap;
+    }
+    .dashboard-chart-actions .switch-control[hidden] {
+      display: none;
     }
     .dashboard-panel-title h2 {
       margin-bottom: 0;
@@ -1380,7 +1526,7 @@
     .dashboard-page .recent-panel .table-wrap {
       flex: 1;
       min-height: 0;
-      overflow: hidden;
+      overflow: auto;
     }
     /* 合同列表和详情页各自控制内部滚动，避免浏览器窗口出现多层横向滚动。 */
     .contract-list-page {
@@ -1392,12 +1538,12 @@
       overflow: auto;
     }
     .detail-page {
-      overflow: hidden;
+      overflow: visible;
     }
     .detail-scroll {
       flex: 1;
       min-height: 0;
-      overflow: auto;
+      overflow: visible;
       display: flex;
       flex-direction: column;
       gap: 16px;

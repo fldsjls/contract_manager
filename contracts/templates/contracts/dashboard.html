@@ -8,49 +8,97 @@
   <div class="page-content dashboard-page">
     <div class="dashboard-title-row">
       <h1 class="page-title">统计总览</h1>
-      <div class="dashboard-top-controls">
-        <label class="switch-control" for="dashboardModeToggle" title="切换收入/支出视图">
-          <input id="dashboardModeToggle" type="checkbox">
-          <span class="switch-track"></span>
-        </label>
-        {% if chart_period != "all" %}<a class="button" href="?{{ prev_range_params }}">←</a>{% endif %}
-        <button class="button" id="rangeModalButton" type="button">{{ chart_range_label }}</button>
-        {% if chart_period != "all" %}<a class="button" href="?{{ next_range_params }}">→</a>{% endif %}
-      </div>
     </div>
 
     <div class="dashboard-scroll">
-      <!-- 总金额、开票/开据金额、收款金额和比例指标。 -->
-      <section class="dashboard-top-row">
-        <div class="metric-grid">
-          <div class="metric-card">
-          <div class="metric-title">总合同金额</div>
-          <div class="metric-value">¥ {{ total_amount|floatformat:2 }}</div>
+      <!-- 产值计算只使用自己的项目编码、日期界限和筛选条件，不影响下方统计栏目。 -->
+      <section class="dashboard-top-row" id="productionSection">
+        <form class="production-panel" id="productionForm" method="get" autocomplete="off">
+          <input name="period" type="hidden" value="{{ chart_period }}">
+          <input name="year" type="hidden" value="{{ chart_year }}">
+          <input name="month" type="hidden" value="{{ chart_month }}">
+          <input data-production-filter name="production_q" type="hidden" value="{{ production_summary.keyword }}">
+          <input data-production-filter name="production_contract_type" type="hidden" value="{{ production_summary.contract_type }}">
+          <input data-production-filter name="production_invoice_status" type="hidden" value="{{ production_summary.invoice_status }}">
+          <input data-production-filter name="production_status" type="hidden" value="{{ production_summary.status }}">
+          <input data-production-filter name="production_responsible_person" type="hidden" value="{{ production_summary.responsible_person }}">
+          <div class="production-summary">
+            <div class="production-project-name" title="{{ production_summary.project_title }}">
+              {{ production_summary.project_title|default:"-" }}
+            </div>
+            <div>
+              <div class="metric-title">产值计算</div>
+              <div class="metric-value">¥ {{ production_summary.total|floatformat:2 }}</div>
+            </div>
+            <div class="production-meta">
+              <span>{{ production_summary.count }} 个项目</span>
+              {% if production_summary.start_date and production_summary.end_date %}
+                <span>{{ production_summary.start_date|date:"Y-m-d" }} 至 {{ production_summary.end_date|date:"Y-m-d" }}</span>
+              {% endif %}
+              {% if production_summary.message %}
+                <span class="production-message">{{ production_summary.message }}</span>
+              {% endif %}
+            </div>
           </div>
-          <div class="metric-card">
-          <div class="metric-title" data-dashboard-metric-title="primary">总开票/开据金额</div>
-          <div class="metric-value" data-dashboard-metric-value="primary">¥ {{ dashboard_mode_totals.invoice_primary|floatformat:2 }}</div>
+          <div class="production-controls">
+            <label>
+              <span>项目编码</span>
+              <input
+                data-production-project
+                name="production_project_code"
+                value="{{ production_summary.project_code }}"
+                placeholder="输入显示编码"
+              >
+            </label>
+            <label>
+              <span>开始日期</span>
+              <input
+                name="production_start_date"
+                type="date"
+                value="{{ production_summary.start_date|date:'Y-m-d' }}"
+              >
+            </label>
+            <label>
+              <span>结束日期</span>
+              <input
+                data-production-end-date
+                name="production_end_date"
+                type="date"
+                value="{{ production_summary.end_date|date:'Y-m-d' }}"
+              >
+            </label>
           </div>
-          <div class="metric-card">
-          <div class="metric-title" data-dashboard-metric-title="secondary">总收款金额</div>
-          <div class="metric-value" data-dashboard-metric-value="secondary">¥ {{ dashboard_mode_totals.invoice_secondary|floatformat:2 }}</div>
+          <div class="production-actions">
+            <button class="button primary" type="submit">计算</button>
+            <button class="button{% if production_summary.filter_active %} primary{% endif %}" id="productionFilterButton" type="button">筛选</button>
+            <button
+              class="button"
+              id="productionResetButton"
+              type="button"
+              data-reset-url="{% url 'contracts:dashboard' %}?period={{ chart_period }}&year={{ chart_year }}&month={{ chart_month }}"
+            >重置</button>
           </div>
-          <div class="metric-card">
-          <div class="metric-title" data-dashboard-metric-title="rate">收款率</div>
-          <div class="metric-value" data-dashboard-metric-value="rate">{{ dashboard_income_rate|floatformat:1 }}%</div>
-          </div>
-        </div>
+        </form>
       </section>
 
       <!-- 左侧趋势图和右侧即将到期项目共用同一行布局。 -->
       <section class="chart-grid">
         <div class="chart-area">
           <div class="dashboard-panel-title">
-            <h2 id="trendChartTitle">收入趋势</h2>
-            <button class="button" id="trendExportButton" type="button">导出 Excel</button>
+            <h2 id="trendChartTitle">票据业务图</h2>
+            <div class="dashboard-chart-actions">
+              <label class="switch-control" id="dashboardModeToggleWrap" for="dashboardModeToggle" title="切换收入/支出视图">
+                <input id="dashboardModeToggle" type="checkbox">
+                <span class="switch-track"></span>
+              </label>
+              <button class="button" id="trendExportButton" type="button">导出 Excel</button>
+              {% if chart_period != "all" %}<a class="button" href="?{{ prev_range_params }}">←</a>{% endif %}
+              <button class="button" id="rangeModalButton" type="button">{{ chart_range_label }}</button>
+              {% if chart_period != "all" %}<a class="button" href="?{{ next_range_params }}">→</a>{% endif %}
+            </div>
           </div>
           {% if chart_rows %}
-            <div class="echarts-trend" id="trendChart" role="img" aria-label="收入和支出趋势图"></div>
+            <div class="echarts-trend" id="trendChart" role="img" aria-label="票据业务图"></div>
             {{ chart_data|json_script:"trendChartData" }}
           {% else %}
             <div class="empty" style="flex: 1;">暂无记录</div>
@@ -178,6 +226,66 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="productionFilterModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="productionFilterModalTitle">
+      <div class="modal-header" id="productionFilterModalTitle">筛选产值项目</div>
+      <form id="productionFilterForm" method="get">
+        <input name="period" type="hidden" value="{{ chart_period }}">
+        <input name="year" type="hidden" value="{{ chart_year }}">
+        <input name="month" type="hidden" value="{{ chart_month }}">
+        <input name="production_project_code" type="hidden" value="">
+        <input name="production_start_date" type="hidden" value="">
+        <input name="production_end_date" type="hidden" value="">
+        <div class="modal-body" style="white-space: normal;">
+          <div class="form-grid" style="grid-template-columns: 1fr; gap: 14px;">
+            <div>
+              <label for="productionFilterKeyword">搜索</label>
+              <div class="search-preview-wrap">
+                <input class="search-input" id="productionFilterKeyword" name="production_q" value="{{ production_summary.keyword }}" placeholder="名称、编号、甲方、负责人">
+                <div class="search-preview" id="productionSearchPreview" hidden></div>
+              </div>
+            </div>
+            <div>
+              <label for="productionFilterContractType">合同类型</label>
+              <select id="productionFilterContractType" name="production_contract_type">
+                <option value="">全部类型</option>
+                {% for value, label in contract_type_choices %}
+                  <option value="{{ value }}" {% if production_summary.contract_type == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="productionFilterInvoiceStatus">是否开票</label>
+              <select id="productionFilterInvoiceStatus" name="production_invoice_status">
+                <option value="">全部</option>
+                {% for value, label in invoice_status_choices %}
+                  <option value="{{ value }}" {% if production_summary.invoice_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="productionFilterResponsiblePerson">负责人</label>
+              <input id="productionFilterResponsiblePerson" name="production_responsible_person" value="{{ production_summary.responsible_person }}" placeholder="输入负责人">
+            </div>
+            <div>
+              <label for="productionFilterStatus">状态</label>
+              <select id="productionFilterStatus" name="production_status">
+                <option value="">全部状态</option>
+                {% for value in status_choices %}
+                  <option value="{{ value }}" {% if production_summary.status == value %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" id="productionFilterModalCancel" type="button">取消</button>
+          <button class="button primary" type="submit">应用</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- 统计范围弹窗：全部、按年和按月使用同一套前端状态。 -->
   <div class="modal-backdrop" id="rangeModal" hidden>
     <div class="modal-card range-modal-card" role="dialog" aria-modal="true" aria-labelledby="rangeModalTitle">
@@ -186,7 +294,18 @@
         <input id="periodInput" name="period" type="hidden" value="{{ chart_period }}">
         <input id="yearInput" name="year" type="hidden" value="{{ chart_year }}">
         <input id="monthInput" name="month" type="hidden" value="{{ chart_month }}">
+        <input id="chartTypeInput" name="chart_type" type="hidden" value="{{ chart_type }}">
         <div class="modal-body">
+          <div class="range-section">
+            <label class="field-label" for="chartTypeSelect">图表类型</label>
+            <div class="field-control-row">
+              <select id="chartTypeSelect">
+                <option value="ticket" {% if chart_type == "ticket" %}selected{% endif %}>票据业务图</option>
+                <option value="contract_amount" {% if chart_type == "contract_amount" %}selected{% endif %}>合同金额图</option>
+                <option value="production_cumulative" {% if chart_type == "production_cumulative" %}selected{% endif %}>产值累计图</option>
+              </select>
+            </div>
+          </div>
           <div class="range-section">
             <label class="field-label">统计方式</label>
             <div class="toolbar range-options" data-keep-selection>
@@ -217,6 +336,7 @@
   </div>
 
   <script src="{% static 'contracts/vendor/echarts.min.js' %}"></script>
+  {{ production_search_contracts|json_script:"productionSearchData" }}
   <script>
     // 后端通过 json_script 注入图表数据，前端只负责视图切换和 ECharts 渲染。
     const rangeModal = document.querySelector("#rangeModal");
@@ -225,6 +345,8 @@
     const periodInput = document.querySelector("#periodInput");
     const yearInput = document.querySelector("#yearInput");
     const monthInput = document.querySelector("#monthInput");
+    const chartTypeInput = document.querySelector("#chartTypeInput");
+    const chartTypeSelect = document.querySelector("#chartTypeSelect");
     const yearControl = document.querySelector("#yearControl");
     const monthControl = document.querySelector("#monthControl");
     const rangeControlSpace = document.querySelector("#rangeModal .range-control-space");
@@ -239,6 +361,13 @@
     // 根据统计方式切换年份/月度选择控件，并同步按钮选中状态。
     function updateRangeLabels() {
       const year = Number.parseInt(yearInput.value, 10);
+      const chartType = chartTypeInput.value;
+      if (chartType === "contract_amount") {
+        periodInput.value = "year";
+      }
+      if (chartType === "production_cumulative") {
+        periodInput.value = "all";
+      }
       yearLabel.textContent = `${year - 11} - ${year} 年`;
       monthLabel.textContent = `${year} 年`;
       rangeControlSpace.style.visibility = periodInput.value === "all" ? "hidden" : "visible";
@@ -247,6 +376,10 @@
       yearControl.style.display = periodInput.value === "year" ? "flex" : "none";
       monthControl.style.display = periodInput.value === "month" ? "flex" : "none";
       periodOptions.forEach((button) => {
+        const disabled = (chartType === "contract_amount" && button.dataset.period !== "year")
+          || (chartType === "production_cumulative" && button.dataset.period !== "all");
+        button.disabled = disabled;
+        button.hidden = disabled;
         button.classList.toggle("primary", button.dataset.period === periodInput.value);
       });
     }
@@ -266,9 +399,21 @@
     });
     periodOptions.forEach((button) => {
       button.addEventListener("click", () => {
+        if (button.disabled) {
+          return;
+        }
         periodInput.value = button.dataset.period;
         updateRangeLabels();
       });
+    });
+    chartTypeSelect.addEventListener("change", () => {
+      chartTypeInput.value = chartTypeSelect.value;
+      if (chartTypeInput.value === "contract_amount") {
+        periodInput.value = "year";
+      } else if (chartTypeInput.value === "production_cumulative") {
+        periodInput.value = "all";
+      }
+      updateRangeLabels();
     });
     document.querySelector("#yearPrev").addEventListener("click", () => {
       yearInput.value = Number.parseInt(yearInput.value, 10) - 1;
@@ -297,12 +442,13 @@
     }
 
     trendExportButton.addEventListener("click", () => {
-      if (periodInput.value === "all") {
+      if (periodInput.value === "all" && chartTypeInput.value === "ticket") {
         exportRangeModal.hidden = false;
         exportRangeModal.querySelector("input").focus();
         return;
       }
       window.location.href = dashboardExportUrl({
+        chart_type: chartTypeInput.value,
         period: periodInput.value,
         year: yearInput.value,
         month: monthInput.value,
@@ -318,6 +464,7 @@
       event.preventDefault();
       const formData = new FormData(exportRangeForm);
       window.location.href = dashboardExportUrl({
+        chart_type: chartTypeInput.value,
         period: "all",
         start_date: formData.get("start_date"),
         end_date: formData.get("end_date"),
@@ -331,6 +478,182 @@
     const archiveToggleButton = document.querySelector("#archiveToggleButton");
     const expiringPanelTitle = document.querySelector("[data-expiring-panel-title]");
     const expiringPanels = document.querySelectorAll("[data-expiring-panel]");
+    const productionSearchDataElement = document.querySelector("#productionSearchData");
+    const productionSearchData = productionSearchDataElement ? JSON.parse(productionSearchDataElement.textContent) : [];
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function productionSearchText(contract) {
+      return [
+        contract.name,
+        contract.number,
+        contract.party,
+        contract.responsible,
+      ].join(" ").toLowerCase();
+    }
+
+    function initProductionControls() {
+      const productionForm = document.querySelector("#productionForm");
+      const productionFilterModal = document.querySelector("#productionFilterModal");
+      const productionFilterButton = document.querySelector("#productionFilterButton");
+      const productionFilterForm = document.querySelector("#productionFilterForm");
+      const productionFilterModalCancel = document.querySelector("#productionFilterModalCancel");
+      const productionResetButton = document.querySelector("#productionResetButton");
+      const productionProjectInput = document.querySelector("[data-production-project]");
+      const productionFilterInputs = document.querySelectorAll("[data-production-filter]");
+      const productionKeywordInput = document.querySelector("#productionFilterKeyword");
+      const productionSearchPreview = document.querySelector("#productionSearchPreview");
+
+      function syncProductionInputs() {
+        if (!productionProjectInput) {
+          return;
+        }
+        const hasProjectCode = productionProjectInput.value.trim().length > 0;
+        const hasFilterValue = Array.from(productionFilterInputs).some((input) => input.value.trim().length > 0);
+        productionProjectInput.disabled = hasFilterValue;
+        if (productionFilterButton) {
+          productionFilterButton.disabled = hasProjectCode;
+        }
+        productionFilterInputs.forEach((input) => {
+          input.disabled = hasProjectCode;
+        });
+      }
+
+      function syncProductionFilterForm() {
+        if (!productionForm || !productionFilterForm) {
+          return;
+        }
+        ["period", "year", "month", "production_project_code", "production_start_date", "production_end_date"].forEach((name) => {
+          const source = productionForm.elements[name];
+          const target = productionFilterForm.elements[name];
+          if (source && target) {
+            target.value = source.value;
+          }
+        });
+      }
+
+      function closeProductionFilterModal() {
+        if (productionFilterModal) {
+          productionFilterModal.hidden = true;
+        }
+      }
+
+      function replaceProductionFromHtml(html) {
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const nextSection = doc.querySelector("#productionSection");
+        const nextModal = doc.querySelector("#productionFilterModal");
+        const currentSection = document.querySelector("#productionSection");
+        const currentModal = document.querySelector("#productionFilterModal");
+        if (nextSection && currentSection) {
+          currentSection.outerHTML = nextSection.outerHTML;
+        }
+        if (nextModal && currentModal) {
+          currentModal.outerHTML = nextModal.outerHTML;
+        }
+        initProductionControls();
+      }
+
+      function updateProductionByUrl(url) {
+        return fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } })
+          .then((response) => response.text())
+          .then(replaceProductionFromHtml);
+      }
+
+      function updateProductionFromForm(form) {
+        const params = new URLSearchParams(new FormData(form));
+        return updateProductionByUrl(`${window.location.pathname}?${params.toString()}`);
+      }
+
+      function hideProductionSearchPreview() {
+        if (productionSearchPreview) {
+          productionSearchPreview.hidden = true;
+        }
+      }
+
+      function renderProductionSearchPreview() {
+        if (!productionKeywordInput || !productionSearchPreview) {
+          return;
+        }
+        const keyword = productionKeywordInput.value.trim().toLowerCase();
+        productionSearchPreview.innerHTML = "";
+        if (!keyword) {
+          hideProductionSearchPreview();
+          return;
+        }
+        const matches = productionSearchData
+          .filter((contract) => productionSearchText(contract).includes(keyword))
+          .slice(0, 8);
+        matches.forEach((contract) => {
+          const item = document.createElement("button");
+          item.className = "search-preview-item";
+          item.type = "button";
+          item.innerHTML = `
+            <span class="search-preview-title">${escapeHtml(contract.name)}</span>
+            <span class="search-preview-meta">编号: ${escapeHtml(contract.number)}　甲方: ${escapeHtml(contract.party)}　负责人: ${escapeHtml(contract.responsible || "未填写")}</span>
+          `;
+          item.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+          });
+          item.addEventListener("click", () => {
+            productionKeywordInput.value = contract.name;
+            hideProductionSearchPreview();
+          });
+          productionSearchPreview.appendChild(item);
+        });
+        productionSearchPreview.hidden = matches.length === 0;
+      }
+
+      if (productionProjectInput) {
+        productionProjectInput.addEventListener("input", syncProductionInputs);
+        productionFilterInputs.forEach((input) => {
+          input.addEventListener("input", syncProductionInputs);
+        });
+        syncProductionInputs();
+      }
+      if (productionForm) {
+        productionForm.addEventListener("submit", (event) => {
+          event.preventDefault();
+          updateProductionFromForm(productionForm);
+        });
+      }
+      if (productionResetButton) {
+        productionResetButton.addEventListener("click", () => {
+          updateProductionByUrl(productionResetButton.dataset.resetUrl);
+        });
+      }
+      if (productionFilterButton && productionFilterModal) {
+        productionFilterButton.addEventListener("click", () => {
+          syncProductionFilterForm();
+          productionFilterModal.hidden = false;
+          productionFilterModal.querySelector(".modal-body select, .modal-body input").focus();
+        });
+        productionFilterModalCancel.addEventListener("click", closeProductionFilterModal);
+        productionFilterModal.addEventListener("click", (event) => {
+          if (event.target === productionFilterModal) {
+            closeProductionFilterModal();
+          } else if (!event.target.closest(".search-preview-wrap")) {
+            hideProductionSearchPreview();
+          }
+        });
+        productionFilterForm.addEventListener("submit", (event) => {
+          event.preventDefault();
+          syncProductionFilterForm();
+          updateProductionFromForm(productionFilterForm).then(closeProductionFilterModal);
+        });
+      }
+      if (productionKeywordInput) {
+        productionKeywordInput.addEventListener("input", renderProductionSearchPreview);
+        productionKeywordInput.addEventListener("focus", renderProductionSearchPreview);
+      }
+    }
+
+    initProductionControls();
 
     if (archiveToggleButton && expiringPanelTitle) {
       let showingArchive = false;
@@ -349,20 +672,36 @@
       return `¥ ${Number(value || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
 
-    // 收入/支出趋势共用一张图，开关只替换标题、指标和两组序列数据。
+    // 票据业务图共用一张图，开关只替换指标和两组序列数据。
     if (trendChartElement && trendChartDataElement && window.echarts) {
       const trendData = JSON.parse(trendChartDataElement.textContent);
       const trendChart = echarts.init(trendChartElement);
       const visiblePointLimit = 12;
       const visibleEnd = 100;
-      const contractAmountLabel = "合同签订金额";
+      const ticketChartType = "ticket";
+      const contractAmountChartType = "contract_amount";
+      const productionCumulativeChartType = "production_cumulative";
+      const contractAmountLabel = "合同金额";
+      const productionCumulativeLabel = "产值累计";
       const trendGrid = { left: 42, right: 52, top: 42, bottom: 36 };
-      const visibleStart = trendData.labels.length > visiblePointLimit
-        ? Math.max(0, 100 - (visiblePointLimit / trendData.labels.length) * 100)
+      let activeChartType = trendData.chart_type || productionCumulativeChartType;
+      let activeLabels = labelsForChart(activeChartType);
+      const visibleStart = activeLabels.length > visiblePointLimit
+        ? Math.max(0, 100 - (visiblePointLimit / activeLabels.length) * 100)
         : 0;
 
+      function labelsForChart(chartType) {
+        if (chartType === contractAmountChartType) {
+          return trendData.contract_amount_labels;
+        }
+        if (chartType === productionCumulativeChartType) {
+          return trendData.production_cumulative_labels;
+        }
+        return trendData.labels;
+      }
+
       function trendSliderBounds() {
-        const visibleCount = Math.min(trendData.labels.length, visiblePointLimit);
+        const visibleCount = Math.min(activeLabels.length, visiblePointLimit);
         if (visibleCount <= 1) {
           return { left: trendGrid.left, right: trendGrid.right };
         }
@@ -422,29 +761,35 @@
       }
 
       function trendLegendData(modeData) {
-        const items = [modeData.labels.primary, modeData.labels.secondary];
-        if (trendData.show_contract_amount_line) {
-          items.push(contractAmountLabel);
+        if (activeChartType === contractAmountChartType) {
+          return [contractAmountLabel];
         }
-        return items;
+        if (activeChartType === productionCumulativeChartType) {
+          return [productionCumulativeLabel];
+        }
+        return [modeData.labels.primary, modeData.labels.secondary];
       }
 
       function buildTrendSeries(modeData) {
+        if (activeChartType === contractAmountChartType) {
+          return [
+            trendLineSeries("trend-contract-amount-line", contractAmountLabel, trendData.contract_amounts, "#dc2626", 4),
+            trendPointSeries("trend-contract-amount-points", contractAmountLabel, trendData.contract_amounts, "#dc2626", 8, "top"),
+          ];
+        }
+        if (activeChartType === productionCumulativeChartType) {
+          return [
+            trendLineSeries("trend-production-cumulative-line", productionCumulativeLabel, trendData.production_cumulative_amounts, "#eab308", 4),
+            trendPointSeries("trend-production-cumulative-points", productionCumulativeLabel, trendData.production_cumulative_amounts, "#eab308", 8, "top"),
+          ];
+        }
         const series = [
           trendLineSeries("trend-secondary-line", modeData.labels.secondary, modeData.chart.secondary, "#14b8a6", 3),
           trendLineSeries("trend-primary-line", modeData.labels.primary, modeData.chart.primary, "#2563eb", 4),
         ];
-        if (trendData.show_contract_amount_line) {
-          series.push(trendLineSeries("trend-contract-amount-line", contractAmountLabel, trendData.contract_amounts, "#dc2626", 5));
-        }
         series.push(
           trendPointSeries("trend-primary-points", modeData.labels.primary, modeData.chart.primary, "#2563eb", 8, "top")
         );
-        if (trendData.show_contract_amount_line) {
-          series.push(
-            trendPointSeries("trend-contract-amount-points", contractAmountLabel, trendData.contract_amounts, "#dc2626", 9, "top")
-          );
-        }
         series.push(
           trendPointSeries(
             "trend-secondary-points",
@@ -461,7 +806,7 @@
       const sliderBounds = trendSliderBounds();
 
       trendChart.setOption({
-        color: ["#2563eb", "#14b8a6", "#dc2626"],
+        color: ["#2563eb", "#14b8a6", "#dc2626", "#eab308"],
         tooltip: {
           trigger: "axis",
           valueFormatter: (value) => `¥ ${Math.round(Number(value || 0)).toLocaleString("zh-CN")}`,
@@ -483,7 +828,7 @@
         xAxis: {
           type: "category",
           boundaryGap: true,
-          data: trendData.labels,
+          data: activeLabels,
           axisLine: {
             symbol: ["none", "arrow"],
             symbolOffset: [0, 10],
@@ -539,17 +884,40 @@
       function applyDashboardMode() {
         const mode = dashboardModeToggle.checked ? "receipt" : "invoice";
         const modeData = trendData.modes[mode];
-        document.querySelector("#trendChartTitle").textContent = mode === "invoice" ? "收入趋势" : "支出趋势";
-        document.querySelector("[data-dashboard-metric-title='primary']").textContent = modeData.labels.primary;
-        document.querySelector("[data-dashboard-metric-value='primary']").textContent = formatMoney(modeData.primary_total);
-        document.querySelector("[data-dashboard-metric-title='secondary']").textContent = modeData.labels.secondary;
-        document.querySelector("[data-dashboard-metric-value='secondary']").textContent = formatMoney(modeData.secondary_total);
-        document.querySelector("[data-dashboard-metric-title='rate']").textContent = modeData.labels.rate;
-        document.querySelector("[data-dashboard-metric-value='rate']").textContent = `${Number(modeData.rate || 0).toFixed(1)}%`;
-        trendChart.setOption({
-          legend: { data: trendLegendData(modeData) },
-          series: buildTrendSeries(modeData),
-        });
+        const toggleWrap = document.querySelector("#dashboardModeToggleWrap");
+        if (toggleWrap) {
+          toggleWrap.hidden = activeChartType !== ticketChartType;
+        }
+        if (activeChartType === contractAmountChartType) {
+          document.querySelector("#trendChartTitle").textContent = "合同金额图";
+        } else if (activeChartType === productionCumulativeChartType) {
+          document.querySelector("#trendChartTitle").textContent = "产值累计图";
+        } else {
+          document.querySelector("#trendChartTitle").textContent = "票据业务图";
+        }
+        activeLabels = labelsForChart(activeChartType);
+        const primaryTitle = document.querySelector("[data-dashboard-metric-title='primary']");
+        const primaryValue = document.querySelector("[data-dashboard-metric-value='primary']");
+        const secondaryTitle = document.querySelector("[data-dashboard-metric-title='secondary']");
+        const secondaryValue = document.querySelector("[data-dashboard-metric-value='secondary']");
+        const rateTitle = document.querySelector("[data-dashboard-metric-title='rate']");
+        const rateValue = document.querySelector("[data-dashboard-metric-value='rate']");
+        if (primaryTitle && primaryValue && secondaryTitle && secondaryValue && rateTitle && rateValue) {
+          primaryTitle.textContent = modeData.labels.primary;
+          primaryValue.textContent = formatMoney(modeData.primary_total);
+          secondaryTitle.textContent = modeData.labels.secondary;
+          secondaryValue.textContent = formatMoney(modeData.secondary_total);
+          rateTitle.textContent = modeData.labels.rate;
+          rateValue.textContent = `${Number(modeData.rate || 0).toFixed(1)}%`;
+        }
+        trendChart.setOption(
+          {
+            xAxis: { data: activeLabels },
+            legend: { data: trendLegendData(modeData) },
+            series: buildTrendSeries(modeData),
+          },
+          { replaceMerge: ["series"] }
+        );
       }
 
       dashboardModeToggle.addEventListener("change", applyDashboardMode);

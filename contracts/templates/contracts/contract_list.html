@@ -10,11 +10,17 @@
     <div class="contract-list-title-row">
       <h1 class="page-title">合同列表</h1>
       {% if can_manage %}
-        <button class="button undo-button" id="undoOperationButton" type="button" title="撤回最近操作，最多可连续撤回最近 10 条" aria-label="撤回最近操作" data-url="{% url 'contracts:undo_last_operation' %}">
-          <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-            <path d="M20 18v9h18a17 17 0 1 1-12 29l5-5a10 10 0 1 0 7-17H20v9L4 30z"></path>
-          </svg>
-        </button>
+        <span class="undo-control-wrap">
+          <button class="button undo-button" id="undoOperationButton" type="button" title="单击撤回最近一条操作；悬停预览最近 10 条" aria-label="撤回最近操作" data-url="{% url 'contracts:undo_last_operation' %}">
+            <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+              <path d="M20 18v9h18a17 17 0 1 1-12 29l5-5a10 10 0 1 0 7-17H20v9L4 30z"></path>
+            </svg>
+          </button>
+          <div class="undo-popover" id="undoPopover" hidden>
+            <div class="undo-popover-title">撤回操作</div>
+            <div class="undo-popover-list" id="undoPopoverList"></div>
+          </div>
+        </span>
       {% endif %}
     </div>
 
@@ -163,6 +169,7 @@
                 data-stats-url="{% url 'contracts:contract_stats_data' contract.id %}"
                 data-stats-export-url="{% url 'contracts:contract_stats_export' contract.id %}"
                 data-maintenance-url="{% url 'contracts:maintenance_record_data' contract.id %}"
+                data-detail-url="{% url 'contracts:contract_detail' contract.id %}"
                 data-file-url="{% if contract.preview_file %}{% url 'contracts:contract_file_preview' contract.preview_file.id %}?from=list{% elif contract.legacy_file_available %}{% url 'contracts:legacy_contract_file_preview' contract.id %}?from=list{% endif %}"
               >
                 <td>{{ forloop.counter }}</td>
@@ -373,6 +380,8 @@
     const statsButton = document.querySelector("#statsButton");
     const deleteButton = document.querySelector("#deleteButton");
     const undoOperationButton = document.querySelector("#undoOperationButton");
+    const undoPopover = document.querySelector("#undoPopover");
+    const undoPopoverList = document.querySelector("#undoPopoverList");
     const filterButton = document.querySelector("#filterButton");
     const summaryModeToggle = document.querySelector("#summaryModeToggle");
     const summaryInvoiceItems = document.querySelectorAll("[data-summary-mode='invoice']");
@@ -502,6 +511,142 @@
       centerModalConfirm.focus();
     }
 
+    function renderUndoPreview(items) {
+      centerModalBody.textContent = "";
+      const list = document.createElement("div");
+      list.className = "undo-preview-list";
+      let selectedId = "";
+
+      function selectItem(button) {
+        if (!button || button.classList.contains("disabled")) {
+          return;
+        }
+        list.querySelectorAll(".undo-preview-item").forEach((item) => {
+          item.classList.remove("selected");
+        });
+        button.classList.add("selected");
+        selectedId = button.dataset.id || "";
+        centerModalConfirm.disabled = !selectedId;
+        centerModalConfirm.textContent = `撤回 ${button.dataset.count || 1} 条`;
+      }
+
+      items.forEach((item, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `undo-preview-item${item.selectable ? "" : " disabled"}`;
+        button.dataset.id = item.id;
+        button.dataset.count = item.undo_count || index + 1;
+        button.disabled = !item.selectable;
+        button.innerHTML = `
+          <span class="undo-preview-index">${index + 1}</span>
+          <span class="undo-preview-main">
+            <span class="undo-preview-title">${escapeHtml(item.action)} ${escapeHtml(item.object_type || "")} ${escapeHtml(item.object_name || "")}</span>
+            <span class="undo-preview-meta">${escapeHtml(item.time)} · ${escapeHtml(item.detail || "")}</span>
+            <span class="undo-preview-effect">${escapeHtml(item.effect || "")}</span>
+          </span>
+        `;
+        button.addEventListener("click", () => selectItem(button));
+        list.appendChild(button);
+      });
+      centerModalBody.appendChild(list);
+      selectItem(list.querySelector(".undo-preview-item:not(.disabled)"));
+      return () => selectedId;
+    }
+
+    async function undoToTarget(targetId = "") {
+      const headers = {
+        "X-CSRFToken": undoForm.querySelector("input[name='csrfmiddlewaretoken']").value,
+        "X-Requested-With": "XMLHttpRequest",
+      };
+      if (targetId) {
+        headers["X-Undo-Target"] = targetId;
+      }
+      const response = await fetch(undoOperationButton.dataset.url, {
+        method: "POST",
+        headers,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "撤回失败。");
+      }
+      return data;
+    }
+
+    function hideUndoPopover() {
+      if (undoPopover) {
+        undoPopover.hidden = true;
+      }
+    }
+
+    function renderUndoPopover(items) {
+      if (!undoPopoverList) {
+        return;
+      }
+      undoPopoverList.textContent = "";
+      if (!items.length) {
+        undoPopoverList.textContent = "最近 10 条操作中没有可撤回项。";
+        return;
+      }
+      items.forEach((item, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `undo-preview-item${item.selectable ? "" : " disabled"}`;
+        button.dataset.id = item.id;
+        button.disabled = !item.selectable;
+        button.innerHTML = `
+          <span class="undo-preview-index">${index + 1}</span>
+          <span class="undo-preview-main">
+            <span class="undo-preview-title">${escapeHtml(item.action)} ${escapeHtml(item.object_type || "")} ${escapeHtml(item.object_name || "")}</span>
+            <span class="undo-preview-meta">${escapeHtml(item.time)} · ${escapeHtml(item.detail || "")}</span>
+            <span class="undo-preview-effect">${escapeHtml(item.effect || "")}</span>
+          </span>
+        `;
+        button.addEventListener("mouseenter", () => {
+          undoPopoverList.querySelectorAll(".undo-preview-item").forEach((row) => row.classList.remove("selected"));
+          button.classList.add("selected");
+        });
+        button.addEventListener("click", async () => {
+          if (!item.selectable) {
+            return;
+          }
+          try {
+            button.disabled = true;
+            await undoToTarget(String(item.id));
+            window.location.reload();
+          } catch (error) {
+            undoPopoverList.textContent = error.message || "撤回失败。";
+          }
+        });
+        undoPopoverList.appendChild(button);
+      });
+      const firstSelectable = undoPopoverList.querySelector(".undo-preview-item:not(.disabled)");
+      if (firstSelectable) {
+        firstSelectable.classList.add("selected");
+      }
+    }
+
+    async function showUndoPopover() {
+      if (!undoPopover || !undoPopoverList || !undoOperationButton) {
+        return;
+      }
+      undoPopover.hidden = false;
+      undoPopoverList.textContent = "正在加载可撤回操作...";
+      try {
+        const response = await fetch(undoOperationButton.dataset.url, {
+          headers: {
+            "X-Requested-With": "XMLHttpRequest",
+          },
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "撤回预览加载失败。");
+        }
+        renderUndoPopover(data.items || []);
+      } catch (error) {
+        undoPopoverList.textContent = error.message || "撤回预览加载失败。";
+      }
+    }
+
     // 函数说明：处理页面交互和数据展示逻辑。
     function clearSelection() {
       document.querySelectorAll(".selectable-row.selected").forEach((row) => {
@@ -621,6 +766,17 @@
         }
 
         selectContractRow(row);
+      });
+      table.addEventListener("dblclick", (event) => {
+        if (event.target.closest(".inline-invoice-status, select, button, a, input, label")) {
+          return;
+        }
+        const row = event.target.closest(".selectable-row");
+        if (!row || !row.dataset.detailUrl) {
+          return;
+        }
+        selectContractRow(row);
+        window.location.href = urlWithListState(row.dataset.detailUrl, row.dataset.contractId);
       });
     }
 
@@ -817,39 +973,30 @@
     }
 
     if (undoOperationButton && undoForm) {
-      undoOperationButton.addEventListener("click", () => {
-        openCenterModal({
-          title: "撤回操作",
-          body: "将撤回当前用户最近 10 条操作中的最新一条可撤回操作。可连续点击撤回多条记录。",
-          confirmText: "撤回",
-          onConfirm: async () => {
-            centerModalConfirm.disabled = true;
-            try {
-              const response = await fetch(undoOperationButton.dataset.url, {
-                method: "POST",
-                headers: {
-                  "X-CSRFToken": undoForm.querySelector("input[name='csrfmiddlewaretoken']").value,
-                  "X-Requested-With": "XMLHttpRequest",
-                },
-              });
-              const data = await response.json();
-              if (!response.ok || !data.ok) {
-                throw new Error(data.error || "撤回失败。");
-              }
-              centerModalBody.textContent = data.message || "已撤回最近操作。";
-              centerModalConfirm.textContent = "刷新";
-              modalConfirmHandler = () => {
-                window.location.reload();
-              };
-            } catch (error) {
-              centerModalBody.textContent = error.message || "撤回失败。";
-              centerModalConfirm.textContent = "关闭";
-              modalConfirmHandler = closeCenterModal;
-            } finally {
-              centerModalConfirm.disabled = false;
-            }
-          },
-        });
+      let undoPopoverHideTimer = null;
+      const undoWrap = undoOperationButton.closest(".undo-control-wrap");
+      undoWrap?.addEventListener("mouseenter", () => {
+        window.clearTimeout(undoPopoverHideTimer);
+        showUndoPopover();
+      });
+      undoWrap?.addEventListener("mouseleave", () => {
+        undoPopoverHideTimer = window.setTimeout(hideUndoPopover, 180);
+      });
+      undoOperationButton.addEventListener("focus", showUndoPopover);
+      undoOperationButton.addEventListener("click", async () => {
+        try {
+          undoOperationButton.disabled = true;
+          await undoToTarget();
+          window.location.reload();
+        } catch (error) {
+          openCenterModal({
+            title: "撤回操作",
+            body: error.message || "撤回失败。",
+            confirmText: "关闭",
+          });
+        } finally {
+          undoOperationButton.disabled = false;
+        }
       });
     }
 

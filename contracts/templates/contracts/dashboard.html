@@ -27,7 +27,7 @@
               {{ production_summary.project_title|default:"-" }}
             </div>
             <div>
-              <div class="metric-title">产值计算</div>
+              <div class="metric-title">{{ production_summary.metric_label }}</div>
               <div class="metric-value">¥ {{ production_summary.total|floatformat:2 }}</div>
             </div>
             <div class="production-meta">
@@ -733,7 +733,7 @@
       const contractAmountChartType = "contract_amount";
       const productionCumulativeChartType = "production_cumulative";
       const contractAmountLabel = "合同金额";
-      const productionCumulativeLabel = "产值累计";
+      const productionCumulativeLabel = "累计产值";
       const trendGrid = { left: 42, right: 52, top: 42, bottom: 36 };
       let activeChartType = trendData.chart_type || productionCumulativeChartType;
       let activeLabels = labelsForChart(activeChartType);

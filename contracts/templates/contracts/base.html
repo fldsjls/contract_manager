@@ -392,6 +392,105 @@
       height: 23px;
       fill: currentColor;
     }
+    .undo-control-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+    .undo-popover {
+      position: absolute;
+      z-index: 45;
+      top: calc(100% + 8px);
+      left: 0;
+      width: 220px;
+      max-height: none;
+      padding: 10px;
+      border: 1px solid #cbd3df;
+      background: #fff;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.22);
+      overflow: hidden;
+    }
+    .undo-popover-title {
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .undo-popover-list {
+      display: grid;
+      gap: 5px;
+      max-height: none;
+      overflow: hidden;
+    }
+    .undo-preview-list {
+      display: grid;
+      gap: 8px;
+      max-height: 360px;
+      overflow: auto;
+      text-align: left;
+    }
+    .undo-preview-item {
+      display: grid;
+      grid-template-columns: 16px minmax(0, 1fr);
+      gap: 6px;
+      width: 100%;
+      min-width: 0;
+      padding: 6px 7px;
+      border: 1px solid #d9dee7;
+      border-radius: 4px;
+      background: #fff;
+      color: #111827;
+      text-align: left;
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .undo-preview-item:hover {
+      border-color: #93b4f8;
+      background: #f8fbff;
+    }
+    .undo-preview-item.selected {
+      border-color: #2563eb;
+      background: #eef4ff;
+      box-shadow: inset 3px 0 0 #2563eb;
+    }
+    .undo-preview-item.disabled {
+      color: #98a2b3;
+      background: #f3f4f6;
+      cursor: not-allowed;
+    }
+    .undo-preview-index {
+      font-weight: 700;
+      color: #2563eb;
+      font-size: 12px;
+    }
+    .undo-preview-main {
+      min-width: 0;
+      overflow: hidden;
+    }
+    .undo-preview-title {
+      display: block;
+      min-width: 0;
+      max-width: 100%;
+      font-weight: 700;
+      font-size: 12px;
+      line-height: 1.25;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .undo-preview-meta,
+    .undo-preview-effect {
+      display: block;
+      margin-top: 2px;
+      color: #667085;
+      font-size: 11px;
+      line-height: 1.25;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .undo-popover .undo-preview-effect {
+      display: none;
+    }
     .switch-control {
       display: inline-flex;
       align-items: center;

@@ -125,27 +125,32 @@ def redirect_with_current_query(request, url: str):
     return redirect(f"{url}?{query_string}" if query_string else url)
 
 
+# 解析表单日期字符串，统一兼容斜杠和短横线格式。
 def parse_form_date(value):
     if not value:
         return None
     return parse_date(str(value).strip().replace("/", "-"))
 
 
+# 返回指定日期所在月份的第一天，默认使用今天。
 def current_month_start(today=None):
     today = today or timezone.localdate()
     return today.replace(day=1)
 
 
+# 生成起止日期之间的每日统计单位。
 def daily_units(start_date, end_date):
     if start_date > end_date:
         start_date, end_date = end_date, start_date
     return [start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1)]
 
 
+# 生成从系统统计起始年到目标年的年度统计单位。
 def yearly_units_until(year: int) -> list[int]:
     return list(range(STAT_START_YEAR, max(year, STAT_START_YEAR) + 1))
 
 
+# 在日期上增减月份，并自动处理月底天数溢出。
 def add_months(value: date, months: int) -> date:
     month_index = value.month - 1 + months
     year = value.year + month_index // 12
@@ -154,10 +159,12 @@ def add_months(value: date, months: int) -> date:
     return date(year, month, day)
 
 
+# 返回指定日期所在月份的最后一天。
 def month_end(value: date) -> date:
     return date(value.year, value.month, calendar.monthrange(value.year, value.month)[1])
 
 
+# 将统计年月限制在系统起始时间和当前月份之间。
 def capped_period_month(year: int, month: int | None = None) -> date:
     today = timezone.localdate()
     end_year = max(year, STAT_START_YEAR)
@@ -169,6 +176,7 @@ def capped_period_month(year: int, month: int | None = None) -> date:
     return date(end_year, end_month, 1)
 
 
+# 生成从系统起始月到目标月份的月度统计单位。
 def monthly_units_until(year: int, month: int | None = None) -> list[date]:
     end = capped_period_month(year, month)
     units = []
@@ -179,6 +187,7 @@ def monthly_units_until(year: int, month: int | None = None) -> list[date]:
     return units
 
 
+# 生成用于趋势图显示的固定长度月度窗口。
 def monthly_units_window(year: int, month: int | None = None) -> list[date]:
     end = capped_period_month(year, month)
     start = max(STAT_START_MONTH, add_months(end, -(MONTHLY_WINDOW_MONTHS - 1)))
@@ -190,6 +199,7 @@ def monthly_units_window(year: int, month: int | None = None) -> list[date]:
     return units
 
 
+# 生成按日统计时使用的日期窗口。
 def daily_window_for_period(year: int, month: int) -> tuple[date, date]:
     today = timezone.localdate()
     end_month = capped_period_month(year, month)
@@ -198,24 +208,29 @@ def daily_window_for_period(year: int, month: int) -> tuple[date, date]:
     return start, end
 
 
+# 将统计周期和目标月份封装成查询参数。
 def period_month_params(period: str, value: date) -> str:
     return f"period={period}&year={value.year}&month={value.month}"
 
 
+# 取得单个合同统计的起始日期，缺省时使用系统起始日。
 def contract_stat_start_date(contract: Contract) -> date:
     return contract.start_date or STAT_START_DATE
 
 
+# 取得单个合同统计的起始月份。
 def contract_stat_start_month(contract: Contract) -> date:
     start = contract_stat_start_date(contract)
     return date(start.year, start.month, 1)
 
 
+# 生成单个合同可用的年度统计单位。
 def contract_yearly_units_until(contract: Contract, year: int) -> list[int]:
     start_year = contract_stat_start_date(contract).year
     return list(range(start_year, max(year, start_year) + 1))
 
 
+# 生成单个合同趋势图使用的月度窗口。
 def contract_monthly_units_window(contract: Contract, year: int, month: int | None = None) -> list[date]:
     contract_start = contract_stat_start_month(contract)
     end = max(capped_period_month(year, month), contract_start)
@@ -228,6 +243,7 @@ def contract_monthly_units_window(contract: Contract, year: int, month: int | No
     return units
 
 
+# 生成单个合同按日统计时使用的日期窗口。
 def contract_daily_window_for_period(contract: Contract, year: int, month: int) -> tuple[date, date]:
     today = timezone.localdate()
     contract_start = contract_stat_start_date(contract)
@@ -239,6 +255,7 @@ def contract_daily_window_for_period(contract: Contract, year: int, month: int) 
     return start, end
 
 
+# 从请求参数解析单个合同统计图的日期范围。
 def contract_chart_range_from_request(request, contract: Contract):
     period, year, month, _, _, _ = chart_range_from_request(request)
     today = timezone.localdate()
@@ -324,6 +341,7 @@ def is_admin_mode(request) -> bool:
     )
 
 
+# 判断当前请求是否处于超级管理员模式。
 def is_super_admin_mode(request) -> bool:
     return bool(
         request.user.is_authenticated
@@ -409,6 +427,7 @@ def context_with_auth(request, context: dict | None = None) -> dict:
     return data
 
 
+# 根据当前会话状态返回使用文档中展示的权限名称。
 def role_label_for_request(request) -> str:
     if is_super_admin_mode(request):
         return "超级管理员"
@@ -421,11 +440,89 @@ def role_label_for_request(request) -> str:
     return "未登录"
 
 
+# 按当前用户权限组装使用文档章节。
 def usage_docs_for_request(request) -> list[dict]:
     common_read = [
         "在合同列表中搜索合同名称、合同编号、原合同编号、甲方名称或负责人。",
         "单击表格行可选中项目，双击或点击查看详情进入合同详情。",
         "在详情页查看合同基础信息、合同文件和项目记录。",
+    ]
+    business_sections = [
+        {
+            "title": "产值计算逻辑",
+            "items": [
+                "默认统计总览和产值趋势图显示“未来可到期产值”：按某一天查看时，只统计该日尚未到期且已有开始日期、截止日期和合同金额的合同。",
+                "未来可到期产值按合同金额在开始日期至截止日期之间线性分摊；某日累计值 = 合同金额 / 合同天数 × 已经过天数。",
+                "产值计算面板选择同一天作为开始和结束日期时，仍按未来可到期产值口径计算，不计入已经到期的合同。",
+                "产值计算面板选择日期范围时显示“当前已完成产值”：对每个合同分别计算结束日累计产值减开始日累计产值，再将多个合同相加。",
+                "范围计算不因结束日跨过合同截止日而排除该合同；此时结束日累计产值按合同总金额封顶。",
+                "若范围起始日已经达到或超过合同截止日，该合同在这个范围内按 0 处理，不纳入当前已完成产值。",
+            ],
+        },
+        {
+            "title": "三种图表说明",
+            "items": [
+                "票据业务图用于查看开票/开据与收款/收据的业务变化，可通过图表右上角开关在发票口径和收据口径之间切换。",
+                "票据业务图的发票口径展示开票金额和收款金额；收据口径展示开据金额和收据金额，数据来自票据记录的实际金额。",
+                "合同金额图按年份汇总合同金额，用合同签订日期优先归属年份，没有签订日期时使用开始日期，再没有则使用创建时间。",
+                "合同金额图反映合同签订规模，不等同于已开票、已收款或已完成产值。",
+                "未来可到期产值图按每日展示尚未到期合同的累计可到期产值，默认作为统计总览的主图显示。",
+                "未来可到期产值图只支持全部和当月统计两类日期范围；按年、按月统计按钮在该图表下会自动禁用。",
+            ],
+        },
+        {
+            "title": "发票和收据逻辑",
+            "items": [
+                "合同的“是否开票”决定可录入的票据类型：开收据合同使用开据和收据记录，待开票或票已结合同使用开票和收票记录。",
+                "待开票表示合同还需要开票；票已结表示票据流程已完成；开收据表示该合同按收据流程管理，不走发票流程。",
+                "开票/开据记录表示对外开出的票据或收据金额，收票/收据记录表示对应已收到或已回收的金额。",
+                "票面金额记录票据本身金额，实际金额记录纳入统计的真实业务金额；两者互不自动覆盖。",
+                "实际金额为空时按 0 保存和统计，不会自动等于票面金额，因此只填票面金额不会增加收款金额。",
+                "合同列表中的开票金额、收款金额和开票未收款金额都以实际金额为基础；开票未收款金额 = 开票或开据实际金额 - 收款或收据实际金额。",
+                "票据业务图、项目统计弹窗和导出 Excel 同样使用实际金额作为统计口径，票面金额主要用于明细核对。",
+                "合同详情中不同票据状态会限制可用记录区域，例如开收据合同不显示开票记录区域，而按收据记录维护。",
+            ],
+        },
+        {
+            "title": "导出逻辑",
+            "items": [
+                "合同列表导出 Excel 会按当前搜索、筛选、排序结果导出，不会额外导出未出现在当前列表条件内的合同。",
+                "统计总览导出 Excel 会按照当前图表类型和统计范围生成对应数据；票据业务导出包含开票/开据与收款/收据两类金额。",
+                "单个合同统计弹窗导出 Excel 只导出该合同在所选统计范围内的票据业务数据。",
+                "合同记录导出会将单个合同下的开票、收票、收据和项目记录整理到 Excel，便于移交或核对。",
+                "导入模板由 openpyxl 生成，说明内容写在标题批注中，标题行以下不放示例文字，避免被误导入为正式数据。",
+            ],
+        },
+        {
+            "title": "合同金额汇总逻辑",
+            "items": [
+                "合同列表顶部的总金额按当前列表条件下未删除合同的合同金额汇总。",
+                "进行中、即将到期、已到期、待归档和已归档等状态由合同截止日期、归档年限和归档标记共同决定。",
+                "开票金额和收款金额按票据记录的实际金额统计；实际金额未填写时按 0 处理，不再自动等于票面金额。",
+                "票面金额用于记录票据本身金额，实际金额用于收款、开票未收款和统计图表中的实际业务汇总。",
+                "合同金额趋势图按合同签订日期优先、开始日期其次、创建时间兜底归入对应年份。",
+            ],
+        },
+        {
+            "title": "归档与回收逻辑",
+            "items": [
+                "合同截止日期早于当前日期时显示已到期；超过归档年限后进入待归档状态。",
+                "归档时会根据存储位置编号生成归档编号，并导出一份合同快照 JSON 用于留存。",
+                "归档后会清理该合同及关联记录的历史版本，减少长期数据占用。",
+                "删除合同不会立即物理删除，而是移入回收站；回收站内项目可在保留期内恢复。",
+                "回收站中的合同超过系统保留天数后会在访问回收站时自动清理。",
+            ],
+        },
+        {
+            "title": "导入与撤回逻辑",
+            "items": [
+                "合同导入按合同编号校验重复；票据和项目记录导入按合同显示编号匹配目标合同。",
+                "导入页右侧可通过项目名称查找显示编号；项目名称可能重复，应以显示编号作为最终导入依据。",
+                "票据导入中实际金额为空时按 0 保存；票面金额和实际金额彼此独立。",
+                "合同列表标题旁的撤回按钮可单击撤回最近一次支持的操作，也可悬停预览最近 10 条并选择撤回到某一位置。",
+                "撤回仅处理系统支持的新增、删除、恢复等操作；不支持的历史操作会在预览中标明。",
+            ],
+        },
     ]
     if is_super_admin_mode(request):
         return [
@@ -438,7 +535,7 @@ def usage_docs_for_request(request) -> list[dict]:
                     "可查看和恢复回收站项目，查看所有操作日志。",
                 ],
             }
-        ]
+        ] + business_sections
     if is_admin_mode(request):
         return [
             {
@@ -450,7 +547,7 @@ def usage_docs_for_request(request) -> list[dict]:
                     "可查看和恢复回收站项目，查看操作日志。",
                 ],
             }
-        ]
+        ] + business_sections
     if is_normal_mode(request):
         return [
             {
@@ -462,7 +559,7 @@ def usage_docs_for_request(request) -> list[dict]:
                     "导入 Excel 仅支持合同导入，不支持票据或项目记录导入。",
                 ],
             }
-        ]
+        ] + business_sections
     if request.session.get("guest_mode", False):
         return [
             {
@@ -474,7 +571,7 @@ def usage_docs_for_request(request) -> list[dict]:
                     "需要修改数据时，请先退出游客并使用正式账号登录。",
                 ],
             }
-        ]
+        ] + business_sections
     return [
         {
             "title": "未登录",
@@ -483,9 +580,10 @@ def usage_docs_for_request(request) -> list[dict]:
                 "也可以使用游客模式查看有限的合同信息。",
             ],
         }
-    ]
+    ] + business_sections
 
 
+# 获取请求来源 IP，优先读取代理转发头。
 def client_ip_address(request) -> str | None:
     forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
     if forwarded_for:
@@ -493,6 +591,7 @@ def client_ip_address(request) -> str | None:
     return request.META.get("REMOTE_ADDR") or None
 
 
+# 写入操作日志，并关联被操作对象和当前用户信息。
 def log_operation(
     request,
     action: str,
@@ -538,15 +637,17 @@ def log_operation(
 UNDO_LIMIT = 10
 
 
+# 取得当前用户最近可预览的撤回候选操作。
 def undo_target_queryset_for_request(request):
-    logs = OperationLog.objects.filter(is_undone=False)
+    logs = OperationLog.objects.filter(is_undone=False).exclude(action="撤回")
     if request.user.is_authenticated:
         logs = logs.filter(user=request.user)
     else:
         logs = logs.filter(username="游客")
-    return logs.order_by("-created_at", "-id")[:UNDO_LIMIT]
+    return list(logs.order_by("-created_at", "-id")[:UNDO_LIMIT])
 
 
+# 根据操作日志中的对象类型和 ID 找回原业务对象。
 def undo_log_object(log: OperationLog):
     if not log.content_type_id or not log.object_pk:
         return None
@@ -559,6 +660,39 @@ def undo_log_object(log: OperationLog):
         return None
 
 
+# 将操作日志转换为撤回浮层需要的预览数据。
+def undo_log_preview(log: OperationLog) -> dict:
+    obj = undo_log_object(log)
+    supported = False
+    effect = "暂不支持撤回"
+    if obj is None:
+        effect = "对象已不存在"
+    elif isinstance(obj, Contract):
+        if log.action == "新增" and not obj.is_deleted:
+            supported = True
+            effect = "撤回后合同会移入回收站"
+        elif log.action == "删除" and obj.is_deleted:
+            supported = True
+            effect = "撤回后合同会从回收站恢复"
+        elif log.action == "恢复" and not obj.is_deleted:
+            supported = True
+            effect = "撤回后合同会重新移入回收站"
+    elif log.action == "新增" and isinstance(obj, (InvoiceRecord, PaymentRecord, MaintenanceRecord)):
+        supported = True
+        effect = "撤回后该记录会被删除"
+    return {
+        "id": log.pk,
+        "time": timezone.localtime(log.created_at).strftime("%m-%d %H:%M"),
+        "action": log.action,
+        "object_type": log.object_type,
+        "object_name": log.object_name,
+        "detail": log.detail,
+        "supported": supported,
+        "effect": effect,
+    }
+
+
+# 执行单条操作日志的撤回动作。
 def undo_operation_log(request, log: OperationLog) -> tuple[bool, str]:
     obj = undo_log_object(log)
     if obj is None:
@@ -589,29 +723,63 @@ def undo_operation_log(request, log: OperationLog) -> tuple[bool, str]:
                 return True, f"已撤回恢复合同：{obj.contract_name}"
 
         if log.action == "新增" and isinstance(obj, (InvoiceRecord, PaymentRecord, MaintenanceRecord)):
-            contract_name = obj.contract.contract_name
+            contract = obj.contract
+            contract_name = contract.contract_name
             delete_record_file_versions(obj)
             obj.delete()
             log.is_undone = True
             log.undone_at = timezone.now()
             log.save(update_fields=["is_undone", "undone_at"])
-            log_operation(request, "撤回", obj.contract, object_type=log.object_type, detail=f"undo log #{log.pk}: deleted created record")
+            log_operation(request, "撤回", contract, object_type=log.object_type, detail=f"undo log #{log.pk}: deleted created record")
             return True, f"已撤回 {contract_name} 的{log.object_type or '记录'}。"
 
     return False, "最近操作暂不支持撤回。"
 
 
+# 视图函数：返回撤回预览并执行单步或批量撤回。
 @admin_required
 def undo_last_operation(request):
+    logs = undo_target_queryset_for_request(request)
+    if request.method == "GET":
+        items = []
+        blocked = False
+        for index, log in enumerate(logs):
+            item = undo_log_preview(log)
+            blocked = blocked or not item["supported"]
+            item["selectable"] = not blocked
+            item["undo_count"] = index + 1
+            items.append(item)
+        return JsonResponse({"ok": True, "items": items})
+
     if request.method != "POST":
-        return JsonResponse({"ok": False, "error": "只允许 POST 撤回操作。"}, status=405)
-    for log in undo_target_queryset_for_request(request):
+        return JsonResponse({"ok": False, "error": "只允许 GET 或 POST 撤回操作。"}, status=405)
+
+    target_id = request.POST.get("target_id") or request.headers.get("X-Undo-Target")
+    if target_id:
+        target_id = int(target_id)
+        target_index = next((index for index, log in enumerate(logs) if log.pk == target_id), None)
+        if target_index is None:
+            return JsonResponse({"ok": False, "error": "选择的撤回位置已失效，请重新打开预览。"}, status=400)
+        selected_logs = logs[: target_index + 1]
+        preview_items = [undo_log_preview(log) for log in selected_logs]
+        if any(not item["supported"] for item in preview_items):
+            return JsonResponse({"ok": False, "error": "所选位置之前包含暂不支持撤回的操作，无法一次撤回。"}, status=400)
+        messages = []
+        for log in selected_logs:
+            ok, message = undo_operation_log(request, log)
+            if not ok:
+                return JsonResponse({"ok": False, "error": message}, status=400)
+            messages.append(message)
+        return JsonResponse({"ok": True, "message": f"已撤回 {len(messages)} 条操作。", "details": messages})
+
+    for log in logs:
         ok, message = undo_operation_log(request, log)
         if ok:
             return JsonResponse({"ok": True, "message": message})
     return JsonResponse({"ok": False, "error": "最近 10 条操作中没有可撤回项。"}, status=400)
 
 
+# 批量获取指定模型和动作对应的 Django 权限。
 def permissions_for_models(codenames: list[str], actions: list[str]):
     permission_codenames = [
         f"{action}_{model_codename}"
@@ -625,6 +793,7 @@ def permissions_for_models(codenames: list[str], actions: list[str]):
     )
 
 
+# 确保系统内置角色组和权限绑定存在。
 def ensure_role_groups():
     document_models = ["contract", "contractfile", "maintenancerecord", "settlementfile"]
     finance_models = ["contract", "contractfile", "invoicerecord", "paymentrecord", "settlementfile", "appsetting"]
@@ -640,6 +809,7 @@ def ensure_role_groups():
         group.permissions.set(role_permissions[group_name])
 
 
+# 确保内置超级管理员账号存在并刷新基础状态。
 def ensure_special_superuser():
     ensure_role_groups()
     User = get_user_model()
@@ -702,18 +872,21 @@ def ensure_contract_image_folder(contract: Contract) -> Path:
     return folder
 
 
+# 返回合同普通附件的存储目录。
 def contract_file_folder(contract: Contract) -> Path:
     contract_type_folder = safe_text_folder_name(contract.contract_type)
     contract_number_folder = safe_project_folder_name(contract)
     return Path(settings.MEDIA_ROOT) / "contracts" / contract_type_folder / contract_number_folder
 
 
+# 确保合同普通附件目录存在并返回路径。
 def ensure_contract_file_folder(contract: Contract) -> Path:
     folder = contract_file_folder(contract)
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
 
+# 在 Windows 中打开并尽量居中显示资源管理器窗口。
 def center_windows_explorer_for_folder(folder: Path) -> None:
     if os.name != "nt":
         return
@@ -773,6 +946,7 @@ def center_windows_explorer_for_folder(folder: Path) -> None:
 
 
 # 生成带合同类型目录的预览相对路径，保持和当前文件保存规则一致。
+# 根据文件类型生成预览文件名。
 def typed_preview_file_name(file_field) -> Path:
     file_name = getattr(file_field, "name", "")
     if not file_name:
@@ -789,11 +963,13 @@ def typed_preview_file_name(file_field) -> Path:
 
 
 # 文件统一从项目 media 目录读取，图片目录只用于“图片查看”。
+# 计算原文件对应的预览文件路径。
 def preview_file_path(file_field) -> Path:
     relative_name = typed_preview_file_name(file_field)
     return Path(settings.MEDIA_ROOT) / relative_name
 
 
+# 从不同文件字段反查其所属合同。
 def contract_for_file_field(file_field) -> Contract | None:
     instance = getattr(file_field, "instance", None)
     if instance is None:
@@ -804,6 +980,7 @@ def contract_for_file_field(file_field) -> Contract | None:
     return getattr(instance, "contract", instance if isinstance(instance, Contract) else None)
 
 
+# 尝试修复旧数据中文件字段和实际文件夹不一致的问题。
 def repair_file_field_path(file_field) -> bool:
     if not file_field or not getattr(file_field, "name", ""):
         return False
@@ -848,6 +1025,7 @@ def repair_file_field_path(file_field) -> bool:
     return True
 
 
+# 为合同列表批量补充文件是否存在的展示状态。
 def hydrate_contract_file_status(contracts: list[Contract]) -> None:
     for contract in contracts:
         preview_file = None
@@ -866,6 +1044,7 @@ def hydrate_contract_file_status(contracts: list[Contract]) -> None:
 
 
 # 返回文件内容给预览页，避免局域网用户直接触发浏览器下载。
+# 按系统文件根目录配置返回文件预览或下载响应。
 def file_response_from_setting(file_field, download: bool = False):
     if not repair_file_field_path(file_field):
         raise Http404("文件不存在或保存路径不正确。")
@@ -919,6 +1098,7 @@ RECORD_FILE_VERSION_MODELS = {
 
 
 # 获取记录附件版本模型。
+# 根据记录实例取得对应的文件版本模型。
 def record_file_version_model_for(record):
     for record_model, version_model in RECORD_FILE_VERSION_MODELS.items():
         if isinstance(record, record_model):
@@ -927,6 +1107,7 @@ def record_file_version_model_for(record):
 
 
 # 新增一条记录附件版本，并让记录自身指向最新版本文件。
+# 给票据或项目记录追加一个文件版本。
 def attach_record_file_version(record, uploaded_file):
     if not uploaded_file:
         return None
@@ -945,6 +1126,7 @@ def attach_record_file_version(record, uploaded_file):
 
 
 # 只保留单条记录最近的附件版本，超出的旧版本连同磁盘文件一起清理。
+# 将记录文件版本数量裁剪到系统保留上限。
 def prune_record_file_versions(record, limit: int = RECORD_FILE_VERSION_LIMIT) -> None:
     version_model = record_file_version_model_for(record)
     if version_model is None:
@@ -956,6 +1138,7 @@ def prune_record_file_versions(record, limit: int = RECORD_FILE_VERSION_LIMIT) -
 
 
 # 删除记录时清理它的所有附件版本文件。
+# 删除记录关联的所有文件版本及实体文件。
 def delete_record_file_versions(record) -> None:
     version_model = record_file_version_model_for(record)
     if version_model is None:
@@ -1192,6 +1375,7 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
 
 
 # 生成合同类型扩展记录编号：文件编号 + 记录年份后两位 + 周期序列 + 类型编号 + 存储编号。
+# 按合同、日期和存储位置生成项目记录编号。
 def maintenance_record_number(contract: Contract, record_date, storage_location_number: str = "") -> str:
     record_year = record_date.year if hasattr(record_date, "year") else int(str(record_date)[:4])
     sign_year = (contract.sign_date or contract.start_date or timezone.localdate()).year
@@ -1216,12 +1400,14 @@ def expiring_contract_queryset():
 
 
 # 查询已经到达归档期限的合同，和即将到期项目一样按截止日期排序。
+# 筛选已经到期但尚未归档的合同。
 def archive_pending_contracts() -> list[Contract]:
     contracts = Contract.objects.filter(is_deleted=False, end_date__isnull=False).order_by("end_date")
     return [contract for contract in contracts if contract.status == "待归档"]
 
 
 # 查询归档页合同：待归档排前，已归档在后，各自按截止日期升序。
+# 获取归档页面展示的合同列表。
 def archive_contracts_for_page() -> list[Contract]:
     contracts = Contract.objects.filter(is_deleted=False, end_date__isnull=False).order_by("end_date", "id")
     pending = [contract for contract in contracts if contract.status == "待归档"]
@@ -1409,6 +1595,7 @@ def build_chart_rows(period: str, year: int, month: int) -> list[dict]:
 
 
 # 按签订年份汇总合同金额，仅用于年度总览趋势图。
+# 按签订年份汇总合同金额趋势。
 def yearly_signed_contract_amounts(year: int) -> list[float]:
     units = yearly_units_until(year)
     totals_by_year = {unit: Decimal("0") for unit in units}
@@ -1419,6 +1606,7 @@ def yearly_signed_contract_amounts(year: int) -> list[float]:
     return [float(totals_by_year[unit]) for unit in units]
 
 
+# 构建未来可到期产值趋势图的每日数据。
 def build_production_cumulative_rows(start_date=None, end_date=None) -> list[dict]:
     today = timezone.localdate()
     start = start_date or current_month_start(today)
@@ -1444,6 +1632,15 @@ def build_production_cumulative_rows(start_date=None, end_date=None) -> list[dic
             total += (contract.amount / Decimal(contract_days)) * Decimal(production_days)
         rows.append({"label": unit.strftime(label_format), "amount": total})
     return rows
+
+
+# 计算单个合同在指定日期的累计完成产值。
+def contract_production_value_at(contract: Contract, target_date: date) -> Decimal:
+    contract_days = max((contract.end_date - contract.start_date).days, 0)
+    if not contract_days or target_date <= contract.start_date:
+        return Decimal("0")
+    production_days = min(max((target_date - contract.start_date).days, 0), contract_days)
+    return (contract.amount / Decimal(contract_days)) * Decimal(production_days)
 
 
 # 获取当前主机的局域网 IP，用于设置页提示其他用户访问地址。
@@ -1489,6 +1686,7 @@ def scoped_querysets(period: str, year: int, month: int):
     return contracts, invoice_records, payment_records
 
 
+# 生成总览导出使用的统计单位。
 def dashboard_export_units(period: str, year: int, start_date=None, end_date=None):
     if period == "full":
         today = timezone.localdate()
@@ -1515,6 +1713,7 @@ def dashboard_export_units(period: str, year: int, start_date=None, end_date=Non
     return units, labels, lambda record: date(record.record_date.year, record.record_date.month, 1), lambda record: units[0] <= record.record_date <= end
 
 
+# 按统计单位汇总总览导出的票据业务行。
 def dashboard_project_export_rows(period: str, year: int, start_date=None, end_date=None):
     units, labels, unit_for_record, record_in_scope = dashboard_export_units(period, year, start_date, end_date)
     unit_index = {unit: index for index, unit in enumerate(units)}
@@ -1583,6 +1782,7 @@ def dashboard_project_export_rows(period: str, year: int, start_date=None, end_d
     return headers, rows_by_sheet, merge_refs_by_sheet, numeric_columns
 
 
+# 生成单个合同统计导出使用的统计单位。
 def contract_stats_export_units(contract: Contract, period: str, year: int, month: int, start_date=None, end_date=None):
     if period in {"full", "all"}:
         today = timezone.localdate()
@@ -1608,6 +1808,7 @@ def contract_stats_export_units(contract: Contract, period: str, year: int, mont
     return units, labels, lambda record: date(record.record_date.year, record.record_date.month, 1), lambda record: units[0] <= record.record_date <= end
 
 
+# 按统计单位汇总单个合同导出的票据业务行。
 def contract_stats_export_rows(contract: Contract, period: str, year: int, month: int, start_date=None, end_date=None):
     units, labels, unit_for_record, record_in_scope = contract_stats_export_units(contract, period, year, month, start_date, end_date)
     unit_index = {unit: index for index, unit in enumerate(units)}
@@ -1648,6 +1849,7 @@ def contract_stats_export_rows(contract: Contract, period: str, year: int, month
     return invoice_sheet_name, invoice_headers, invoice_rows, receipt_sheet_name, receipt_headers, receipt_rows, {2, 3}
 
 
+# 视图函数：导出总览统计图对应的 Excel 数据。
 @true_admin_required
 def dashboard_export(request):
     chart_type = request.GET.get("chart_type", "ticket").strip()
@@ -1728,6 +1930,7 @@ def dashboard_export(request):
     return response
 
 
+# 视图函数：导出单个合同统计弹窗中的 Excel 数据。
 @true_admin_required
 def contract_stats_export(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
@@ -2348,15 +2551,25 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
     is_single_day_cumulative = effective_start_date == effective_end_date
     for contract in contracts:
         contract_days = max((contract.end_date - contract.start_date).days, 0)
-        if not contract_days or effective_end_date > contract.end_date:
+        if not contract_days:
             continue
         if is_single_day_cumulative:
+            if effective_end_date > contract.end_date:
+                continue
+            start_value = Decimal("0")
+            end_value = contract_production_value_at(contract, effective_end_date)
             production_days = max((effective_end_date - contract.start_date).days, 0)
         else:
+            if effective_start_date >= contract.end_date:
+                continue
             range_start = max(contract.start_date, effective_start_date or contract.start_date)
-            production_days = max((effective_end_date - range_start).days, 0)
+            start_value = contract_production_value_at(contract, effective_start_date)
+            end_value = contract_production_value_at(contract, effective_end_date)
+            production_days = max((min(effective_end_date, contract.end_date) - range_start).days, 0)
         daily_amount = contract.amount / Decimal(contract_days)
-        production_amount = daily_amount * Decimal(production_days)
+        production_amount = max(end_value - start_value, Decimal("0"))
+        if not is_single_day_cumulative and production_amount <= 0:
+            continue
         production_total += production_amount
         production_rows.append(
             {
@@ -2390,10 +2603,13 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
         "project_mode": project_mode,
         "filter_mode": filter_mode,
         "mode": mode,
+        "metric_label": "未来可到期产值" if is_single_day_cumulative else "当前已完成产值",
+        "metric_mode": "future_due" if is_single_day_cumulative else "completed_range",
         "message": message,
     }
 
 
+# 视图函数：渲染统计总览页面和产值计算面板。
 @true_admin_required
 def dashboard(request):
     purge_expired_trash()
@@ -2739,11 +2955,13 @@ def build_contract_list_xlsx(headers, rows, numeric_columns: set[int] | None = N
     return output.getvalue()
 
 
+# 清洗 Excel 工作表名称，避免非法字符和长度超限。
 def safe_xlsx_sheet_name(name: str) -> str:
     cleaned = re.sub(r"[\[\]:*?/\\]", "", str(name or "Sheet")).strip() or "Sheet"
     return cleaned[:31]
 
 
+# 生成项目统计工作表的 XML 内容。
 def build_project_stats_sheet_xml(
     headers: list[str],
     rows: list[list],
@@ -2800,6 +3018,7 @@ def build_project_stats_sheet_xml(
 </worksheet>"""
 
 
+# 将多个项目统计工作表打包为 XLSX 文件。
 def build_project_stats_xlsx(sheets: list[dict]) -> bytes:
     sheet_entries = []
     rel_entries = []
@@ -2855,6 +3074,7 @@ def build_project_stats_xlsx(sheets: list[dict]) -> bytes:
     return output.getvalue()
 
 
+# 使用 openpyxl 生成带标题批注的导入模板。
 def build_commented_import_template_xlsx(sheets: list[dict]) -> bytes:
     from openpyxl import Workbook
     from openpyxl.comments import Comment
@@ -2887,6 +3107,7 @@ def build_commented_import_template_xlsx(sheets: list[dict]) -> bytes:
     return output.getvalue()
 
 
+# 将模型字段值转换为可序列化的快照值。
 def json_safe_value(value):
     if hasattr(value, "isoformat"):
         return value.isoformat()
@@ -2897,10 +3118,12 @@ def json_safe_value(value):
     return value
 
 
+# 生成单个模型对象的字段快照。
 def model_snapshot(obj) -> dict:
     return {field.name: json_safe_value(getattr(obj, field.attname)) for field in obj._meta.fields}
 
 
+# 生成 reversion 历史版本的快照数据。
 def version_snapshot(version) -> dict:
     revision = version.revision
     return {
@@ -2915,11 +3138,13 @@ def version_snapshot(version) -> dict:
     }
 
 
+# 获取某个对象保留的历史版本快照。
 def versions_for_object(obj) -> list[dict]:
     versions = Version.objects.get_for_object(obj).select_related("revision", "revision__user")
     return [version_snapshot(version) for version in versions]
 
 
+# 组装合同快照导出所需的完整数据载荷。
 def contract_snapshot_payload(contract: Contract) -> dict:
     related_groups = contract_snapshot_related_groups(contract)
     payload = {
@@ -2950,6 +3175,7 @@ def contract_snapshot_payload(contract: Contract) -> dict:
     return payload
 
 
+# 列出合同快照需要包含的关联对象分组。
 def contract_snapshot_related_groups(contract: Contract) -> list[tuple[str, object]]:
     return [
         ("contract_files", contract.files.all()),
@@ -2963,6 +3189,7 @@ def contract_snapshot_related_groups(contract: Contract) -> list[tuple[str, obje
     ]
 
 
+# 汇总合同及其关联对象用于版本清理。
 def contract_snapshot_objects(contract: Contract) -> list:
     objects = [contract]
     for _, queryset in contract_snapshot_related_groups(contract):
@@ -2970,6 +3197,7 @@ def contract_snapshot_objects(contract: Contract) -> list:
     return objects
 
 
+# 将合同快照写入归档 JSON 文件。
 def archive_contract_snapshot_to_file(contract: Contract, reason: str) -> Path:
     payload = contract_snapshot_payload(contract)
     payload["archive_reason"] = reason
@@ -2981,6 +3209,7 @@ def archive_contract_snapshot_to_file(contract: Contract, reason: str) -> Path:
     return archive_path
 
 
+# 清理合同归档后不再保留的 reversion 历史版本。
 def clear_contract_snapshot_versions(contract: Contract) -> int:
     deleted_count = 0
     for obj in contract_snapshot_objects(contract):
@@ -3155,10 +3384,12 @@ def contract_list_export(request):
     return response
 
 
+# 生成合同记录导出文件名中的稳定标识。
 def contract_record_export_key(contract: Contract) -> str:
     return contract.display_contract_number or contract.contract_number or contract.contract_name
 
 
+# 导出单个合同的票据和项目记录明细。
 def contract_records_export(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     contract_key = contract_record_export_key(contract)
@@ -3312,6 +3543,7 @@ INVOICE_IMPORT_SHEET_LABELS = {
 }
 
 
+# 标准化 Excel 单元格原始值。
 def normalize_import_cell(value):
     if value is None:
         return ""
@@ -3326,6 +3558,7 @@ def normalize_import_cell(value):
     return str(value).strip()
 
 
+# 按导入字段类型标准化单元格值。
 def normalize_import_value(field_name: str, value):
     text = normalize_import_cell(value)
     if not text:
@@ -3365,6 +3598,7 @@ def normalize_import_value(field_name: str, value):
     return text
 
 
+# 将 XLSX 单元格列号转换为数字序号。
 def xlsx_column_number(cell_ref: str) -> int:
     letters = "".join(char for char in cell_ref if char.isalpha()).upper()
     number = 0
@@ -3373,12 +3607,14 @@ def xlsx_column_number(cell_ref: str) -> int:
     return number
 
 
+# 提取 XLSX 富文本节点中的纯文本内容。
 def xlsx_plain_text(element) -> str:
     if element is None:
         return ""
     return "".join(element.itertext())
 
 
+# 解析 XLSX 单元格的真实文本值。
 def xlsx_cell_value(cell, shared_strings, namespace) -> str:
     cell_type = cell.attrib.get("t", "")
     if cell_type == "inlineStr":
@@ -3389,6 +3625,7 @@ def xlsx_cell_value(cell, shared_strings, namespace) -> str:
     return raw_value
 
 
+# 从 XLSX 工作表 XML 中还原二维行数据。
 def xlsx_rows_from_sheet_root(sheet_root, shared_strings, namespace) -> list[list]:
     parsed_rows = []
     for row_element in sheet_root.findall(".//x:sheetData/x:row", namespace):
@@ -3402,6 +3639,7 @@ def xlsx_rows_from_sheet_root(sheet_root, shared_strings, namespace) -> list[lis
     return parsed_rows
 
 
+# 使用标准库解析 XLSX 文件中的所有工作表。
 def parse_xlsx_sheets_with_stdlib(uploaded_file) -> dict[str, list[list]]:
     uploaded_file.seek(0)
     namespace = {
@@ -3436,6 +3674,7 @@ def parse_xlsx_sheets_with_stdlib(uploaded_file) -> dict[str, list[list]]:
         return sheets
 
 
+# 优先用 openpyxl 解析 XLSX，失败时退回标准库解析。
 def parse_xlsx_sheets(uploaded_file) -> dict[str, list[list]]:
     try:
         from openpyxl import load_workbook
@@ -3449,11 +3688,13 @@ def parse_xlsx_sheets(uploaded_file) -> dict[str, list[list]]:
     }
 
 
+# 使用标准库解析旧版单工作表合同导入文件。
 def parse_contract_import_xlsx_with_stdlib(uploaded_file):
     sheets = parse_xlsx_sheets_with_stdlib(uploaded_file)
     return next(iter(sheets.values()), [])
 
 
+# 解析合同导入 Excel 并兼容多种模板结构。
 def parse_contract_import_xlsx(uploaded_file):
     rows = next(iter(parse_xlsx_sheets(uploaded_file).values()), [])
     if not rows:
@@ -3495,6 +3736,7 @@ def parse_contract_import_xlsx(uploaded_file):
     return parsed_rows, []
 
 
+# 校验合同导入预览行并标记错误信息。
 def validate_contract_import_rows(parsed_rows, contract_numbers=None):
     contract_numbers = contract_numbers or default_contract_numbers(max(len(parsed_rows), 1))
     results = []
@@ -3575,6 +3817,7 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
     return results
 
 
+# 将导入值转换为 Decimal，空值按无效处理。
 def decimal_from_import(value):
     text = normalize_import_cell(value).replace(",", "")
     if text == "":
@@ -3585,11 +3828,13 @@ def decimal_from_import(value):
         return None
 
 
+# 将导入值转换为 Decimal，空值按 0 处理。
 def decimal_from_import_or_zero(value):
     amount = decimal_from_import(value)
     return amount if amount is not None else Decimal("0")
 
 
+# 将导入值转换为日期对象。
 def date_from_import(value):
     text = normalize_import_value("record_date", value)
     if not text:
@@ -3597,6 +3842,7 @@ def date_from_import(value):
     return parse_form_date(text)
 
 
+# 构建导入记录时按显示编号查找合同的索引。
 def import_contract_lookup() -> dict[str, Contract]:
     lookup = {}
     for contract in Contract.objects.filter(is_deleted=False):
@@ -3613,6 +3859,7 @@ def import_contract_lookup() -> dict[str, Contract]:
     return lookup
 
 
+# 为导入页项目名称查编码功能准备搜索数据。
 def project_code_lookup_items() -> list[dict]:
     contracts = Contract.objects.filter(is_deleted=False).order_by("contract_name", "id")
     return [
@@ -3626,6 +3873,7 @@ def project_code_lookup_items() -> list[dict]:
     ]
 
 
+# 按字段映射解析票据或项目记录导入工作表。
 def parse_record_import_rows_from_sheet(rows, field_map, row_builder):
     if not rows:
         return [], ["Excel 文件为空。"]
@@ -3650,6 +3898,7 @@ def parse_record_import_rows_from_sheet(rows, field_map, row_builder):
     return parsed_rows, []
 
 
+# 解析票据导入 Excel。
 def parse_invoice_import_xlsx(uploaded_file):
     sheets = parse_xlsx_sheets(uploaded_file)
     parsed_rows = []
@@ -3699,6 +3948,7 @@ def parse_invoice_import_xlsx(uploaded_file):
     return parsed_rows, parse_errors
 
 
+# 校验票据导入预览行并绑定目标合同。
 def validate_invoice_import_rows(parsed_rows):
     contract_lookup = import_contract_lookup()
     results = []
@@ -3749,6 +3999,7 @@ def validate_invoice_import_rows(parsed_rows):
     return results
 
 
+# 解析项目记录导入 Excel。
 def parse_maintenance_import_xlsx(uploaded_file):
     rows = next(iter(parse_xlsx_sheets(uploaded_file).values()), [])
     field_map = {
@@ -3781,6 +4032,7 @@ def parse_maintenance_import_xlsx(uploaded_file):
     return parsed_rows, parse_errors
 
 
+# 校验项目记录导入预览行并绑定目标合同。
 def validate_maintenance_import_rows(parsed_rows):
     contract_lookup = import_contract_lookup()
     results = []
@@ -3819,6 +4071,7 @@ def validate_maintenance_import_rows(parsed_rows):
     return results
 
 
+# 组装合同、票据和项目记录导入预览上下文。
 def contract_import_preview_context(
     request,
     upload_form,
@@ -3864,6 +4117,7 @@ def contract_import_preview_context(
     )
 
 
+# 视图函数：下载合同导入 Excel 模板。
 @admin_required
 def contract_import_template(request):
     headers = [label for _field, label in CONTRACT_IMPORT_COLUMNS]
@@ -3893,6 +4147,7 @@ def contract_import_template(request):
     return response
 
 
+# 视图函数：下载票据导入 Excel 模板。
 @true_admin_required
 def invoice_import_template(request):
     sheets = []
@@ -3921,6 +4176,7 @@ def invoice_import_template(request):
     return response
 
 
+# 视图函数：下载项目记录导入 Excel 模板。
 @true_admin_required
 def record_import_template(request):
     headers = ["合同编号", "日期", "存储编号", "备注"]
@@ -3940,6 +4196,7 @@ def record_import_template(request):
     return response
 
 
+# 视图函数：处理合同、票据和项目记录的 Excel 导入。
 @admin_required
 def contract_import(request):
     selected_contract = None
@@ -4101,6 +4358,7 @@ def contract_import(request):
     )
 
 
+# 视图函数：导出单个合同的归档快照。
 @true_admin_required
 def contract_snapshot_export(request, pk: int):
     if not is_super_admin_mode(request):
@@ -4187,6 +4445,7 @@ def record_model_for_kind(kind: str):
     return RECORD_MODEL_MAP.get(kind)
 
 
+# 预览指定类型记录的当前文件。
 def record_file_preview(request, kind: str, pk: int):
     record_model = record_model_for_kind(kind)
     if record_model is None:
@@ -4326,6 +4585,7 @@ def maintenance_record_list(request, pk: int):
     return render(request, "contracts/maintenance_record_list.html", context)
 
 
+# 在日期上增减月份，并自动处理月底天数溢出。
 def add_months(value: date, months: int) -> date:
     month_index = value.month - 1 + months
     year = value.year + month_index // 12
@@ -4392,6 +4652,7 @@ def contract_image_folder_open(request, pk: int):
     return JsonResponse({"ok": True, "path": str(folder)})
 
 
+# 视图函数：打开合同普通附件所在文件夹。
 @admin_required
 def contract_file_folder_open(request, pk: int):
     # 打开当前合同在 media 中的文件保存根目录。
@@ -4787,6 +5048,7 @@ def trash_list(request):
     )
 
 
+# 视图函数：展示可归档合同列表。
 @admin_required
 def archive_list(request):
     contracts = archive_contracts_for_page()
@@ -4803,6 +5065,7 @@ def archive_list(request):
     )
 
 
+# 视图函数：归档合同并生成归档快照。
 @admin_required
 def contract_archive(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
@@ -4827,6 +5090,7 @@ def contract_archive(request, pk: int):
     return redirect("contracts:archive_list")
 
 
+# 视图函数：更新归档合同的存储位置编号。
 @admin_required
 def contract_storage_number_update(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
@@ -4863,6 +5127,7 @@ def contract_restore(request, pk: int):
     return redirect("contracts:trash")
 
 
+# 按筛选条件获取操作日志查询集。
 def operation_logs_for_request(request):
     keyword = request.GET.get("q", "").strip()
     action = request.GET.get("action", "").strip()
@@ -4881,6 +5146,7 @@ def operation_logs_for_request(request):
     return logs, keyword, action
 
 
+# 视图函数：展示操作日志列表。
 @true_admin_required
 def operation_log_list(request):
     logs, keyword, action = operation_logs_for_request(request)
@@ -4901,6 +5167,7 @@ def operation_log_list(request):
     )
 
 
+# 视图函数：导出操作日志 Excel。
 @true_admin_required
 def operation_log_export(request):
     if not is_super_admin_mode(request):
@@ -4928,6 +5195,7 @@ def operation_log_export(request):
     return response
 
 
+# 渲染当前用户可见的使用文档页面。
 def usage_docs(request):
     return render(
         request,
@@ -4943,6 +5211,7 @@ def usage_docs(request):
     )
 
 
+# 视图函数：渲染系统设置页面并保存配置。
 @admin_required
 def settings_view(request):
     setting = AppSetting.current()

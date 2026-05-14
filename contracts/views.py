@@ -234,6 +234,71 @@ def role_label_for_request(request) -> str:
     return "未登录"
 
 
+def usage_docs_for_request(request) -> list[dict]:
+    common_read = [
+        "在合同列表中搜索合同名称、合同编号、原合同编号、甲方名称或负责人。",
+        "单击表格行可选中项目，双击或点击查看详情进入合同详情。",
+        "在详情页查看合同基础信息、合同文件和项目记录。",
+    ]
+    if is_super_admin_mode(request):
+        return [
+            {
+                "title": "超级管理员",
+                "items": [
+                    "可使用合同总览、合同列表、归档项目、回收站、操作日志和设置。",
+                    "可新增、编辑、删除合同，导入和导出 Excel，导出合同快照。",
+                    "可添加票据、项目记录、结算文件，并管理系统设置和用户密码。",
+                    "可查看和恢复回收站项目，查看所有操作日志。",
+                ],
+            }
+        ]
+    if is_admin_mode(request):
+        return [
+            {
+                "title": "管理员",
+                "items": [
+                    "可使用合同总览、合同列表、归档项目、回收站、操作日志和设置。",
+                    "可新增、编辑、删除合同，导入和导出 Excel。",
+                    "可添加票据、项目记录和结算文件。",
+                    "可查看和恢复回收站项目，查看操作日志。",
+                ],
+            }
+        ]
+    if is_normal_mode(request):
+        return [
+            {
+                "title": "普通用户",
+                "items": [
+                    "可使用合同列表、归档项目和回收站。",
+                    "可新增、编辑合同，导入合同 Excel，查看合同详情和项目记录。",
+                    "不可新增票据、收付款记录、结算文件，不可进入系统设置和操作日志。",
+                    "导入 Excel 仅支持合同导入，不支持票据或项目记录导入。",
+                ],
+            }
+        ]
+    if request.session.get("guest_mode", False):
+        return [
+            {
+                "title": "游客模式",
+                "items": [
+                    *common_read,
+                    "可查看合同列表、合同详情和回收站。",
+                    "不可新增、编辑、删除、导入或导出数据。",
+                    "需要修改数据时，请先退出游客并使用正式账号登录。",
+                ],
+            }
+        ]
+    return [
+        {
+            "title": "未登录",
+            "items": [
+                "登录后会根据账号权限显示对应功能。",
+                "也可以使用游客模式查看有限的合同信息。",
+            ],
+        }
+    ]
+
+
 def client_ip_address(request) -> str | None:
     forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
     if forwarded_for:
@@ -1053,9 +1118,13 @@ def yearly_signed_contract_amounts(year: int) -> list[float]:
     return [float(totals_by_year[unit]) for unit in range(start_year, year + 1)]
 
 
-def build_production_cumulative_rows() -> list[dict]:
+def build_production_cumulative_rows(start_date=None, end_date=None) -> list[dict]:
     today = timezone.localdate()
-    units = [today - timedelta(days=offset) for offset in range(11, -1, -1)]
+    start = start_date or today - timedelta(days=11)
+    end = end_date or today
+    if end < start:
+        start, end = end, start
+    units = [start + timedelta(days=offset) for offset in range((end - start).days + 1)]
     contracts = Contract.objects.filter(
         is_deleted=False,
         amount__gt=0,
@@ -1262,8 +1331,10 @@ def dashboard_export(request):
         )
         response["Content-Disposition"] = 'attachment; filename="contract_amount_chart.xlsx"'
         return response
+    start_date = parse_form_date(request.GET.get("start_date")) if period == "all" else None
+    end_date = parse_form_date(request.GET.get("end_date")) if period == "all" else None
     if chart_type == "production_cumulative":
-        rows = [[row["label"], row["amount"]] for row in build_production_cumulative_rows()]
+        rows = [[row["label"], row["amount"]] for row in build_production_cumulative_rows(start_date, end_date)]
         response = HttpResponse(
             build_project_stats_xlsx(
                 [
@@ -1277,8 +1348,6 @@ def dashboard_export(request):
         )
         response["Content-Disposition"] = 'attachment; filename="production_cumulative_chart.xlsx"'
         return response
-    start_date = parse_form_date(request.GET.get("start_date")) if period == "all" else None
-    end_date = parse_form_date(request.GET.get("end_date")) if period == "all" else None
     headers, rows_by_sheet, merge_refs_by_sheet, numeric_columns = dashboard_project_export_rows(
         period,
         year,
@@ -2643,7 +2712,20 @@ def contract_record_export_key(contract: Contract) -> str:
 def contract_records_export(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     contract_key = contract_record_export_key(contract)
+    start_date = parse_form_date(request.GET.get("start_date"))
+    end_date = parse_form_date(request.GET.get("end_date"))
+    if start_date and end_date and start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    def filter_record_dates(queryset):
+        if start_date:
+            queryset = queryset.filter(record_date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(record_date__lte=end_date)
+        return queryset
+
     record_headers = ["合同编号", "日期", "存储编号", "备注"]
+    maintenance_records = filter_record_dates(contract.maintenancerecord_set.all()).order_by("record_date", "id")
     record_rows = [
         [
             contract_key,
@@ -2651,7 +2733,7 @@ def contract_records_export(request, pk: int):
             record.storage_location_number or "00",
             record.remark or "",
         ]
-        for record in contract.maintenancerecord_set.all().order_by("record_date", "id")
+        for record in maintenance_records
     ]
 
     sheets = [
@@ -2666,7 +2748,8 @@ def contract_records_export(request, pk: int):
         invoice_sheet_names = ("开票", "收票")
 
     all_money_records = sorted(
-        list(contract.invoicerecord_set.all()) + list(contract.paymentrecord_set.all()),
+        list(filter_record_dates(contract.invoicerecord_set.all()))
+        + list(filter_record_dates(contract.paymentrecord_set.all())),
         key=lambda record: (record.record_date, record.id),
     )
     for sheet_name in invoice_sheet_names:
@@ -4360,6 +4443,21 @@ def operation_log_export(request):
     )
     response["Content-Disposition"] = 'attachment; filename="operation_logs.xlsx"'
     return response
+
+
+def usage_docs(request):
+    return render(
+        request,
+        "contracts/usage_docs.html",
+        context_with_auth(
+            request,
+            {
+                "role_label": role_label_for_request(request),
+                "doc_sections": usage_docs_for_request(request),
+                "active_nav": "docs",
+            },
+        ),
+    )
 
 
 @admin_required

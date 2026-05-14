@@ -13,6 +13,7 @@ urlpatterns = [
     path("guest/", views.guest_login_view, name="guest_login"),
     path("normal/", views.normal_login_view, name="normal_login"),
     path("logout/", views.logout_view, name="logout"),
+    path("docs/", views.usage_docs, name="usage_docs"),
     path("dashboard/export/", views.dashboard_export, name="dashboard_export"),
     path("operation-logs/", views.operation_log_list, name="operation_log_list"),
     path("operation-logs/export/", views.operation_log_export, name="operation_log_export"),

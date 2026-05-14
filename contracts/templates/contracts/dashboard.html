@@ -444,7 +444,7 @@
     }
 
     trendExportButton.addEventListener("click", () => {
-      if (periodInput.value === "all" && chartTypeInput.value === "ticket") {
+      if (periodInput.value === "all" && (chartTypeInput.value === "ticket" || chartTypeInput.value === "production_cumulative")) {
         exportRangeModal.hidden = false;
         exportRangeModal.querySelector("input").focus();
         return;

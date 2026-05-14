@@ -1,0 +1,24 @@
+{% extends "contracts/base.html" %}
+
+{% block title %}使用文档{% endblock %}
+
+{% block content %}
+  <div class="page-content">
+    <h1 class="page-title">使用文档</h1>
+    <section class="panel">
+      <div class="summary" style="margin-bottom: 16px;">
+        <span>当前权限：{{ role_label }}</span>
+      </div>
+      {% for section in doc_sections %}
+        <div class="doc-section">
+          <h2>{{ section.title }}</h2>
+          <ul>
+            {% for item in section.items %}
+              <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endfor %}
+    </section>
+  </div>
+{% endblock %}

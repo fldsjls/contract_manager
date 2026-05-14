@@ -73,7 +73,8 @@
 
   {% if is_admin_mode or is_super_admin_mode %}
     <div class="modal-backdrop" id="importTemplateModal" hidden>
-      <div class="modal-card import-template-modal-card" role="dialog" aria-modal="true" aria-label="下载导入模板">
+      <div class="modal-card import-template-modal-card" role="dialog" aria-modal="true" aria-labelledby="importTemplateModalTitle">
+        <h2 class="import-template-title" id="importTemplateModalTitle">下载模板</h2>
         <div class="toolbar import-template-actions">
           <a class="button" href="{% url 'contracts:contract_import_template' %}">下载合同模板</a>
           <a class="button" href="{% url 'contracts:invoice_import_template' %}">下载票据模板</a>

@@ -139,6 +139,8 @@
                 data-contract-name="{{ contract.contract_name }}"
                 data-contract-number="{{ contract.display_contract_number }}"
                 data-contract-type="{{ contract.contract_type }}"
+                data-start-date="{{ contract.start_date|date:'Y-m-d' }}"
+                data-end-date="{{ contract.end_date|date:'Y-m-d' }}"
                 data-has-file-number="{% if contract.original_contract_inner_number %}true{% else %}false{% endif %}"
                 data-party-name="{{ contract.party_name }}"
                 data-responsible-person="{{ contract.responsible_person }}"
@@ -313,6 +315,32 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="recordExportRangeModal" hidden>
+    <div class="modal-card range-modal-card" role="dialog" aria-modal="true" aria-labelledby="recordExportRangeModalTitle">
+      <div class="modal-header" id="recordExportRangeModalTitle">选择导出日期界限</div>
+      <form id="recordExportRangeForm">
+        <div class="modal-body">
+          <div class="range-section">
+            <label class="field-label" for="recordExportStartDate">开始日期</label>
+            <div class="field-control-row">
+              <input id="recordExportStartDate" name="start_date" type="date" required>
+            </div>
+          </div>
+          <div class="range-section" style="margin-top: 12px;">
+            <label class="field-label" for="recordExportEndDate">结束日期</label>
+            <div class="field-control-row">
+              <input id="recordExportEndDate" name="end_date" type="date" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" id="recordExportRangeCancel" type="button">取消</button>
+          <button class="button primary" type="submit">导出</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- 表格行选择、按钮启用、文件打开和单项目统计弹窗逻辑。 -->
   <script src="{% static 'contracts/vendor/echarts.min.js' %}"></script>
   <script>
@@ -360,6 +388,14 @@
     const projectExportRangeCancel = document.querySelector("#projectExportRangeCancel");
     const projectExportStartDate = document.querySelector("#projectExportStartDate");
     const projectExportEndDate = document.querySelector("#projectExportEndDate");
+    const recordExportRangeModal = document.querySelector("#recordExportRangeModal");
+    const recordExportRangeForm = document.querySelector("#recordExportRangeForm");
+    const recordExportRangeCancel = document.querySelector("#recordExportRangeCancel");
+    const recordExportStartDate = document.querySelector("#recordExportStartDate");
+    const recordExportEndDate = document.querySelector("#recordExportEndDate");
+    let selectedRecordExportUrl = "";
+    let selectedRecordExportStartDate = "";
+    let selectedRecordExportEndDate = "";
     let modalConfirmHandler = null;
     let projectStatsState = {
       url: "",
@@ -475,7 +511,11 @@
       }
       if (contractExportButton) {
         contractExportButton.href = contractExportButton.dataset.baseUrl;
+        contractExportButton.dataset.recordExportUrl = "";
       }
+      selectedRecordExportUrl = "";
+      selectedRecordExportStartDate = "";
+      selectedRecordExportEndDate = "";
     }
 
     window.clearPageSelection = clearSelection;
@@ -541,7 +581,11 @@
         contractImportButton.href = url.pathname + url.search;
       }
       if (contractExportButton) {
-        contractExportButton.href = contractExportButton.dataset.recordUrlTemplate.replace("/0/", `/${id}/`);
+        selectedRecordExportUrl = contractExportButton.dataset.recordUrlTemplate.replace("/0/", `/${id}/`);
+        selectedRecordExportStartDate = row.dataset.startDate || "";
+        selectedRecordExportEndDate = row.dataset.endDate || "";
+        contractExportButton.href = selectedRecordExportUrl;
+        contractExportButton.dataset.recordExportUrl = selectedRecordExportUrl;
       }
     }
 
@@ -1033,22 +1077,54 @@
       return `${projectStatsState.exportUrl}?${params.toString()}`;
     }
 
+    function formatDateInputValue(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
     function defaultProjectExportDates() {
       const end = new Date();
       const start = new Date();
       start.setDate(end.getDate() - 11);
-      const formatDate = (date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, "0");
-        const day = String(date.getDate()).padStart(2, "0");
-        return `${year}-${month}-${day}`;
-      };
-      projectExportStartDate.value = formatDate(start);
-      projectExportEndDate.value = formatDate(end);
+      projectExportStartDate.value = formatDateInputValue(start);
+      projectExportEndDate.value = formatDateInputValue(end);
     }
 
     function closeProjectExportRangeModal() {
       projectExportRangeModal.hidden = true;
+    }
+
+    function defaultRecordExportDates() {
+      const today = formatDateInputValue(new Date());
+      recordExportStartDate.value = selectedRecordExportStartDate || today;
+      recordExportEndDate.value = selectedRecordExportEndDate || today;
+    }
+
+    function closeRecordExportRangeModal() {
+      recordExportRangeModal.hidden = true;
+    }
+
+    function recordExportUrl(extraParams) {
+      const url = new URL(selectedRecordExportUrl || contractExportButton.dataset.recordExportUrl, window.location.origin);
+      Object.entries(extraParams).forEach(([key, value]) => {
+        url.searchParams.set(key, value);
+      });
+      return url.pathname + url.search;
+    }
+
+    if (contractExportButton) {
+      contractExportButton.addEventListener("click", (event) => {
+        const exportUrl = contractExportButton.dataset.recordExportUrl || "";
+        if (!exportUrl) {
+          return;
+        }
+        event.preventDefault();
+        defaultRecordExportDates();
+        recordExportRangeModal.hidden = false;
+        recordExportStartDate.focus();
+      });
     }
 
     function exportProjectStats() {
@@ -1446,6 +1522,21 @@
         end_date: formData.get("end_date"),
       });
       closeProjectExportRangeModal();
+    });
+    recordExportRangeCancel.addEventListener("click", closeRecordExportRangeModal);
+    recordExportRangeModal.addEventListener("click", (event) => {
+      if (event.target === recordExportRangeModal) {
+        closeRecordExportRangeModal();
+      }
+    });
+    recordExportRangeForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const formData = new FormData(recordExportRangeForm);
+      window.location.href = recordExportUrl({
+        start_date: formData.get("start_date"),
+        end_date: formData.get("end_date"),
+      });
+      closeRecordExportRangeModal();
     });
   </script>
 {% endblock %}

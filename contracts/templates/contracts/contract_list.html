@@ -264,7 +264,8 @@
         <div class="range-section">
           <label class="field-label">统计方式</label>
           <div class="toolbar range-options" data-keep-selection>
-            <button class="button project-period-option primary" type="button" data-period="all">全部</button>
+            <button class="button project-period-option" type="button" data-period="full">全部</button>
+            <button class="button project-period-option primary" type="button" data-period="all">当月统计</button>
             <button class="button project-period-option" type="button" data-period="year">按年统计</button>
             <button class="button project-period-option" type="button" data-period="month">按月统计</button>
           </div>
@@ -404,6 +405,11 @@
       period: "all",
       year: new Date().getFullYear(),
       month: new Date().getMonth() + 1,
+      prevParams: "",
+      nextParams: "",
+      canPrev: false,
+      canNext: false,
+      startDate: "",
     };
     let maintenanceState = {
       url: "",
@@ -1051,10 +1057,14 @@
 
     // 函数说明：处理页面交互和数据展示逻辑。
     function updateProjectRangeLabels() {
-      projectYearLabel.textContent = `${projectStatsState.year - 11} - ${projectStatsState.year} 年`;
-      projectMonthLabel.textContent = `${projectStatsState.year} 年`;
-      projectRangeControlSpace.style.visibility = projectStatsState.period === "all" ? "hidden" : "visible";
-      projectRangeControlSpace.style.pointerEvents = projectStatsState.period === "all" ? "none" : "auto";
+      const start = projectStatsState.startDate ? new Date(`${projectStatsState.startDate}T00:00:00`) : new Date(2018, 0, 2);
+      const startYear = start.getFullYear();
+      const startMonth = `${startYear}-${String(start.getMonth() + 1).padStart(2, "0")}`;
+      projectYearLabel.textContent = `${startYear} - ${Math.max(projectStatsState.year, startYear)} 年`;
+      projectMonthLabel.textContent = `${startMonth} - ${Math.max(projectStatsState.year, startYear)} 年`;
+      const isFixedDailyRange = ["full", "all"].includes(projectStatsState.period);
+      projectRangeControlSpace.style.visibility = isFixedDailyRange ? "hidden" : "visible";
+      projectRangeControlSpace.style.pointerEvents = isFixedDailyRange ? "none" : "auto";
       projectRangeControlSpace.style.display = "flex";
       projectYearControl.style.display = projectStatsState.period === "year" ? "flex" : "none";
       projectMonthControl.style.display = projectStatsState.period === "month" ? "flex" : "none";
@@ -1077,6 +1087,17 @@
       return `${projectStatsState.exportUrl}?${params.toString()}`;
     }
 
+    async function navigateProjectStatsRange(paramsString) {
+      if (!paramsString) {
+        return;
+      }
+      const params = new URLSearchParams(paramsString);
+      projectStatsState.period = params.get("period") || projectStatsState.period;
+      projectStatsState.year = Number.parseInt(params.get("year") || projectStatsState.year, 10);
+      projectStatsState.month = Number.parseInt(params.get("month") || projectStatsState.month, 10);
+      await loadProjectStats();
+    }
+
     function formatDateInputValue(date) {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -1086,8 +1107,9 @@
 
     function defaultProjectExportDates() {
       const end = new Date();
-      const start = new Date();
-      start.setDate(end.getDate() - 11);
+      const start = projectStatsState.period === "full" && projectStatsState.startDate
+        ? new Date(`${projectStatsState.startDate}T00:00:00`)
+        : new Date(end.getFullYear(), end.getMonth(), 1);
       projectExportStartDate.value = formatDateInputValue(start);
       projectExportEndDate.value = formatDateInputValue(end);
     }
@@ -1132,7 +1154,7 @@
         alert("导出地址未就绪，请重新选择项目后再试。");
         return;
       }
-      if (projectStatsState.period === "all") {
+      if (["full", "all"].includes(projectStatsState.period)) {
         defaultProjectExportDates();
         projectExportRangeModal.hidden = false;
         projectExportStartDate.focus();
@@ -1150,6 +1172,11 @@
       projectStatsState.period = data.period;
       projectStatsState.year = data.year;
       projectStatsState.month = data.month;
+      projectStatsState.prevParams = data.prev_params || "";
+      projectStatsState.nextParams = data.next_params || "";
+      projectStatsState.canPrev = Boolean(data.can_prev);
+      projectStatsState.canNext = Boolean(data.can_next);
+      projectStatsState.startDate = data.start_date || "";
       centerModalBody.textContent = "";
       centerModalLeftActions.innerHTML = "";
       const wrapper = document.createElement("div");
@@ -1162,7 +1189,9 @@
               <input id="projectStatsModeToggle" type="checkbox">
               <span class="switch-track"></span>
             </label>
+            ${data.period === "all" ? "" : `<button class="button" id="projectStatsPrevButton" type="button" aria-disabled="${data.can_prev ? "false" : "true"}">←</button>`}
             <button class="button" id="projectStatsRangeButton" type="button">${data.range_label}</button>
+            ${data.period === "all" ? "" : `<button class="button" id="projectStatsNextButton" type="button" aria-disabled="${data.can_next ? "false" : "true"}">→</button>`}
           </div>
         </div>
         <section class="metric-grid">
@@ -1197,6 +1226,22 @@
       centerModalBody.appendChild(wrapper);
       centerModalLeftActions.appendChild(projectPopupTabs("stats"));
       wrapper.querySelector("#projectStatsRangeButton").addEventListener("click", openProjectRangeModal);
+      const prevButton = wrapper.querySelector("#projectStatsPrevButton");
+      const nextButton = wrapper.querySelector("#projectStatsNextButton");
+      if (prevButton) {
+        prevButton.addEventListener("click", () => {
+          if (projectStatsState.canPrev) {
+            navigateProjectStatsRange(projectStatsState.prevParams);
+          }
+        });
+      }
+      if (nextButton) {
+        nextButton.addEventListener("click", () => {
+          if (projectStatsState.canNext) {
+            navigateProjectStatsRange(projectStatsState.nextParams);
+          }
+        });
+      }
       wrapper.querySelector("#projectStatsDetailButton").addEventListener("click", () => {
         if (projectStatsState.detailUrl) {
           window.location.href = projectStatsState.detailUrl;
@@ -1238,6 +1283,9 @@
       const projectVisibleStart = data.chart.labels.length > projectVisiblePointLimit
         ? Math.max(0, 100 - (projectVisiblePointLimit / data.chart.labels.length) * 100)
         : 0;
+      const projectMinZoomSpan = data.chart.labels.length > projectVisiblePointLimit
+        ? Math.max(6, (projectVisiblePointLimit / data.chart.labels.length) * 100)
+        : 100;
 
       function projectSliderBounds() {
         const visibleCount = Math.min(data.chart.labels.length, projectVisiblePointLimit);
@@ -1316,6 +1364,7 @@
             filterMode: "filter",
             start: projectVisibleStart,
             end: projectVisibleEnd,
+            minSpan: projectMinZoomSpan,
             zoomOnMouseWheel: true,
             moveOnMouseMove: true,
             moveOnMouseWheel: false,
@@ -1330,6 +1379,7 @@
             bottom: 4,
             start: projectVisibleStart,
             end: projectVisibleEnd,
+            minSpan: projectMinZoomSpan,
             brushSelect: false,
           },
         ],
@@ -1517,7 +1567,7 @@
       event.preventDefault();
       const formData = new FormData(projectExportRangeForm);
       window.location.href = projectStatsExportUrl({
-        period: "all",
+        period: projectStatsState.period,
         start_date: formData.get("start_date"),
         end_date: formData.get("end_date"),
       });

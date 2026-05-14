@@ -80,8 +80,8 @@
     {{ form.excel_file.errors }}
     <div class="toolbar" style="margin-top: 18px;">
       {% if selected_contract and can_add_money_records %}
-        <button class="button primary import-preview-button" type="button" data-import-kind="invoice">导入票据</button>
-        <button class="button import-preview-button" type="button" data-import-kind="maintenance">导入记录</button>
+        <button class="button primary import-preview-button" type="button" data-import-kind="invoice">票据预览</button>
+        <button class="button import-preview-button" type="button" data-import-kind="maintenance">记录预览</button>
       {% else %}
         <button class="button primary import-preview-button" type="button" data-import-kind="contract">合同预览</button>
       {% endif %}

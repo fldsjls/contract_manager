@@ -311,7 +311,8 @@
           <div class="range-section">
             <label class="field-label">统计方式</label>
             <div class="toolbar range-options" data-keep-selection>
-              <button class="button period-option {% if chart_period == 'all' %}primary{% endif %}" type="button" data-period="all">全部</button>
+              <button class="button period-option {% if chart_period == 'full' %}primary{% endif %}" type="button" data-period="full">全部</button>
+              <button class="button period-option {% if chart_period == 'all' %}primary{% endif %}" type="button" data-period="all">当月统计</button>
               <button class="button period-option {% if chart_period == 'year' %}primary{% endif %}" type="button" data-period="year">按年统计</button>
               <button class="button period-option {% if chart_period == 'month' %}primary{% endif %}" type="button" data-period="month">按月统计</button>
             </div>
@@ -367,19 +368,20 @@
       if (chartType === "contract_amount") {
         periodInput.value = "year";
       }
-      if (chartType === "production_cumulative") {
+      if (chartType === "production_cumulative" && !["full", "all"].includes(periodInput.value)) {
         periodInput.value = "all";
       }
-      yearLabel.textContent = `${year - 11} - ${year} 年`;
-      monthLabel.textContent = `${year} 年`;
-      rangeControlSpace.style.visibility = periodInput.value === "all" ? "hidden" : "visible";
-      rangeControlSpace.style.pointerEvents = periodInput.value === "all" ? "none" : "auto";
+      yearLabel.textContent = `2018 - ${Math.max(year, 2018)} 年`;
+      monthLabel.textContent = `2018-01 - ${Math.max(year, 2018)} 年`;
+      const isFixedDailyRange = ["full", "all"].includes(periodInput.value);
+      rangeControlSpace.style.visibility = isFixedDailyRange ? "hidden" : "visible";
+      rangeControlSpace.style.pointerEvents = isFixedDailyRange ? "none" : "auto";
       rangeControlSpace.style.display = "flex";
       yearControl.style.display = periodInput.value === "year" ? "flex" : "none";
       monthControl.style.display = periodInput.value === "month" ? "flex" : "none";
       periodOptions.forEach((button) => {
         const disabled = (chartType === "contract_amount" && button.dataset.period !== "year")
-          || (chartType === "production_cumulative" && button.dataset.period !== "all");
+          || (chartType === "production_cumulative" && !["full", "all"].includes(button.dataset.period));
         button.disabled = disabled;
         button.hidden = disabled;
         button.classList.toggle("primary", button.dataset.period === periodInput.value);
@@ -412,7 +414,7 @@
       chartTypeInput.value = chartTypeSelect.value;
       if (chartTypeInput.value === "contract_amount") {
         periodInput.value = "year";
-      } else if (chartTypeInput.value === "production_cumulative") {
+      } else if (chartTypeInput.value === "production_cumulative" && !["full", "all"].includes(periodInput.value)) {
         periodInput.value = "all";
       }
       updateRangeLabels();
@@ -444,7 +446,7 @@
     }
 
     trendExportButton.addEventListener("click", () => {
-      if (periodInput.value === "all" && (chartTypeInput.value === "ticket" || chartTypeInput.value === "production_cumulative")) {
+      if (["full", "all"].includes(periodInput.value) && (chartTypeInput.value === "ticket" || chartTypeInput.value === "production_cumulative")) {
         exportRangeModal.hidden = false;
         exportRangeModal.querySelector("input").focus();
         return;
@@ -735,9 +737,18 @@
       const trendGrid = { left: 42, right: 52, top: 42, bottom: 36 };
       let activeChartType = trendData.chart_type || productionCumulativeChartType;
       let activeLabels = labelsForChart(activeChartType);
-      const visibleStart = activeLabels.length > visiblePointLimit
-        ? Math.max(0, 100 - (visiblePointLimit / activeLabels.length) * 100)
-        : 0;
+      function visibleStartForLabels(labels) {
+        return labels.length > visiblePointLimit
+          ? Math.max(0, 100 - (visiblePointLimit / labels.length) * 100)
+          : 0;
+      }
+      function minZoomSpanForLabels(labels) {
+        if (labels.length <= visiblePointLimit) {
+          return 100;
+        }
+        return Math.max(6, (visiblePointLimit / labels.length) * 100);
+      }
+      let visibleStart = visibleStartForLabels(activeLabels);
 
       function labelsForChart(chartType) {
         if (chartType === contractAmountChartType) {
@@ -909,6 +920,7 @@
             filterMode: "filter",
             start: visibleStart,
             end: visibleEnd,
+            minSpan: minZoomSpanForLabels(activeLabels),
             zoomOnMouseWheel: true,
             moveOnMouseMove: true,
             moveOnMouseWheel: false,
@@ -923,6 +935,7 @@
             bottom: 0,
             start: visibleStart,
             end: visibleEnd,
+            minSpan: minZoomSpanForLabels(activeLabels),
             brushSelect: false,
           },
         ],
@@ -945,6 +958,8 @@
           document.querySelector("#trendChartTitle").textContent = "票据业务图";
         }
         activeLabels = labelsForChart(activeChartType);
+        visibleStart = visibleStartForLabels(activeLabels);
+        const nextSliderBounds = trendSliderBounds();
         const primaryTitle = document.querySelector("[data-dashboard-metric-title='primary']");
         const primaryValue = document.querySelector("[data-dashboard-metric-value='primary']");
         const secondaryTitle = document.querySelector("[data-dashboard-metric-title='secondary']");
@@ -963,6 +978,22 @@
           {
             xAxis: { data: activeLabels },
             legend: { data: trendLegendData(modeData) },
+            dataZoom: [
+              {
+                id: "trend-inside-zoom",
+                start: visibleStart,
+                end: visibleEnd,
+                minSpan: minZoomSpanForLabels(activeLabels),
+              },
+              {
+                id: "trend-slider-zoom",
+                left: nextSliderBounds.left,
+                right: nextSliderBounds.right,
+                start: visibleStart,
+                end: visibleEnd,
+                minSpan: minZoomSpanForLabels(activeLabels),
+              },
+            ],
             series: buildTrendSeries(modeData),
           },
           { replaceMerge: ["series"] }

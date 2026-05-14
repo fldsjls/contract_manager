@@ -59,6 +59,12 @@ from .models import (
     safe_text_folder_name,
 )
 
+STAT_START_DATE = date(2018, 1, 2)
+STAT_START_MONTH = date(2018, 1, 1)
+STAT_START_YEAR = 2018
+FULL_DAILY_WINDOW_DAYS = 200
+MONTHLY_WINDOW_MONTHS = 36
+
 
 # 回收站内合同默认保留 7 天。
 TRASH_RETENTION_DAYS = 7
@@ -123,6 +129,187 @@ def parse_form_date(value):
     if not value:
         return None
     return parse_date(str(value).strip().replace("/", "-"))
+
+
+def current_month_start(today=None):
+    today = today or timezone.localdate()
+    return today.replace(day=1)
+
+
+def daily_units(start_date, end_date):
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    return [start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1)]
+
+
+def yearly_units_until(year: int) -> list[int]:
+    return list(range(STAT_START_YEAR, max(year, STAT_START_YEAR) + 1))
+
+
+def add_months(value: date, months: int) -> date:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def month_end(value: date) -> date:
+    return date(value.year, value.month, calendar.monthrange(value.year, value.month)[1])
+
+
+def capped_period_month(year: int, month: int | None = None) -> date:
+    today = timezone.localdate()
+    end_year = max(year, STAT_START_YEAR)
+    end_month = month or (today.month if end_year == today.year else 12)
+    if end_year >= today.year:
+        end_year = today.year
+        end_month = min(end_month, today.month)
+    end_month = min(max(end_month, 1), 12)
+    return date(end_year, end_month, 1)
+
+
+def monthly_units_until(year: int, month: int | None = None) -> list[date]:
+    end = capped_period_month(year, month)
+    units = []
+    current = STAT_START_MONTH
+    while current <= end:
+        units.append(current)
+        current = add_months(current, 1)
+    return units
+
+
+def monthly_units_window(year: int, month: int | None = None) -> list[date]:
+    end = capped_period_month(year, month)
+    start = max(STAT_START_MONTH, add_months(end, -(MONTHLY_WINDOW_MONTHS - 1)))
+    units = []
+    current = start
+    while current <= end:
+        units.append(current)
+        current = add_months(current, 1)
+    return units
+
+
+def daily_window_for_period(year: int, month: int) -> tuple[date, date]:
+    today = timezone.localdate()
+    end_month = capped_period_month(year, month)
+    end = min(month_end(end_month), today)
+    start = max(STAT_START_DATE, end - timedelta(days=FULL_DAILY_WINDOW_DAYS - 1))
+    return start, end
+
+
+def period_month_params(period: str, value: date) -> str:
+    return f"period={period}&year={value.year}&month={value.month}"
+
+
+def contract_stat_start_date(contract: Contract) -> date:
+    return contract.start_date or STAT_START_DATE
+
+
+def contract_stat_start_month(contract: Contract) -> date:
+    start = contract_stat_start_date(contract)
+    return date(start.year, start.month, 1)
+
+
+def contract_yearly_units_until(contract: Contract, year: int) -> list[int]:
+    start_year = contract_stat_start_date(contract).year
+    return list(range(start_year, max(year, start_year) + 1))
+
+
+def contract_monthly_units_window(contract: Contract, year: int, month: int | None = None) -> list[date]:
+    contract_start = contract_stat_start_month(contract)
+    end = max(capped_period_month(year, month), contract_start)
+    start = max(contract_start, add_months(end, -(MONTHLY_WINDOW_MONTHS - 1)))
+    units = []
+    current = start
+    while current <= end:
+        units.append(current)
+        current = add_months(current, 1)
+    return units
+
+
+def contract_daily_window_for_period(contract: Contract, year: int, month: int) -> tuple[date, date]:
+    today = timezone.localdate()
+    contract_start = contract_stat_start_date(contract)
+    end_month = capped_period_month(year, month)
+    end = min(month_end(end_month), today)
+    if end < contract_start:
+        end = contract_start
+    start = max(contract_start, end - timedelta(days=FULL_DAILY_WINDOW_DAYS - 1))
+    return start, end
+
+
+def contract_chart_range_from_request(request, contract: Contract):
+    period, year, month, _, _, _ = chart_range_from_request(request)
+    today = timezone.localdate()
+    contract_start = contract_stat_start_date(contract)
+    start_month = contract_stat_start_month(contract)
+    current_month = current_month_start(today)
+
+    if period == "full":
+        start, end = contract_daily_window_for_period(contract, year, month)
+        prev_month = add_months(date(end.year, end.month, 1), -6)
+        next_month = add_months(date(end.year, end.month, 1), 6)
+        prev_target = max(prev_month, start_month)
+        next_target = min(next_month, current_month)
+        can_prev = start > contract_start
+        can_next = end < today
+        return {
+            "period": period,
+            "year": year,
+            "month": month,
+            "range_label": f"{start.strftime('%Y-%m-%d')} - {end.strftime('%Y-%m-%d')}",
+            "prev_params": period_month_params("full", prev_target),
+            "next_params": period_month_params("full", next_target),
+            "can_prev": can_prev,
+            "can_next": can_next,
+        }
+
+    if period == "all":
+        return {
+            "period": period,
+            "year": year,
+            "month": month,
+            "range_label": "当月统计",
+            "prev_params": "period=all",
+            "next_params": "period=all",
+            "can_prev": False,
+            "can_next": False,
+        }
+
+    if period == "year":
+        units = contract_yearly_units_until(contract, year)
+        current_year = today.year
+        can_prev = units[0] > contract_start.year
+        can_next = units[-1] < current_year
+        return {
+            "period": period,
+            "year": year,
+            "month": month,
+            "range_label": f"{units[0]} - {units[-1]} 年",
+            "prev_params": f"period=year&year={max(contract_start.year, year - 1)}&month={month}",
+            "next_params": f"period=year&year={min(current_year, year + 1)}&month={month}",
+            "can_prev": can_prev,
+            "can_next": can_next,
+        }
+
+    units = contract_monthly_units_window(contract, year, month)
+    prev_month = add_months(units[-1], -MONTHLY_WINDOW_MONTHS)
+    next_month = add_months(units[-1], MONTHLY_WINDOW_MONTHS)
+    prev_target = max(prev_month, start_month)
+    next_target = min(next_month, current_month)
+    can_prev = units[0] > start_month
+    can_next = units[-1] < current_month
+    return {
+        "period": period,
+        "year": year,
+        "month": month,
+        "range_label": f"{units[0].strftime('%Y-%m')} - {units[-1].strftime('%Y-%m')}",
+        "prev_params": period_month_params("month", prev_target),
+        "next_params": period_month_params("month", next_target),
+        "can_prev": can_prev,
+        "can_next": can_next,
+    }
 
 
 # 判断当前请求是否处于管理员模式。
@@ -1021,7 +1208,7 @@ def enrich_chart_rows(rows: list[dict], max_amount: Decimal) -> list[dict]:
 def chart_range_from_request(request):
     today = timezone.localdate()
     period = request.GET.get("period", "all")
-    if period not in ("all", "year", "month"):
+    if period not in ("full", "all", "year", "month"):
         period = "all"
     try:
         year = int(request.GET.get("year", today.year))
@@ -1033,19 +1220,32 @@ def chart_range_from_request(request):
         month = today.month
     month = min(max(month, 1), 12)
 
+    if period == "full":
+        start, end = daily_window_for_period(year, month)
+        prev_month = add_months(date(end.year, end.month, 1), -6)
+        next_month = add_months(date(end.year, end.month, 1), 6)
+        prev_params = period_month_params("full", max(prev_month, STAT_START_MONTH))
+        next_params = period_month_params("full", min(next_month, current_month_start(today)))
+        return period, year, month, prev_params, next_params, f"{start.strftime('%Y-%m-%d')} - {end.strftime('%Y-%m-%d')}"
+
     if period == "all":
         prev_params = "period=all"
         next_params = "period=all"
-        return period, year, month, prev_params, next_params, "全部"
+        return period, year, month, prev_params, next_params, "当月统计"
 
     if period == "year":
         prev_params = f"period=year&year={year - 1}&month={month}"
         next_params = f"period=year&year={year + 1}&month={month}"
-        return period, year, month, prev_params, next_params, f"{year - 11} - {year} 年"
+        return period, year, month, prev_params, next_params, f"{STAT_START_YEAR} - {max(year, STAT_START_YEAR)} 年"
 
     prev_params = f"period=month&year={year - 1}&month={month}"
     next_params = f"period=month&year={year + 1}&month={month}"
-    return period, year, month, prev_params, next_params, f"{year} 年"
+    month_units = monthly_units_window(year, month)
+    prev_month = add_months(month_units[-1], -MONTHLY_WINDOW_MONTHS)
+    next_month = add_months(month_units[-1], MONTHLY_WINDOW_MONTHS)
+    prev_params = period_month_params("month", max(prev_month, STAT_START_MONTH))
+    next_params = period_month_params("month", min(next_month, current_month_start(today)))
+    return period, year, month, prev_params, next_params, f"{month_units[0].strftime('%Y-%m')} - {month_units[-1].strftime('%Y-%m')}"
 
 
 # 按统计范围汇总开票/收票记录，生成趋势图行数据。
@@ -1053,9 +1253,28 @@ def chart_range_from_request(request):
 def build_chart_rows(period: str, year: int, month: int) -> list[dict]:
     invoice_queryset = InvoiceRecord.objects.filter(contract__is_deleted=False)
     payment_queryset = PaymentRecord.objects.filter(contract__is_deleted=False)
+    if period == "full":
+        today = timezone.localdate()
+        start, end = daily_window_for_period(year, month)
+        units = daily_units(start, end)
+        totals_by_day = {}
+        for record in invoice_queryset.filter(record_date__gte=start, record_date__lte=end):
+            add_income_expense(totals_by_day.setdefault(record.record_date, {}), record)
+        for record in payment_queryset.filter(record_date__gte=start, record_date__lte=end):
+            add_income_expense(totals_by_day.setdefault(record.record_date, {}), record)
+        return [
+            {
+                "label": unit.strftime("%Y-%m-%d"),
+                "income": totals_by_day.get(unit, {}).get("income", Decimal("0")),
+                "expense": totals_by_day.get(unit, {}).get("expense", Decimal("0")),
+            }
+            for unit in units
+        ]
+
     if period == "all":
         today = timezone.localdate()
-        units = [today - timedelta(days=offset) for offset in range(11, -1, -1)]
+        start = current_month_start(today)
+        units = daily_units(start, today)
         totals_by_day = {}
         for record in invoice_queryset.filter(record_date__gte=units[0], record_date__lte=today):
             add_income_expense(totals_by_day.setdefault(record.record_date, {}), record)
@@ -1071,15 +1290,14 @@ def build_chart_rows(period: str, year: int, month: int) -> list[dict]:
         ]
 
     if period == "year":
-        start_year = year - 11
+        units = yearly_units_until(year)
         totals_by_unit = {}
-        for record in invoice_queryset.filter(record_date__year__gte=start_year, record_date__year__lte=year):
+        for record in invoice_queryset.filter(record_date__year__gte=STAT_START_YEAR, record_date__year__lte=units[-1]):
             unit = record.record_date.year
             add_income_expense(totals_by_unit.setdefault(unit, {}), record)
-        for record in payment_queryset.filter(record_date__year__gte=start_year, record_date__year__lte=year):
+        for record in payment_queryset.filter(record_date__year__gte=STAT_START_YEAR, record_date__year__lte=units[-1]):
             unit = record.record_date.year
             add_income_expense(totals_by_unit.setdefault(unit, {}), record)
-        units = list(range(start_year, year + 1))
         return [
             {
                 "label": f"{unit}年",
@@ -1090,16 +1308,19 @@ def build_chart_rows(period: str, year: int, month: int) -> list[dict]:
         ]
 
     totals_by_unit = {}
-    for record in invoice_queryset.filter(record_date__year=year):
-        unit = record.record_date.month
+    units = monthly_units_window(year, month)
+    start = units[0]
+    end_unit = units[-1]
+    end = date(end_unit.year, end_unit.month, calendar.monthrange(end_unit.year, end_unit.month)[1])
+    for record in invoice_queryset.filter(record_date__gte=start, record_date__lte=end):
+        unit = date(record.record_date.year, record.record_date.month, 1)
         add_income_expense(totals_by_unit.setdefault(unit, {}), record)
-    for record in payment_queryset.filter(record_date__year=year):
-        unit = record.record_date.month
+    for record in payment_queryset.filter(record_date__gte=start, record_date__lte=end):
+        unit = date(record.record_date.year, record.record_date.month, 1)
         add_income_expense(totals_by_unit.setdefault(unit, {}), record)
-    units = list(range(1, 13))
     return [
         {
-            "label": f"{unit:02d}月",
+            "label": unit.strftime("%Y-%m"),
             "income": totals_by_unit.get(unit, {}).get("income", Decimal("0")),
             "expense": totals_by_unit.get(unit, {}).get("expense", Decimal("0")),
         }
@@ -1109,22 +1330,23 @@ def build_chart_rows(period: str, year: int, month: int) -> list[dict]:
 
 # 按签订年份汇总合同金额，仅用于年度总览趋势图。
 def yearly_signed_contract_amounts(year: int) -> list[float]:
-    start_year = year - 11
-    totals_by_year = {unit: Decimal("0") for unit in range(start_year, year + 1)}
+    units = yearly_units_until(year)
+    totals_by_year = {unit: Decimal("0") for unit in units}
     for contract in Contract.objects.filter(is_deleted=False):
         signed_year = (contract.sign_date or contract.start_date or contract.created_at).year
-        if start_year <= signed_year <= year:
+        if STAT_START_YEAR <= signed_year <= units[-1]:
             totals_by_year[signed_year] += contract.amount
-    return [float(totals_by_year[unit]) for unit in range(start_year, year + 1)]
+    return [float(totals_by_year[unit]) for unit in units]
 
 
 def build_production_cumulative_rows(start_date=None, end_date=None) -> list[dict]:
     today = timezone.localdate()
-    start = start_date or today - timedelta(days=11)
+    start = start_date or current_month_start(today)
     end = end_date or today
     if end < start:
         start, end = end, start
     units = [start + timedelta(days=offset) for offset in range((end - start).days + 1)]
+    label_format = "%Y-%m-%d" if start.year != end.year else "%m-%d"
     contracts = Contract.objects.filter(
         is_deleted=False,
         amount__gt=0,
@@ -1140,7 +1362,7 @@ def build_production_cumulative_rows(start_date=None, end_date=None) -> list[dic
                 continue
             production_days = max((unit - contract.start_date).days, 0)
             total += (contract.amount / Decimal(contract_days)) * Decimal(production_days)
-        rows.append({"label": unit.strftime("%m-%d"), "amount": total})
+        rows.append({"label": unit.strftime(label_format), "amount": total})
     return rows
 
 
@@ -1161,37 +1383,56 @@ def scoped_querysets(period: str, year: int, month: int):
     contracts = Contract.objects.filter(is_deleted=False)
     invoice_records = InvoiceRecord.objects.filter(contract__is_deleted=False)
     payment_records = PaymentRecord.objects.filter(contract__is_deleted=False)
-    if period == "year":
-        start_year = year - 11
-        contracts = contracts.filter(created_at__year__gte=start_year, created_at__year__lte=year)
-        invoice_records = invoice_records.filter(record_date__year__gte=start_year, record_date__year__lte=year)
-        payment_records = payment_records.filter(record_date__year__gte=start_year, record_date__year__lte=year)
+    if period == "full":
+        contracts = contracts.filter(created_at__date__gte=STAT_START_DATE)
+        invoice_records = invoice_records.filter(record_date__gte=STAT_START_DATE)
+        payment_records = payment_records.filter(record_date__gte=STAT_START_DATE)
+    elif period == "all":
+        today = timezone.localdate()
+        start = current_month_start(today)
+        contracts = contracts.filter(created_at__date__gte=start, created_at__date__lte=today)
+        invoice_records = invoice_records.filter(record_date__gte=start, record_date__lte=today)
+        payment_records = payment_records.filter(record_date__gte=start, record_date__lte=today)
+    elif period == "year":
+        end_year = yearly_units_until(year)[-1]
+        contracts = contracts.filter(created_at__year__gte=STAT_START_YEAR, created_at__year__lte=end_year)
+        invoice_records = invoice_records.filter(record_date__year__gte=STAT_START_YEAR, record_date__year__lte=end_year)
+        payment_records = payment_records.filter(record_date__year__gte=STAT_START_YEAR, record_date__year__lte=end_year)
     elif period == "month":
-        contracts = contracts.filter(created_at__year=year)
-        invoice_records = invoice_records.filter(record_date__year=year)
-        payment_records = payment_records.filter(record_date__year=year)
+        units = monthly_units_window(year, month)
+        start = units[0]
+        end_unit = units[-1]
+        end = date(end_unit.year, end_unit.month, calendar.monthrange(end_unit.year, end_unit.month)[1])
+        contracts = contracts.filter(created_at__date__gte=start, created_at__date__lte=end)
+        invoice_records = invoice_records.filter(record_date__gte=start, record_date__lte=end)
+        payment_records = payment_records.filter(record_date__gte=start, record_date__lte=end)
     return contracts, invoice_records, payment_records
 
 
 def dashboard_export_units(period: str, year: int, start_date=None, end_date=None):
+    if period == "full":
+        today = timezone.localdate()
+        start = start_date or STAT_START_DATE
+        end = end_date or today
+        units = daily_units(start, end)
+        labels = [unit.strftime("%Y-%m-%d") for unit in units]
+        return units, labels, lambda record: record.record_date, lambda record: units[0] <= record.record_date <= units[-1]
     if period == "all":
         today = timezone.localdate()
-        start = start_date or today - timedelta(days=11)
+        start = start_date or current_month_start(today)
         end = end_date or today
-        if start > end:
-            start, end = end, start
-        day_count = (end - start).days + 1
-        units = [start + timedelta(days=offset) for offset in range(day_count)]
+        units = daily_units(start, end)
         labels = [unit.strftime("%Y-%m-%d") for unit in units]
-        return units, labels, lambda record: record.record_date, lambda record: start <= record.record_date <= end
+        return units, labels, lambda record: record.record_date, lambda record: units[0] <= record.record_date <= units[-1]
     if period == "year":
-        start_year = year - 11
-        units = list(range(start_year, year + 1))
+        units = yearly_units_until(year)
         labels = [f"{unit}年" for unit in units]
-        return units, labels, lambda record: record.record_date.year, lambda record: start_year <= record.record_date.year <= year
-    units = list(range(1, 13))
-    labels = [f"{unit:02d}月" for unit in units]
-    return units, labels, lambda record: record.record_date.month, lambda record: record.record_date.year == year
+        return units, labels, lambda record: record.record_date.year, lambda record: STAT_START_YEAR <= record.record_date.year <= units[-1]
+    units = monthly_units_until(year)
+    end_unit = units[-1]
+    end = date(end_unit.year, end_unit.month, calendar.monthrange(end_unit.year, end_unit.month)[1])
+    labels = [unit.strftime("%Y-%m") for unit in units]
+    return units, labels, lambda record: date(record.record_date.year, record.record_date.month, 1), lambda record: units[0] <= record.record_date <= end
 
 
 def dashboard_project_export_rows(period: str, year: int, start_date=None, end_date=None):
@@ -1262,8 +1503,33 @@ def dashboard_project_export_rows(period: str, year: int, start_date=None, end_d
     return headers, rows_by_sheet, merge_refs_by_sheet, numeric_columns
 
 
-def contract_stats_export_rows(contract: Contract, period: str, year: int, start_date=None, end_date=None):
-    units, labels, unit_for_record, record_in_scope = dashboard_export_units(period, year, start_date, end_date)
+def contract_stats_export_units(contract: Contract, period: str, year: int, month: int, start_date=None, end_date=None):
+    if period in {"full", "all"}:
+        today = timezone.localdate()
+        default_start, default_end = (
+            contract_daily_window_for_period(contract, year, month)
+            if period == "full"
+            else (max(current_month_start(today), contract_stat_start_date(contract)), today)
+        )
+        start = max(start_date or default_start, contract_stat_start_date(contract))
+        end = end_date or default_end
+        if end < start:
+            start, end = end, start
+        units = daily_units(start, end)
+        labels = [unit.strftime("%Y-%m-%d") for unit in units]
+        return units, labels, lambda record: record.record_date, lambda record: units[0] <= record.record_date <= units[-1]
+    if period == "year":
+        units = contract_yearly_units_until(contract, year)
+        labels = [f"{unit}年" for unit in units]
+        return units, labels, lambda record: record.record_date.year, lambda record: units[0] <= record.record_date.year <= units[-1]
+    units = contract_monthly_units_window(contract, year, month)
+    end = month_end(units[-1])
+    labels = [unit.strftime("%Y-%m") for unit in units]
+    return units, labels, lambda record: date(record.record_date.year, record.record_date.month, 1), lambda record: units[0] <= record.record_date <= end
+
+
+def contract_stats_export_rows(contract: Contract, period: str, year: int, month: int, start_date=None, end_date=None):
+    units, labels, unit_for_record, record_in_scope = contract_stats_export_units(contract, period, year, month, start_date, end_date)
     unit_index = {unit: index for index, unit in enumerate(units)}
     primary_totals = {
         "invoice": [Decimal("0") for _unit in units],
@@ -1308,7 +1574,7 @@ def dashboard_export(request):
     if chart_type not in {"ticket", "contract_amount", "production_cumulative"}:
         chart_type = "ticket"
     period = request.GET.get("period", "all")
-    if period not in ("all", "year", "month"):
+    if period not in ("full", "all", "year", "month"):
         period = "all"
     today = timezone.localdate()
     try:
@@ -1316,7 +1582,7 @@ def dashboard_export(request):
     except (TypeError, ValueError):
         year = today.year
     if chart_type == "contract_amount":
-        labels = [f"{unit}年" for unit in range(year - 11, year + 1)]
+        labels = [f"{unit}年" for unit in yearly_units_until(year)]
         rows = [[label, amount] for label, amount in zip(labels, yearly_signed_contract_amounts(year))]
         response = HttpResponse(
             build_project_stats_xlsx(
@@ -1331,9 +1597,11 @@ def dashboard_export(request):
         )
         response["Content-Disposition"] = 'attachment; filename="contract_amount_chart.xlsx"'
         return response
-    start_date = parse_form_date(request.GET.get("start_date")) if period == "all" else None
-    end_date = parse_form_date(request.GET.get("end_date")) if period == "all" else None
+    start_date = parse_form_date(request.GET.get("start_date")) if period in {"full", "all"} else None
+    end_date = parse_form_date(request.GET.get("end_date")) if period in {"full", "all"} else None
     if chart_type == "production_cumulative":
+        if period == "full" and start_date is None:
+            start_date = STAT_START_DATE
         rows = [[row["label"], row["amount"]] for row in build_production_cumulative_rows(start_date, end_date)]
         response = HttpResponse(
             build_project_stats_xlsx(
@@ -1384,15 +1652,20 @@ def dashboard_export(request):
 def contract_stats_export(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     period = request.GET.get("period", "all")
-    if period not in ("all", "year", "month"):
+    if period not in ("full", "all", "year", "month"):
         period = "all"
     today = timezone.localdate()
     try:
         year = int(request.GET.get("year", today.year))
     except (TypeError, ValueError):
         year = today.year
-    start_date = parse_form_date(request.GET.get("start_date")) if period == "all" else None
-    end_date = parse_form_date(request.GET.get("end_date")) if period == "all" else None
+    try:
+        month = int(request.GET.get("month", today.month))
+    except (TypeError, ValueError):
+        month = today.month
+    month = min(max(month, 1), 12)
+    start_date = parse_form_date(request.GET.get("start_date")) if period in {"full", "all"} else None
+    end_date = parse_form_date(request.GET.get("end_date")) if period in {"full", "all"} else None
     (
         invoice_sheet_name,
         invoice_headers,
@@ -1405,6 +1678,7 @@ def contract_stats_export(request, pk: int):
         contract,
         period,
         year,
+        month,
         start_date,
         end_date,
     )
@@ -1431,9 +1705,27 @@ def contract_stats_export(request, pk: int):
 def build_contract_chart_rows(contract: Contract, period: str, year: int, month: int) -> list[dict]:
     invoice_queryset = contract.invoicerecord_set.all()
     payment_queryset = contract.paymentrecord_set.all()
+    if period == "full":
+        start, end = contract_daily_window_for_period(contract, year, month)
+        units = daily_units(start, end)
+        totals_by_day = {}
+        for record in invoice_queryset.filter(record_date__gte=start, record_date__lte=end):
+            add_income_expense(totals_by_day.setdefault(record.record_date, {}), record)
+        for record in payment_queryset.filter(record_date__gte=start, record_date__lte=end):
+            add_income_expense(totals_by_day.setdefault(record.record_date, {}), record)
+        return [
+            {
+                "label": unit.strftime("%Y-%m-%d"),
+                "income": totals_by_day.get(unit, {}).get("income", Decimal("0")),
+                "expense": totals_by_day.get(unit, {}).get("expense", Decimal("0")),
+            }
+            for unit in units
+        ]
+
     if period == "all":
         today = timezone.localdate()
-        units = [today - timedelta(days=offset) for offset in range(11, -1, -1)]
+        start = max(current_month_start(today), contract_stat_start_date(contract))
+        units = daily_units(start, today)
         totals_by_day = {}
         for record in invoice_queryset.filter(record_date__gte=units[0], record_date__lte=today):
             add_income_expense(totals_by_day.setdefault(record.record_date, {}), record)
@@ -1449,11 +1741,11 @@ def build_contract_chart_rows(contract: Contract, period: str, year: int, month:
         ]
 
     if period == "year":
-        start_year = year - 11
+        units = contract_yearly_units_until(contract, year)
         totals_by_unit = {}
-        for record in invoice_queryset.filter(record_date__year__gte=start_year, record_date__year__lte=year):
+        for record in invoice_queryset.filter(record_date__year__gte=units[0], record_date__year__lte=units[-1]):
             add_income_expense(totals_by_unit.setdefault(record.record_date.year, {}), record)
-        for record in payment_queryset.filter(record_date__year__gte=start_year, record_date__year__lte=year):
+        for record in payment_queryset.filter(record_date__year__gte=units[0], record_date__year__lte=units[-1]):
             add_income_expense(totals_by_unit.setdefault(record.record_date.year, {}), record)
         return [
             {
@@ -1461,41 +1753,51 @@ def build_contract_chart_rows(contract: Contract, period: str, year: int, month:
                 "income": totals_by_unit.get(unit, {}).get("income", Decimal("0")),
                 "expense": totals_by_unit.get(unit, {}).get("expense", Decimal("0")),
             }
-            for unit in range(start_year, year + 1)
+            for unit in units
         ]
 
     totals_by_unit = {}
-    for record in invoice_queryset.filter(record_date__year=year):
-        add_income_expense(totals_by_unit.setdefault(record.record_date.month, {}), record)
-    for record in payment_queryset.filter(record_date__year=year):
-        add_income_expense(totals_by_unit.setdefault(record.record_date.month, {}), record)
+    units = contract_monthly_units_window(contract, year, month)
+    end_unit = units[-1]
+    end = date(end_unit.year, end_unit.month, calendar.monthrange(end_unit.year, end_unit.month)[1])
+    for record in invoice_queryset.filter(record_date__gte=units[0], record_date__lte=end):
+        add_income_expense(totals_by_unit.setdefault(date(record.record_date.year, record.record_date.month, 1), {}), record)
+    for record in payment_queryset.filter(record_date__gte=units[0], record_date__lte=end):
+        add_income_expense(totals_by_unit.setdefault(date(record.record_date.year, record.record_date.month, 1), {}), record)
     return [
         {
-            "label": f"{unit:02d}月",
+            "label": unit.strftime("%Y-%m"),
             "income": totals_by_unit.get(unit, {}).get("income", Decimal("0")),
             "expense": totals_by_unit.get(unit, {}).get("expense", Decimal("0")),
         }
-        for unit in range(1, 13)
+        for unit in units
     ]
 
 
 # 函数说明：封装可复用的业务处理。
 def build_contract_mode_chart_rows(contract: Contract, period: str, year: int, month: int) -> list[dict]:
     records = list(contract.invoicerecord_set.all()) + list(contract.paymentrecord_set.all())
-    if period == "all":
+    if period == "full":
+        start, end = contract_daily_window_for_period(contract, year, month)
+        units = daily_units(start, end)
+        unit_for_record = lambda record: record.record_date
+        filtered_records = [record for record in records if start <= record.record_date <= end]
+    elif period == "all":
         today = timezone.localdate()
-        units = [today - timedelta(days=offset) for offset in range(11, -1, -1)]
+        start = max(current_month_start(today), contract_stat_start_date(contract))
+        units = daily_units(start, today)
         unit_for_record = lambda record: record.record_date
         filtered_records = [record for record in records if units[0] <= record.record_date <= today]
     elif period == "year":
-        start_year = year - 11
-        units = list(range(start_year, year + 1))
+        units = contract_yearly_units_until(contract, year)
         unit_for_record = lambda record: record.record_date.year
-        filtered_records = [record for record in records if start_year <= record.record_date.year <= year]
+        filtered_records = [record for record in records if units[0] <= record.record_date.year <= units[-1]]
     else:
-        units = list(range(1, 13))
-        unit_for_record = lambda record: record.record_date.month
-        filtered_records = [record for record in records if record.record_date.year == year]
+        units = contract_monthly_units_window(contract, year, month)
+        end_unit = units[-1]
+        end = date(end_unit.year, end_unit.month, calendar.monthrange(end_unit.year, end_unit.month)[1])
+        unit_for_record = lambda record: date(record.record_date.year, record.record_date.month, 1)
+        filtered_records = [record for record in records if units[0] <= record.record_date <= end]
 
     totals_by_unit = {}
     for record in filtered_records:
@@ -1516,11 +1818,13 @@ def build_contract_mode_chart_rows(contract: Contract, period: str, year: int, m
 
     # 内部函数：按统计范围生成图表时间标签。
     def label_for_unit(unit):
+        if period == "full":
+            return unit.strftime("%Y-%m-%d")
         if period == "all":
             return unit.strftime("%m-%d")
         if period == "year":
             return f"{unit}年"
-        return f"{unit:02d}月"
+        return unit.strftime("%Y-%m")
 
     return [
         {
@@ -1538,20 +1842,27 @@ def build_contract_mode_chart_rows(contract: Contract, period: str, year: int, m
 # 函数说明：封装可复用的业务处理。
 def build_dashboard_mode_chart_rows(invoice_records, payment_records, period: str, year: int, month: int) -> list[dict]:
     records = list(invoice_records) + list(payment_records)
-    if period == "all":
+    if period == "full":
+        start, end = daily_window_for_period(year, month)
+        units = daily_units(start, end)
+        unit_for_record = lambda record: record.record_date
+        filtered_records = [record for record in records if start <= record.record_date <= end]
+    elif period == "all":
         today = timezone.localdate()
-        units = [today - timedelta(days=offset) for offset in range(11, -1, -1)]
+        start = current_month_start(today)
+        units = daily_units(start, today)
         unit_for_record = lambda record: record.record_date
         filtered_records = [record for record in records if units[0] <= record.record_date <= today]
     elif period == "year":
-        start_year = year - 11
-        units = list(range(start_year, year + 1))
+        units = yearly_units_until(year)
         unit_for_record = lambda record: record.record_date.year
-        filtered_records = [record for record in records if start_year <= record.record_date.year <= year]
+        filtered_records = [record for record in records if STAT_START_YEAR <= record.record_date.year <= units[-1]]
     else:
-        units = list(range(1, 13))
-        unit_for_record = lambda record: record.record_date.month
-        filtered_records = [record for record in records if record.record_date.year == year]
+        units = monthly_units_window(year, month)
+        end_unit = units[-1]
+        end = date(end_unit.year, end_unit.month, calendar.monthrange(end_unit.year, end_unit.month)[1])
+        unit_for_record = lambda record: date(record.record_date.year, record.record_date.month, 1)
+        filtered_records = [record for record in records if units[0] <= record.record_date <= end]
 
     totals_by_unit = {}
     for record in filtered_records:
@@ -1571,11 +1882,13 @@ def build_dashboard_mode_chart_rows(invoice_records, payment_records, period: st
 
     # 内部函数：按统计范围生成图表时间标签。
     def label_for_unit(unit):
+        if period == "full":
+            return unit.strftime("%Y-%m-%d")
         if period == "all":
             return unit.strftime("%m-%d")
         if period == "year":
             return f"{unit}年"
-        return f"{unit:02d}月"
+        return unit.strftime("%Y-%m")
 
     return [
         {
@@ -1592,18 +1905,34 @@ def build_dashboard_mode_chart_rows(invoice_records, payment_records, period: st
 # 视图函数：处理页面请求并返回响应。
 def contract_stats_data(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
-    period, year, month, _, _, range_label = chart_range_from_request(request)
+    range_state = contract_chart_range_from_request(request, contract)
+    period = range_state["period"]
+    year = range_state["year"]
+    month = range_state["month"]
+    range_label = range_state["range_label"]
     chart_rows = build_contract_chart_rows(contract, period, year, month)
     mode_chart_rows = build_contract_mode_chart_rows(contract, period, year, month)
     invoice_records = contract.invoicerecord_set.all()
     payment_records = contract.paymentrecord_set.all()
-    if period == "year":
-        start_year = year - 11
-        invoice_records = invoice_records.filter(record_date__year__gte=start_year, record_date__year__lte=year)
-        payment_records = payment_records.filter(record_date__year__gte=start_year, record_date__year__lte=year)
+    if period == "full":
+        start, end = contract_daily_window_for_period(contract, year, month)
+        invoice_records = invoice_records.filter(record_date__gte=start, record_date__lte=end)
+        payment_records = payment_records.filter(record_date__gte=start, record_date__lte=end)
+    elif period == "all":
+        today = timezone.localdate()
+        start = max(current_month_start(today), contract_stat_start_date(contract))
+        invoice_records = invoice_records.filter(record_date__gte=start, record_date__lte=today)
+        payment_records = payment_records.filter(record_date__gte=start, record_date__lte=today)
+    elif period == "year":
+        units = contract_yearly_units_until(contract, year)
+        invoice_records = invoice_records.filter(record_date__year__gte=units[0], record_date__year__lte=units[-1])
+        payment_records = payment_records.filter(record_date__year__gte=units[0], record_date__year__lte=units[-1])
     elif period == "month":
-        invoice_records = invoice_records.filter(record_date__year=year)
-        payment_records = payment_records.filter(record_date__year=year)
+        units = contract_monthly_units_window(contract, year, month)
+        end_unit = units[-1]
+        end = date(end_unit.year, end_unit.month, calendar.monthrange(end_unit.year, end_unit.month)[1])
+        invoice_records = invoice_records.filter(record_date__gte=units[0], record_date__lte=end)
+        payment_records = payment_records.filter(record_date__gte=units[0], record_date__lte=end)
     income_total, expense_total = income_expense_totals(invoice_records, payment_records)
     mode_totals = project_mode_totals(list(invoice_records) + list(payment_records))
     labels = project_mode_labels(contract)
@@ -1623,6 +1952,11 @@ def contract_stats_data(request, pk: int):
             "year": year,
             "month": month,
             "range_label": range_label,
+            "prev_params": range_state["prev_params"],
+            "next_params": range_state["next_params"],
+            "can_prev": range_state["can_prev"],
+            "can_next": range_state["can_next"],
+            "start_date": contract_stat_start_date(contract).strftime("%Y-%m-%d"),
             "labels": labels,
             "modes": {
                 "invoice": {
@@ -1992,12 +2326,12 @@ def dashboard(request):
         chart_period = "year"
         prev_range_params = f"chart_type=contract_amount&period=year&year={chart_year - 1}&month={chart_month}"
         next_range_params = f"chart_type=contract_amount&period=year&year={chart_year + 1}&month={chart_month}"
-        chart_range_label = f"{chart_year - 11} - {chart_year} 年"
+        chart_range_label = f"{STAT_START_YEAR} - {max(chart_year, STAT_START_YEAR)} 年"
     elif chart_type == "production_cumulative":
-        chart_period = "all"
-        prev_range_params = "chart_type=production_cumulative&period=all"
-        next_range_params = "chart_type=production_cumulative&period=all"
-        chart_range_label = "全部"
+        if chart_period not in {"full", "all"}:
+            chart_period = "all"
+        prev_range_params = f"chart_type=production_cumulative&{prev_range_params}"
+        next_range_params = f"chart_type=production_cumulative&{next_range_params}"
     else:
         prev_range_params = f"chart_type=ticket&{prev_range_params}"
         next_range_params = f"chart_type=ticket&{next_range_params}"
@@ -2018,11 +2352,15 @@ def dashboard(request):
         chart_month,
     )
     contract_amount_rows = yearly_signed_contract_amounts(chart_year)
-    production_cumulative_rows = build_production_cumulative_rows()
+    production_start_date = None
+    production_end_date = None
+    if chart_period == "full":
+        production_start_date, production_end_date = daily_window_for_period(chart_year, chart_month)
+    production_cumulative_rows = build_production_cumulative_rows(production_start_date, production_end_date)
     chart_data = {
         "labels": [row["label"] for row in mode_chart_rows],
         "chart_type": chart_type,
-        "contract_amount_labels": [f"{unit}年" for unit in range(chart_year - 11, chart_year + 1)],
+        "contract_amount_labels": [f"{unit}年" for unit in yearly_units_until(chart_year)],
         "contract_amounts": contract_amount_rows,
         "production_cumulative_labels": [row["label"] for row in production_cumulative_rows],
         "production_cumulative_amounts": [float(row["amount"]) for row in production_cumulative_rows],
@@ -2102,7 +2440,7 @@ def dashboard(request):
             "chart_month": chart_month,
             "chart_type": chart_type,
             "chart_range_label": chart_range_label,
-            "chart_export_start_date": timezone.localdate() - timedelta(days=11),
+            "chart_export_start_date": daily_window_for_period(chart_year, chart_month)[0] if chart_period == "full" else current_month_start(),
             "chart_export_end_date": timezone.localdate(),
             "prev_range_params": prev_range_params,
             "next_range_params": next_range_params,

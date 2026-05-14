@@ -20,8 +20,8 @@
             <th>甲方名称</th>
             <th>合同金额</th>
             <th>截止日期</th>
-            <th>状态</th>
             <th>归档时间</th>
+            <th>位置</th>
             <th>操作</th>
           </tr>
         </thead>
@@ -30,17 +30,33 @@
             <tr>
               <td>{{ forloop.counter }}</td>
               <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
-              <td>{{ contract.display_contract_number }}</td>
+              <td class="archive-contract-number">{{ contract.display_contract_number }}</td>
               <td class="party" title="{{ contract.party_name }}">{{ contract.party_name }}</td>
               <td>¥ {{ contract.amount|floatformat:2 }}</td>
               <td>{{ contract.end_date|date:"Y-m-d" }}</td>
-              <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
               <td>{{ contract.archived_at|date:"Y-m-d H:i" }}</td>
               <td>
-                {% if contract.status == "待归档" and not contract.uses_default_display_contract_number %}
-                  <form method="post" action="{% url 'contracts:contract_archive' contract.id %}">
+                <div class="inline-remark-editor inline-storage-editor">
+                  <span class="inline-remark-display" title="{{ contract.storage_location_number|default:'00' }}">{{ contract.storage_location_number|default:"00" }}</span>
+                  <div class="inline-remark-form inline-storage-form" data-action="{% url 'contracts:contract_storage_number_update' contract.id %}" hidden>
                     {% csrf_token %}
-                    <button class="button primary" type="submit">归档</button>
+                    <input class="inline-storage-input" name="storage_location_number" type="text" value="{{ contract.storage_location_number|default:'00' }}" maxlength="2" inputmode="numeric" pattern="\d{0,2}">
+                  </div>
+                </div>
+              </td>
+              <td>
+                {% if contract.status == "待归档" and not contract.uses_default_display_contract_number %}
+                  <form
+                    class="archive-form"
+                    method="post"
+                    action="{% url 'contracts:contract_archive' contract.id %}"
+                    data-contract-name="{{ contract.contract_name }}"
+                    data-contract-number="{{ contract.display_contract_number }}"
+                    data-storage-number="{{ contract.storage_location_number|default:'00' }}"
+                  >
+                    {% csrf_token %}
+                    <input type="hidden" name="storage_location_number" value="{{ contract.storage_location_number|default:'00' }}">
+                    <button class="button primary archive-open-button" type="button">归档</button>
                   </form>
                 {% elif contract.status == "待归档" %}
                   <span class="button muted">缺少文件编号</span>
@@ -58,4 +74,187 @@
       </table>
     </div>
   </div>
+
+  <div class="modal-backdrop" id="archiveStorageModal" hidden>
+    <div class="modal-card archive-storage-modal-card" role="dialog" aria-modal="true" aria-label="确认归档">
+      <div class="modal-body">
+        <label class="field-label" for="archiveStorageInput">存储编号</label>
+        <input class="form-control archive-storage-input" id="archiveStorageInput" type="text" maxlength="2" inputmode="numeric" pattern="\d{2}" value="00">
+      </div>
+      <div class="modal-actions">
+        <button class="button" type="button" id="archiveStorageCancel">取消</button>
+        <button class="button primary" type="button" id="archiveStorageConfirm">确认归档</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const archiveModal = document.querySelector("#archiveStorageModal");
+    const archiveInput = document.querySelector("#archiveStorageInput");
+    const archiveCancelButton = document.querySelector("#archiveStorageCancel");
+    const archiveConfirmButton = document.querySelector("#archiveStorageConfirm");
+    let activeArchiveForm = null;
+
+    function normalizeArchiveStorageNumber(value) {
+      const digits = (value || "").replace(/\D/g, "").slice(0, 2);
+      return (digits || "00").padStart(2, "0");
+    }
+
+    document.querySelectorAll(".archive-open-button").forEach((button) => {
+      button.addEventListener("click", () => {
+        activeArchiveForm = button.closest(".archive-form");
+        if (!activeArchiveForm) {
+          return;
+        }
+        archiveInput.value = normalizeArchiveStorageNumber(activeArchiveForm.dataset.storageNumber);
+        archiveModal.hidden = false;
+        archiveInput.focus();
+        archiveInput.select();
+      });
+    });
+
+    archiveInput.addEventListener("input", () => {
+      archiveInput.value = archiveInput.value.replace(/\D/g, "").slice(0, 2);
+    });
+
+    archiveInput.addEventListener("blur", () => {
+      archiveInput.value = normalizeArchiveStorageNumber(archiveInput.value);
+    });
+
+    archiveCancelButton.addEventListener("click", () => {
+      archiveModal.hidden = true;
+      activeArchiveForm = null;
+    });
+
+    archiveModal.addEventListener("click", (event) => {
+      if (event.target === archiveModal) {
+        archiveCancelButton.click();
+      }
+    });
+
+    archiveConfirmButton.addEventListener("click", () => {
+      if (!activeArchiveForm) {
+        return;
+      }
+      const storageNumber = normalizeArchiveStorageNumber(archiveInput.value);
+      archiveInput.value = storageNumber;
+      activeArchiveForm.querySelector('[name="storage_location_number"]').value = storageNumber;
+      activeArchiveForm.submit();
+    });
+
+    function closeStorageEditor(editor) {
+      editor.classList.remove("editing");
+      const display = editor.querySelector(".inline-remark-display");
+      const panel = editor.querySelector(".inline-storage-form");
+      if (display) {
+        display.hidden = false;
+      }
+      if (panel) {
+        panel.hidden = true;
+      }
+    }
+
+    function openStorageEditor(editor) {
+      document.querySelectorAll(".inline-storage-editor.editing").forEach((item) => {
+        if (item !== editor) {
+          closeStorageEditor(item);
+        }
+      });
+      editor.classList.add("editing");
+      const display = editor.querySelector(".inline-remark-display");
+      const panel = editor.querySelector(".inline-storage-form");
+      const input = editor.querySelector(".inline-storage-input");
+      if (display) {
+        display.hidden = true;
+      }
+      if (panel) {
+        panel.hidden = false;
+      }
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }
+
+    async function saveStorageEditor(editor) {
+      const display = editor.querySelector(".inline-remark-display");
+      const panel = editor.querySelector(".inline-storage-form");
+      const input = editor.querySelector(".inline-storage-input");
+      if (!display || !panel || !input || !panel.dataset.action) {
+        closeStorageEditor(editor);
+        return;
+      }
+
+      const storageNumber = normalizeArchiveStorageNumber(input.value);
+      input.value = storageNumber;
+      const formData = new FormData();
+      formData.append("storage_location_number", storageNumber);
+
+      const response = await fetch(panel.dataset.action, {
+        method: "POST",
+        body: formData,
+        headers: {
+          "X-CSRFToken": panel.querySelector("input[name='csrfmiddlewaretoken']")?.value || "",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+
+      if (!response.ok) {
+        closeStorageEditor(editor);
+        return;
+      }
+
+      const data = await response.json();
+      const savedNumber = data.storage_location_number || storageNumber;
+      const row = editor.closest("tr");
+      display.textContent = savedNumber;
+      display.title = savedNumber;
+      input.value = savedNumber;
+      row?.querySelector(".archive-contract-number")?.replaceChildren(document.createTextNode(data.display_contract_number || ""));
+      const archiveForm = row?.querySelector(".archive-form");
+      if (archiveForm) {
+        archiveForm.dataset.contractNumber = data.display_contract_number || archiveForm.dataset.contractNumber || "";
+        archiveForm.dataset.storageNumber = savedNumber;
+        const hiddenInput = archiveForm.querySelector('[name="storage_location_number"]');
+        if (hiddenInput) {
+          hiddenInput.value = savedNumber;
+        }
+      }
+      closeStorageEditor(editor);
+    }
+
+    document.querySelectorAll(".inline-storage-editor").forEach((editor) => {
+      const display = editor.querySelector(".inline-remark-display");
+      const input = editor.querySelector(".inline-storage-input");
+      if (!display || !input) {
+        return;
+      }
+      closeStorageEditor(editor);
+      display.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openStorageEditor(editor);
+      });
+      input.addEventListener("input", () => {
+        input.value = input.value.replace(/\D/g, "").slice(0, 2);
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          saveStorageEditor(editor);
+        } else if (event.key === "Escape") {
+          closeStorageEditor(editor);
+        }
+      });
+      input.addEventListener("blur", () => {
+        setTimeout(() => {
+          if (!editor.contains(document.activeElement)) {
+            saveStorageEditor(editor);
+          }
+        }, 0);
+      });
+      editor.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+    });
+  </script>
 {% endblock %}

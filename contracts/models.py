@@ -23,6 +23,10 @@ def normalize_contract_number_part(value, width: int) -> str:
     return digits[-width:].zfill(width)
 
 
+def normalize_storage_location_number(value) -> str:
+    return normalize_contract_number_part(value, 2) or "00"
+
+
 # 清理项目文件夹名称，避免 Windows 和 URL 路径中的非法字符。
 # 函数说明：封装可复用的业务处理。
 def safe_project_folder_name(contract: "Contract") -> str:
@@ -109,6 +113,7 @@ class Contract(models.Model):
     contract_number = models.CharField("合同编号", max_length=50, unique=True)
     original_contract_folder = models.CharField("原合同文件夹", max_length=100, blank=True)
     original_contract_inner_number = models.CharField("文件编号", max_length=100, blank=True)
+    storage_location_number = models.CharField("存储编号", max_length=100, default="00", blank=True)
     contract_type = models.CharField("合同类型", max_length=20, choices=CONTRACT_TYPES, default="维保")
     party_name = models.CharField("甲方名称", max_length=200)
     amount = models.DecimalField("金额", max_digits=14, decimal_places=2, default=0)
@@ -149,7 +154,8 @@ class Contract(models.Model):
         folder = normalize_contract_number_part(self.original_contract_folder, 2)
         inner_number = normalize_contract_number_part(self.original_contract_inner_number, 4)
         type_code = self.CONTRACT_TYPE_CODES.get(self.contract_type, "06")
-        return f"{year}{folder}{inner_number}{type_code}"
+        storage_location = normalize_storage_location_number(self.storage_location_number)
+        return f"{year[-2:]}{folder}{inner_number}{type_code}{storage_location}"
 
     # 函数说明：封装可复用的业务处理。
     @property
@@ -355,6 +361,7 @@ class MaintenanceRecord(models.Model):
     contract = models.ForeignKey(Contract, on_delete=models.CASCADE, verbose_name="所属合同")
     record_date = models.DateField("日期")
     month = models.CharField("月份", max_length=30)
+    storage_location_number = models.CharField("存储编号", max_length=100, default="00", blank=True)
     file = models.FileField("附件", upload_to=project_file_upload_path, null=True, blank=True)
     remark = models.CharField("备注", max_length=255, blank=True)
     created_at = models.DateTimeField("创建时间", default=timezone.now)

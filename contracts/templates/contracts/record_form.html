@@ -24,7 +24,7 @@
           <thead>
             <tr>
               <th>{{ labels.date }}</th>
-              {% if month_field %}<th>记录编号</th>{% endif %}
+              {% if month_field %}<th>记录编号</th><th>存储编号</th>{% endif %}
               {% if record_type_options %}<th>类型</th>{% endif %}
               {% if not month_field %}<th>{{ amount_label|default:labels.contract_amount }}</th>{% endif %}
               {% if actual_amount_field %}<th>{{ labels.actual_amount }}</th>{% endif %}
@@ -38,7 +38,10 @@
                 <input class="record-date-input" name="record_date" type="date" value="{{ today|date:'Y-m-d' }}" required>
                 {% if month_field %}<input class="record-month-input" name="month" type="hidden" value="{{ current_month }}">{% endif %}
               </td>
-              {% if month_field %}<td><output class="record-number-output"></output></td>{% endif %}
+              {% if month_field %}
+                <td><output class="record-number-output"></output></td>
+                <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="00" maxlength="2" inputmode="numeric" pattern="\d{0,2}"></td>
+              {% endif %}
               {% if record_type_options %}
                 <td>
                   <select name="record_type" required>
@@ -90,13 +93,19 @@
       return dateValue && dateValue.length >= 7 ? dateValue.slice(0, 7) : "";
     }
 
-    function recordNumberFromDateValue(dateValue) {
+    function normalizeStorageLocation(value) {
+      const digits = (value || "").replace(/\D/g, "").slice(0, 2);
+      return (digits || "00").padStart(2, "0");
+    }
+
+    function recordNumberFromDateValue(dateValue, storageLocationValue) {
       const recordYear = Number((dateValue || "").slice(0, 4));
       if (!recordYear || !recordSignYear) {
         return "";
       }
       const periodSequence = String(recordYear - recordSignYear + 1).padStart(2, "0");
-      return `${recordFileNumber}${recordYear}${periodSequence}${recordTypeCode}`;
+      const shortRecordYear = String(recordYear).slice(-2);
+      return `${recordFileNumber}${shortRecordYear}${periodSequence}${recordTypeCode}${normalizeStorageLocation(storageLocationValue)}`;
     }
 
     function syncMaintenanceRow(row) {
@@ -106,22 +115,34 @@
       const dateInput = row.querySelector(".record-date-input");
       const monthInput = row.querySelector(".record-month-input");
       const numberOutput = row.querySelector(".record-number-output");
+      const storageLocationInput = row.querySelector(".storage-location-number-input");
       const dateValue = dateInput?.value || "";
+      if (storageLocationInput) {
+        storageLocationInput.value = storageLocationInput.value.replace(/\D/g, "").slice(0, 2);
+      }
       if (monthInput) {
         monthInput.value = monthFromDateValue(dateValue);
       }
       if (numberOutput) {
-        const recordNumber = recordNumberFromDateValue(dateValue);
+        const recordNumber = recordNumberFromDateValue(dateValue, storageLocationInput?.value || "00");
         numberOutput.value = recordNumber;
         numberOutput.textContent = recordNumber;
       }
     }
 
     recordTableBody.addEventListener("input", (event) => {
-      if (event.target.matches(".record-date-input")) {
+      if (event.target.matches(".record-date-input") || event.target.matches(".storage-location-number-input")) {
         syncMaintenanceRow(event.target.closest("tr"));
       }
     });
+
+    recordTableBody.addEventListener("blur", (event) => {
+      if (!event.target.matches(".storage-location-number-input")) {
+        return;
+      }
+      event.target.value = normalizeStorageLocation(event.target.value);
+      syncMaintenanceRow(event.target.closest("tr"));
+    }, true);
 
     recordTableBody.querySelectorAll("tr").forEach(syncMaintenanceRow);
 
@@ -134,7 +155,10 @@
           <input class="record-date-input" name="record_date" type="date" value="{{ today|date:'Y-m-d' }}" required>
           {% if month_field %}<input class="record-month-input" name="month" type="hidden" value="{{ current_month }}">{% endif %}
         </td>
-        {% if month_field %}<td><output class="record-number-output"></output></td>{% endif %}
+        {% if month_field %}
+          <td><output class="record-number-output"></output></td>
+          <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="00" maxlength="2" inputmode="numeric" pattern="\\d{0,2}"></td>
+        {% endif %}
         {% if record_type_options %}
           <td>
             <select name="record_type" required>

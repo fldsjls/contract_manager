@@ -584,6 +584,10 @@
     .contract-table .default-contract-number {
       color: #dc2626;
     }
+    .file-missing {
+      color: #dc2626;
+      font-weight: 700;
+    }
     .display-contract-number {
       display: inline-block;
       margin-left: 18px;
@@ -632,9 +636,9 @@
     .archive-table th:nth-child(6),
     .archive-table td:nth-child(6) { width: 11%; }
     .archive-table th:nth-child(7),
-    .archive-table td:nth-child(7) { width: 7%; }
+    .archive-table td:nth-child(7) { width: 14%; }
     .archive-table th:nth-child(8),
-    .archive-table td:nth-child(8) { width: 14%; }
+    .archive-table td:nth-child(8) { width: 7%; }
     .archive-table th:nth-child(9),
     .archive-table td:nth-child(9) { width: 11%; }
     .archive-table td:nth-child(2),
@@ -648,6 +652,48 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .archive-storage-modal-card .modal-body {
+      display: grid;
+      gap: 8px;
+      justify-items: center;
+      white-space: normal;
+    }
+    .archive-storage-modal-card {
+      width: min(260px, calc(100vw - 48px));
+    }
+    .archive-storage-modal-card .modal-body {
+      padding: 18px 16px 12px;
+    }
+    .archive-storage-modal-card .field-label {
+      margin-bottom: 0;
+      text-align: center;
+    }
+    .archive-storage-modal-card .modal-actions {
+      justify-content: center;
+      padding: 0 16px 14px;
+    }
+    .archive-storage-input {
+      width: 64px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .inline-storage-editor {
+      width: 64px;
+      margin: 0 auto;
+    }
+    .inline-storage-editor .inline-remark-display {
+      min-height: 30px;
+      padding: 5px 6px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .inline-storage-input {
+      width: 64px;
+      height: 30px;
+      padding: 5px 6px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
     }
     .operation-log-table th,
     .operation-log-table td {
@@ -780,21 +826,29 @@
     }
     .contract-number-row input {
       width: 100%;
+      min-width: 0;
+      flex: none;
+      box-sizing: border-box;
     }
     .contract-number-row {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 120px 120px;
+      grid-template-columns: minmax(154px, 1fr) 92px 92px 54px;
       width: 100%;
+      max-width: 100%;
     }
     .contract-number-row #id_contract_number {
       color: #667085;
       background: #f3f6fa;
       cursor: not-allowed;
+      font-variant-numeric: tabular-nums;
     }
     .contract-number-row #id_original_contract_folder {
       text-align: center;
     }
     .contract-number-row #id_original_contract_inner_number {
+      text-align: center;
+    }
+    .contract-number-row #id_storage_location_number {
       text-align: center;
     }
     .icon-button {
@@ -1194,9 +1248,16 @@
     .maintenance-record-table th:nth-child(2),
     .maintenance-record-table td:nth-child(2) { width: 18%; }
     .maintenance-record-table th:nth-child(3),
-    .maintenance-record-table td:nth-child(3) { width: 36%; }
+    .maintenance-record-table td:nth-child(3) { width: 8%; }
     .maintenance-record-table th:nth-child(4),
-    .maintenance-record-table td:nth-child(4) { width: 28%; }
+    .maintenance-record-table td:nth-child(4) { width: 34%; }
+    .maintenance-record-table th:nth-child(5),
+    .maintenance-record-table td:nth-child(5) { width: 22%; }
+    .maintenance-record-table .storage-location-number-input {
+      max-width: 64px;
+      margin: 0 auto;
+      text-align: center;
+    }
     .record-number-output {
       display: block;
       width: 100%;

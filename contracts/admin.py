@@ -56,6 +56,7 @@ class ContractAdmin(VersionAdmin):
         "contract_number",
         "original_contract_folder",
         "original_contract_inner_number",
+        "storage_location_number",
         "party_name",
     )
     # 后台右侧筛选项。

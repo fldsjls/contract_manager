@@ -163,7 +163,7 @@
                 <td>{{ contract.end_date|date:"Y-m-d" }}</td>
                 <td>{{ contract.responsible_person|default:"" }}</td>
                 <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
-                <td>{% if contract.file_is_uploaded %}已上传{% else %}未上传{% endif %}</td>
+                <td>{% if contract.file_is_uploaded %}已上传{% else %}<span class="file-missing">未上传</span>{% endif %}</td>
               </tr>
             {% endfor %}
           </tbody>

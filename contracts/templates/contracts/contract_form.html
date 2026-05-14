@@ -19,7 +19,7 @@
     <!-- 合同基础字段由 Django 表单自动渲染。 -->
     <div class="form-grid">
       {% for field in form %}
-        {% if field.name == "original_contract_folder" or field.name == "original_contract_inner_number" or field.name == "archive_years" %}
+        {% if field.name == "original_contract_folder" or field.name == "original_contract_inner_number" or field.name == "storage_location_number" or field.name == "archive_years" %}
         {% else %}
         <div class="form-row {% if field.name == 'remark' %}full{% endif %}">
           {% if field.name == "responsible_person" %}
@@ -41,9 +41,11 @@
               {{ field }}
               {{ form.original_contract_folder }}
               {{ form.original_contract_inner_number }}
+              {{ form.storage_location_number }}
             </div>
             {{ form.original_contract_folder.errors }}
             {{ form.original_contract_inner_number.errors }}
+            {{ form.storage_location_number.errors }}
           {% elif field.name == "start_date" %}
             <div class="field-control-row">
               {{ field }}
@@ -126,6 +128,7 @@
     const contractNumberInput = document.querySelector("#id_contract_number");
     const contractFolderInput = document.querySelector("#id_original_contract_folder");
     const contractInnerNumberInput = document.querySelector("#id_original_contract_inner_number");
+    const storageLocationNumberInput = document.querySelector("#id_storage_location_number");
     const responsiblePersonInput = document.querySelector("#id_responsible_person");
     const copySignDateButton = document.querySelector("#copySignDate");
     const defaultContractNumber = "{{ default_contract_number }}";
@@ -227,7 +230,7 @@
       }, { passive: false });
     }
 
-    if (contractFolderInput && contractInnerNumberInput) {
+    if (contractFolderInput && contractInnerNumberInput && storageLocationNumberInput) {
       const keepDigits = (input, maxLength) => {
         input.value = input.value.replace(/\D/g, "").slice(0, maxLength);
       };
@@ -247,8 +250,15 @@
       contractInnerNumberInput.addEventListener("input", () => {
         keepDigits(contractInnerNumberInput, 4);
       });
+      storageLocationNumberInput.addEventListener("input", () => {
+        keepDigits(storageLocationNumberInput, 2);
+      });
       contractFolderInput.addEventListener("blur", () => padDigits(contractFolderInput, 2));
       contractInnerNumberInput.addEventListener("blur", () => padDigits(contractInnerNumberInput, 4));
+      storageLocationNumberInput.addEventListener("blur", () => {
+        keepDigits(storageLocationNumberInput, 2);
+        storageLocationNumberInput.value = (storageLocationNumberInput.value || "00").padStart(2, "0");
+      });
       contractFolderInput.addEventListener("paste", () => {
         requestAnimationFrame(() => {
           keepDigits(contractFolderInput, 2);
@@ -260,8 +270,15 @@
       contractInnerNumberInput.addEventListener("paste", () => {
         requestAnimationFrame(() => keepDigits(contractInnerNumberInput, 4));
       });
+      storageLocationNumberInput.addEventListener("paste", () => {
+        requestAnimationFrame(() => keepDigits(storageLocationNumberInput, 2));
+      });
       padDigits(contractFolderInput, 2);
       padDigits(contractInnerNumberInput, 4);
+      if (!storageLocationNumberInput.value) {
+        storageLocationNumberInput.value = "00";
+      }
+      storageLocationNumberInput.value = storageLocationNumberInput.value.replace(/\D/g, "").slice(0, 2).padStart(2, "0");
     }
 
     if (copySignDateButton && signDateInput && startDateInput) {

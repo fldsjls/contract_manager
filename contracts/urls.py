@@ -22,6 +22,7 @@ urlpatterns = [
     path("trash/<int:pk>/restore/", views.contract_restore, name="contract_restore"),
     path("archive/", views.archive_list, name="archive_list"),
     path("archive/<int:pk>/archive/", views.contract_archive, name="contract_archive"),
+    path("archive/<int:pk>/storage-number/", views.contract_storage_number_update, name="contract_storage_number_update"),
     path("contracts/", views.contract_list, name="contract_list"),
     path("contracts/export/", views.contract_list_export, name="contract_list_export"),
     path("contracts/import/", views.contract_import, name="contract_import"),

@@ -1,7 +1,14 @@
 from django import forms
 from django.utils import timezone
 
-from .models import AppSetting, Contract, InvoiceRecord, PaymentRecord, normalize_contract_number_part
+from .models import (
+    AppSetting,
+    Contract,
+    InvoiceRecord,
+    PaymentRecord,
+    normalize_contract_number_part,
+    normalize_storage_location_number,
+)
 
 
 # 合同新增和编辑使用的表单。
@@ -16,6 +23,7 @@ class ContractForm(forms.ModelForm):
             "contract_number",
             "original_contract_folder",
             "original_contract_inner_number",
+            "storage_location_number",
             "contract_type",
             "party_name",
             "amount",
@@ -46,6 +54,7 @@ class ContractForm(forms.ModelForm):
             field.widget.attrs.setdefault("class", "form-control")
         self.fields["original_contract_folder"].label = "文件夹编号"
         self.fields["original_contract_inner_number"].label = "文件编号"
+        self.fields["storage_location_number"].label = "存储编号"
         self.fields["archive_years"].label = "归档时间（年）"
         self.fields["contract_number"].widget.attrs.update(
             {
@@ -56,6 +65,7 @@ class ContractForm(forms.ModelForm):
         )
         self.fields["original_contract_folder"].widget.attrs.setdefault("placeholder", "文件夹编号")
         self.fields["original_contract_inner_number"].widget.attrs.setdefault("placeholder", "文件编号")
+        self.fields["storage_location_number"].widget.attrs.setdefault("placeholder", "存储编号")
         self.fields["original_contract_folder"].widget.attrs.update(
             {
                 "maxlength": "2",
@@ -68,6 +78,13 @@ class ContractForm(forms.ModelForm):
                 "maxlength": "4",
                 "inputmode": "numeric",
                 "pattern": r"\d{0,4}",
+            }
+        )
+        self.fields["storage_location_number"].widget.attrs.update(
+            {
+                "maxlength": "2",
+                "inputmode": "numeric",
+                "pattern": r"\d{0,2}",
             }
         )
 
@@ -94,6 +111,9 @@ class ContractForm(forms.ModelForm):
     def clean_original_contract_inner_number(self):
         return normalize_contract_number_part(self.cleaned_data.get("original_contract_inner_number"), 4)
 
+    def clean_storage_location_number(self):
+        return normalize_storage_location_number(self.cleaned_data.get("storage_location_number"))
+
     # 方法说明：执行表单字段或整表校验。
     def clean(self):
         # 校验维保合同必须填写截止日期。
@@ -105,13 +125,15 @@ class ContractForm(forms.ModelForm):
 
         folder = normalize_contract_number_part(cleaned_data.get("original_contract_folder"), 2)
         file_number = normalize_contract_number_part(cleaned_data.get("original_contract_inner_number"), 4)
+        storage_location = normalize_storage_location_number(cleaned_data.get("storage_location_number"))
         if folder and file_number:
             base_date = cleaned_data.get("sign_date") or cleaned_data.get("start_date") or timezone.localdate()
             display_contract_number = (
-                f"{base_date.year}"
+                f"{str(base_date.year)[-2:]}"
                 f"{folder}"
                 f"{file_number}"
                 f"{Contract.CONTRACT_TYPE_CODES.get(contract_type, '06')}"
+                f"{storage_location}"
             )
             candidates = Contract.objects.filter(
                 original_contract_folder__gt="",

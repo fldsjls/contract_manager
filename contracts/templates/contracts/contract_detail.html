@@ -130,7 +130,7 @@
                       <tr>
                         <td>{{ record.record_date|date:"Y-m-d" }}</td>
                         <td>¥ {{ record.amount|floatformat:2 }}</td>
-                        <td>¥ {{ record.actual_amount|default:record.amount|floatformat:2 }}</td>
+                        <td>¥ {{ record.actual_amount|default_if_none:0|floatformat:2 }}</td>
                         <td class="remark">
                           {% if can_manage %}
                             <div class="inline-remark-editor">
@@ -199,7 +199,7 @@
                       <tr>
                         <td>{{ record.record_date|date:"Y-m-d" }}</td>
                         <td>¥ {{ record.amount|floatformat:2 }}</td>
-                        <td>¥ {{ record.actual_amount|default:record.amount|floatformat:2 }}</td>
+                        <td>¥ {{ record.actual_amount|default_if_none:0|floatformat:2 }}</td>
                         <td class="remark">
                           {% if can_manage %}
                             <div class="inline-remark-editor">

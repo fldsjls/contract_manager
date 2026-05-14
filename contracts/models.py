@@ -224,10 +224,10 @@ class Contract(models.Model):
         total = Decimal("0")
         for record in self.invoicerecord_set.all():
             if record.record_type not in {"收票", "收据"}:
-                total += record.actual_amount if record.actual_amount is not None else record.amount
+                total += record.actual_amount if record.actual_amount is not None else Decimal("0")
         for record in self.paymentrecord_set.all():
             if record.record_type in {"开票", "开据"}:
-                total += record.actual_amount if record.actual_amount is not None else record.amount
+                total += record.actual_amount if record.actual_amount is not None else Decimal("0")
         return total
 
     # 函数说明：封装可复用的业务处理。
@@ -237,10 +237,10 @@ class Contract(models.Model):
         total = Decimal("0")
         for record in self.invoicerecord_set.all():
             if record.record_type in {"收票", "收据"}:
-                total += record.actual_amount if record.actual_amount is not None else record.amount
+                total += record.actual_amount if record.actual_amount is not None else Decimal("0")
         for record in self.paymentrecord_set.all():
             if record.record_type not in {"开票", "开据"}:
-                total += record.actual_amount if record.actual_amount is not None else record.amount
+                total += record.actual_amount if record.actual_amount is not None else Decimal("0")
         return total
 
     # 函数说明：封装可复用的业务处理。

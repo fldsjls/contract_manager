@@ -944,7 +944,7 @@ def save_records_from_request(request, contract: Contract, record_model) -> int:
             record_date=parsed_record_date,
             record_type=record_type,
             amount=amount,
-            actual_amount=actual_amount or None,
+            actual_amount=actual_amount if actual_amount not in {None, ""} else Decimal("0"),
             remark=remark,
         )
         attach_record_file_version(record, uploaded_file)
@@ -975,7 +975,7 @@ def save_typed_records_from_request(request, contract: Contract, record_model_by
             record_date=parsed_record_date,
             record_type=record_type,
             amount=amount,
-            actual_amount=actual_amount or None,
+            actual_amount=actual_amount if actual_amount not in {None, ""} else Decimal("0"),
             remark=remark,
         )
         attach_record_file_version(record, uploaded_file)
@@ -1005,8 +1005,8 @@ def income_expense_totals(invoice_records, payment_records) -> tuple[Decimal, De
 
 # 函数说明：封装可复用的业务处理。
 def record_amount_for_stats(record) -> Decimal:
-    # 实际金额优先用于统计；未填实际金额时回退到票面金额。
-    return record.actual_amount if record.actual_amount is not None else record.amount
+    # 实际/收付款金额单独统计；未填时按 0 计算，不自动等于票面金额。
+    return record.actual_amount if record.actual_amount is not None else Decimal("0")
 
 
 # 函数说明：封装可复用的业务处理。
@@ -3505,6 +3505,11 @@ def decimal_from_import(value):
         return None
 
 
+def decimal_from_import_or_zero(value):
+    amount = decimal_from_import(value)
+    return amount if amount is not None else Decimal("0")
+
+
 def date_from_import(value):
     text = normalize_import_value("record_date", value)
     if not text:
@@ -3623,7 +3628,8 @@ def validate_invoice_import_rows(parsed_rows):
         contract = contract_lookup.get(data.get("contract_key", ""))
         record_date = date_from_import(data.get("record_date"))
         amount = decimal_from_import(data.get("amount"))
-        actual_amount = decimal_from_import(data.get("actual_amount"))
+        actual_amount_text = normalize_import_cell(data.get("actual_amount"))
+        actual_amount = decimal_from_import(data.get("actual_amount")) if actual_amount_text else Decimal("0")
         if contract is None:
             errors.append("未找到对应合同。")
         elif contract.invoice_status == "开收据" and data.get("record_type") not in {"开据", "收据"}:
@@ -3634,10 +3640,10 @@ def validate_invoice_import_rows(parsed_rows):
             errors.append("日期格式不正确。")
         if amount is None:
             errors.append("票面金额不能为空且必须是数字。")
-        if actual_amount is None:
-            errors.append("实际金额不能为空且必须是数字。")
         if amount is not None and amount < 0:
             errors.append("票面金额不能小于 0。")
+        if actual_amount_text and actual_amount is None:
+            errors.append("实际金额必须是数字。")
         if actual_amount is not None and actual_amount < 0:
             errors.append("实际金额不能小于 0。")
         results.append(
@@ -3817,7 +3823,7 @@ def invoice_import_template(request):
             "合同编号": "填写已有合同编号或合同名称，用于匹配合同。",
             "日期": "必填。日期格式：YYYY-MM-DD。",
             amount_label: "必填。填写数字金额。",
-            actual_amount_label: "必填。填写数字金额。",
+            actual_amount_label: "可选。未填时按 0 计算。",
             "备注": "可选。填写票据备注。",
         }
         sheets.append(
@@ -3922,7 +3928,7 @@ def contract_import(request):
                         record_date=date_from_import(data["record_date"]),
                         record_type=data["record_type"],
                         amount=decimal_from_import(data["amount"]),
-                        actual_amount=decimal_from_import(data["actual_amount"]),
+                        actual_amount=decimal_from_import_or_zero(data.get("actual_amount")),
                         remark=data.get("remark", ""),
                     )
                     log_operation(request, "新增", contract, object_type="票据记录", detail=f"Excel import row: {row['row_number']}")

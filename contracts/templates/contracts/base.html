@@ -909,6 +909,10 @@
     .archive-table td:nth-child(4) {
       cursor: help;
     }
+    .archive-table .archive-business-number {
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
     .archive-table .button {
       max-width: 100%;
       padding: 7px 9px;
@@ -924,7 +928,7 @@
       white-space: normal;
     }
     .archive-storage-modal-card {
-      width: min(260px, calc(100vw - 48px));
+      width: min(320px, calc(100vw - 48px));
     }
     .archive-storage-modal-card .modal-body {
       padding: 18px 16px 12px;
@@ -942,8 +946,20 @@
       text-align: center;
       font-variant-numeric: tabular-nums;
     }
+    .archive-storage-inputs {
+      display: inline-grid;
+      grid-template-columns: 84px 64px;
+      gap: 10px;
+      align-items: end;
+      justify-content: center;
+    }
+    .archive-storage-input-group {
+      display: grid;
+      gap: 6px;
+      justify-items: center;
+    }
     .inline-storage-editor {
-      width: 64px;
+      width: 160px;
       margin: 0 auto;
     }
     .inline-storage-editor .inline-remark-display {
@@ -958,6 +974,12 @@
       padding: 5px 6px;
       text-align: center;
       font-variant-numeric: tabular-nums;
+    }
+    .inline-storage-form {
+      white-space: nowrap;
+    }
+    .inline-storage-folder-input {
+      width: 84px;
     }
     .operation-log-table th,
     .operation-log-table td {

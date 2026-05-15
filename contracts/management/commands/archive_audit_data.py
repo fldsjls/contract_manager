@@ -10,6 +10,7 @@ from reversion.models import Revision, Version
 from contracts.models import OperationLog
 
 
+# 将单条 reversion 版本转换为可长期保存的 JSON 数据。
 def version_snapshot(version) -> dict:
     revision = version.revision
     return {
@@ -24,15 +25,18 @@ def version_snapshot(version) -> dict:
     }
 
 
+# 导出超过保留期的操作日志和版本快照。
 class Command(BaseCommand):
     help = "Archive old operation logs and reversion snapshots."
 
+    # 定义归档目录、保留天数和是否删除线上记录等命令参数。
     def add_arguments(self, parser):
         parser.add_argument("--output-dir", default="", help="Archive output directory.")
         parser.add_argument("--log-retention-days", type=int, default=730)
         parser.add_argument("--snapshot-retention-days", type=int, default=365)
         parser.add_argument("--delete-online-records", action="store_true")
 
+    # 执行归档文件写入，并按参数决定是否清理线上旧数据。
     def handle(self, *args, **options):
         now = timezone.localtime()
         output_dir = Path(options["output_dir"] or settings.BASE_DIR / "archives" / "audit")

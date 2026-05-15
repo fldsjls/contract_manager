@@ -17,9 +17,11 @@ from .models import (
 )
 
 
+# 复用 reversion 历史页，同时隐藏默认恢复入口。
 class HistoryOnlyVersionAdmin(VersionAdmin):
     change_list_template = "admin/change_list.html"
 
+    # 只保留历史详情 URL，避免后台暴露不符合业务流程的恢复操作。
     def get_urls(self):
         urls = admin.ModelAdmin.get_urls(self)
         admin_site = self.admin_site
@@ -123,6 +125,7 @@ class MaintenanceRecordAdmin(HistoryOnlyVersionAdmin):
     list_filter = ("record_date",)
 
 
+# 后台类：查看开票记录附件的历史版本。
 @admin.register(InvoiceRecordFileVersion)
 class InvoiceRecordFileVersionAdmin(HistoryOnlyVersionAdmin):
     list_display = ("record", "original_name", "created_at")
@@ -130,6 +133,7 @@ class InvoiceRecordFileVersionAdmin(HistoryOnlyVersionAdmin):
     list_filter = ("created_at",)
 
 
+# 后台类：查看收票记录附件的历史版本。
 @admin.register(PaymentRecordFileVersion)
 class PaymentRecordFileVersionAdmin(HistoryOnlyVersionAdmin):
     list_display = ("record", "original_name", "created_at")
@@ -137,6 +141,7 @@ class PaymentRecordFileVersionAdmin(HistoryOnlyVersionAdmin):
     list_filter = ("created_at",)
 
 
+# 后台类：查看项目记录附件的历史版本。
 @admin.register(MaintenanceRecordFileVersion)
 class MaintenanceRecordFileVersionAdmin(HistoryOnlyVersionAdmin):
     list_display = ("record", "original_name", "created_at")
@@ -152,6 +157,7 @@ class AppSettingAdmin(HistoryOnlyVersionAdmin):
     list_display = ("allow_partial_import_with_errors", "image_root_path", "updated_at")
 
 
+# 后台类：查看系统操作日志，禁止人工新增或删除。
 @admin.register(OperationLog)
 class OperationLogAdmin(admin.ModelAdmin):
     list_display = (
@@ -183,8 +189,10 @@ class OperationLogAdmin(admin.ModelAdmin):
         "undone_at",
     )
 
+    # 操作日志只能由系统写入，后台不允许手工新增。
     def has_add_permission(self, request):
         return False
 
+    # 操作日志作为审计数据保留，后台不允许手工删除。
     def has_delete_permission(self, request, obj=None):
         return False

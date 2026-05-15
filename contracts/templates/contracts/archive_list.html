@@ -22,7 +22,7 @@
             <th>合同金额</th>
             <th>截止日期</th>
             <th>归档时间</th>
-            <th>位置</th>
+            <th>存档编号</th>
             <th>操作</th>
           </tr>
         </thead>
@@ -31,17 +31,18 @@
             <tr>
               <td>{{ forloop.counter }}</td>
               <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
-              <td class="archive-contract-number">{{ contract.display_contract_number|display_code }}</td>
+              <td class="archive-business-number">{{ contract.display_contract_number|display_code }}</td>
               <td class="party" title="{{ contract.party_name }}">{{ contract.party_name }}</td>
               <td>¥ {{ contract.amount|floatformat:2 }}</td>
               <td>{{ contract.end_date|date:"Y-m-d" }}</td>
               <td>{{ contract.archived_at|date:"Y-m-d H:i" }}</td>
               <td>
                 <div class="inline-remark-editor inline-storage-editor">
-                  <span class="inline-remark-display" title="{{ contract.storage_location_number|default:'00' }}">{{ contract.storage_location_number|default:"00" }}</span>
+                  <span class="inline-remark-display" title="{{ contract.archive_number_display|archive_code }}">{{ contract.archive_number_display|archive_code }}</span>
                   <div class="inline-remark-form inline-storage-form" data-action="{% url 'contracts:contract_storage_number_update' contract.id %}" hidden>
                     {% csrf_token %}
-                    <input class="inline-storage-input" name="storage_location_number" type="text" value="{{ contract.storage_location_number|default:'00' }}" maxlength="2" inputmode="numeric" pattern="\d{0,2}">
+                    <input class="inline-storage-input inline-storage-folder-input" name="original_contract_folder" type="text" value="{{ contract.original_contract_folder|default:'000' }}" maxlength="3" inputmode="numeric" pattern="\d{0,3}" aria-label="文件夹编号">
+                    <input class="inline-storage-input" name="storage_location_number" type="text" value="{{ contract.storage_location_number|default:'00' }}" maxlength="2" inputmode="numeric" pattern="\d{0,2}" aria-label="位置编号">
                   </div>
                 </div>
               </td>
@@ -53,9 +54,11 @@
                     action="{% url 'contracts:contract_archive' contract.id %}"
                     data-contract-name="{{ contract.contract_name }}"
                     data-contract-number="{{ contract.display_contract_number }}"
+                    data-folder-number="{{ contract.original_contract_folder|default:'000' }}"
                     data-storage-number="{{ contract.storage_location_number|default:'00' }}"
                   >
                     {% csrf_token %}
+                    <input type="hidden" name="original_contract_folder" value="{{ contract.original_contract_folder|default:'000' }}">
                     <input type="hidden" name="storage_location_number" value="{{ contract.storage_location_number|default:'00' }}">
                     <button class="button primary archive-open-button" type="button">归档</button>
                   </form>
@@ -79,8 +82,17 @@
   <div class="modal-backdrop" id="archiveStorageModal" hidden>
     <div class="modal-card archive-storage-modal-card" role="dialog" aria-modal="true" aria-label="确认归档">
       <div class="modal-body">
-        <label class="field-label" for="archiveStorageInput">位置编号</label>
-        <input class="form-control archive-storage-input" id="archiveStorageInput" type="text" maxlength="2" inputmode="numeric" pattern="\d{2}" value="00">
+        <label class="field-label">存档编号</label>
+        <div class="archive-storage-inputs">
+          <div class="archive-storage-input-group">
+            <label class="field-label" for="archiveFolderInput">文件夹编号</label>
+            <input class="form-control archive-storage-input" id="archiveFolderInput" type="text" maxlength="3" inputmode="numeric" pattern="\d{3}" value="000">
+          </div>
+          <div class="archive-storage-input-group">
+            <label class="field-label" for="archiveStorageInput">位置编号</label>
+            <input class="form-control archive-storage-input" id="archiveStorageInput" type="text" maxlength="2" inputmode="numeric" pattern="\d{2}" value="00">
+          </div>
+        </div>
       </div>
       <div class="modal-actions">
         <button class="button" type="button" id="archiveStorageCancel">取消</button>
@@ -91,6 +103,7 @@
 
   <script>
     const archiveModal = document.querySelector("#archiveStorageModal");
+    const archiveFolderInput = document.querySelector("#archiveFolderInput");
     const archiveInput = document.querySelector("#archiveStorageInput");
     const archiveCancelButton = document.querySelector("#archiveStorageCancel");
     const archiveConfirmButton = document.querySelector("#archiveStorageConfirm");
@@ -99,6 +112,15 @@
     function normalizeArchiveStorageNumber(value) {
       const digits = (value || "").replace(/\D/g, "").slice(0, 2);
       return (digits || "00").padStart(2, "0");
+    }
+
+    function normalizeArchiveFolderNumber(value) {
+      const digits = (value || "").replace(/\D/g, "").slice(0, 3);
+      return (digits || "000").padStart(3, "0");
+    }
+
+    function archiveDisplayNumber(folderNumber, storageNumber) {
+      return `${normalizeArchiveFolderNumber(folderNumber)}-${normalizeArchiveStorageNumber(storageNumber)}`;
     }
 
     function formatDisplayCode(value) {
@@ -120,11 +142,20 @@
         if (!activeArchiveForm) {
           return;
         }
+        archiveFolderInput.value = normalizeArchiveFolderNumber(activeArchiveForm.dataset.folderNumber);
         archiveInput.value = normalizeArchiveStorageNumber(activeArchiveForm.dataset.storageNumber);
         archiveModal.hidden = false;
-        archiveInput.focus();
-        archiveInput.select();
+        archiveFolderInput.focus();
+        archiveFolderInput.select();
       });
+    });
+
+    archiveFolderInput.addEventListener("input", () => {
+      archiveFolderInput.value = archiveFolderInput.value.replace(/\D/g, "").slice(0, 3);
+    });
+
+    archiveFolderInput.addEventListener("blur", () => {
+      archiveFolderInput.value = normalizeArchiveFolderNumber(archiveFolderInput.value);
     });
 
     archiveInput.addEventListener("input", () => {
@@ -150,8 +181,11 @@
       if (!activeArchiveForm) {
         return;
       }
+      const folderNumber = normalizeArchiveFolderNumber(archiveFolderInput.value);
       const storageNumber = normalizeArchiveStorageNumber(archiveInput.value);
+      archiveFolderInput.value = folderNumber;
       archiveInput.value = storageNumber;
+      activeArchiveForm.querySelector('[name="original_contract_folder"]').value = folderNumber;
       activeArchiveForm.querySelector('[name="storage_location_number"]').value = storageNumber;
       activeArchiveForm.submit();
     });
@@ -177,7 +211,7 @@
       editor.classList.add("editing");
       const display = editor.querySelector(".inline-remark-display");
       const panel = editor.querySelector(".inline-storage-form");
-      const input = editor.querySelector(".inline-storage-input");
+      const input = editor.querySelector('[name="original_contract_folder"]');
       if (display) {
         display.hidden = true;
       }
@@ -193,15 +227,19 @@
     async function saveStorageEditor(editor) {
       const display = editor.querySelector(".inline-remark-display");
       const panel = editor.querySelector(".inline-storage-form");
-      const input = editor.querySelector(".inline-storage-input");
-      if (!display || !panel || !input || !panel.dataset.action) {
+      const folderInput = editor.querySelector('[name="original_contract_folder"]');
+      const input = editor.querySelector('[name="storage_location_number"]');
+      if (!display || !panel || !folderInput || !input || !panel.dataset.action) {
         closeStorageEditor(editor);
         return;
       }
 
+      const folderNumber = normalizeArchiveFolderNumber(folderInput.value);
       const storageNumber = normalizeArchiveStorageNumber(input.value);
+      folderInput.value = folderNumber;
       input.value = storageNumber;
       const formData = new FormData();
+      formData.append("original_contract_folder", folderNumber);
       formData.append("storage_location_number", storageNumber);
 
       const response = await fetch(panel.dataset.action, {
@@ -219,16 +257,26 @@
       }
 
       const data = await response.json();
+      const savedFolderNumber = data.original_contract_folder || folderNumber;
       const savedNumber = data.storage_location_number || storageNumber;
+      const savedArchiveNumber = data.archive_number
+        ? archiveDisplayNumber(data.archive_number.slice(0, 3), data.archive_number.slice(3, 5))
+        : archiveDisplayNumber(savedFolderNumber, savedNumber);
       const row = editor.closest("tr");
-      display.textContent = savedNumber;
-      display.title = savedNumber;
+      display.textContent = savedArchiveNumber;
+      display.title = savedArchiveNumber;
+      folderInput.value = savedFolderNumber;
       input.value = savedNumber;
-      row?.querySelector(".archive-contract-number")?.replaceChildren(document.createTextNode(formatDisplayCode(data.display_contract_number || "")));
+      row?.querySelector(".archive-business-number")?.replaceChildren(document.createTextNode(formatDisplayCode(data.display_contract_number || "")));
       const archiveForm = row?.querySelector(".archive-form");
       if (archiveForm) {
         archiveForm.dataset.contractNumber = data.display_contract_number || archiveForm.dataset.contractNumber || "";
+        archiveForm.dataset.folderNumber = savedFolderNumber;
         archiveForm.dataset.storageNumber = savedNumber;
+        const hiddenFolderInput = archiveForm.querySelector('[name="original_contract_folder"]');
+        if (hiddenFolderInput) {
+          hiddenFolderInput.value = savedFolderNumber;
+        }
         const hiddenInput = archiveForm.querySelector('[name="storage_location_number"]');
         if (hiddenInput) {
           hiddenInput.value = savedNumber;
@@ -239,8 +287,9 @@
 
     document.querySelectorAll(".inline-storage-editor").forEach((editor) => {
       const display = editor.querySelector(".inline-remark-display");
-      const input = editor.querySelector(".inline-storage-input");
-      if (!display || !input) {
+      const folderInput = editor.querySelector('[name="original_contract_folder"]');
+      const input = editor.querySelector('[name="storage_location_number"]');
+      if (!display || !folderInput || !input) {
         return;
       }
       closeStorageEditor(editor);
@@ -248,23 +297,28 @@
         event.stopPropagation();
         openStorageEditor(editor);
       });
+      folderInput.addEventListener("input", () => {
+        folderInput.value = folderInput.value.replace(/\D/g, "").slice(0, 3);
+      });
       input.addEventListener("input", () => {
         input.value = input.value.replace(/\D/g, "").slice(0, 2);
       });
-      input.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          saveStorageEditor(editor);
-        } else if (event.key === "Escape") {
-          closeStorageEditor(editor);
-        }
-      });
-      input.addEventListener("blur", () => {
-        setTimeout(() => {
-          if (!editor.contains(document.activeElement)) {
+      [folderInput, input].forEach((item) => {
+        item.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
             saveStorageEditor(editor);
+          } else if (event.key === "Escape") {
+            closeStorageEditor(editor);
           }
-        }, 0);
+        });
+        item.addEventListener("blur", () => {
+          setTimeout(() => {
+            if (!editor.contains(document.activeElement)) {
+              saveStorageEditor(editor);
+            }
+          }, 0);
+        });
       });
       editor.addEventListener("click", (event) => {
         event.stopPropagation();

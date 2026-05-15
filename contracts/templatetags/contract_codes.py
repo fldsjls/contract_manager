@@ -4,6 +4,7 @@ from django import template
 register = template.Library()
 
 
+# 把业务编号或记录编号按前端展示规则加入短横线。
 @register.filter
 def display_code(value) -> str:
     text = str(value or "").strip()
@@ -19,6 +20,7 @@ def display_code(value) -> str:
     return text
 
 
+# 把存档编号显示为“文件夹编号-位置编号”。
 @register.filter
 def archive_code(value) -> str:
     text = str(value or "").strip()

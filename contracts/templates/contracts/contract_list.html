@@ -28,7 +28,7 @@
     <!-- 搜索栏按合同名称、编号和甲方名称过滤列表。 -->
     <form class="search-toolbar" method="get" autocomplete="off">
       <div class="search-preview-wrap">
-        <input class="search-input" id="contractSearchInput" name="q" value="{{ keyword }}" placeholder="搜索合同名称、合同编号、原合同编号、甲方名称、负责人">
+        <input class="search-input" id="contractSearchInput" name="q" value="{{ keyword }}" placeholder="搜索合同名称、业务编号、默认编号、甲方名称、负责人">
         <div class="search-preview" id="searchPreview" hidden></div>
       </div>
       <input name="contract_type" type="hidden" value="{{ contract_type_filter }}">
@@ -142,7 +142,7 @@
             <tr>
               <th>序号</th>
               <th><a class="sort-link {% if show_sort_indicator and sort == 'contract_name' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_name&direction={% if sort == 'contract_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">{{ labels.contract_name }}</a></th>
-              <th><a class="sort-link {% if show_sort_indicator and sort == 'contract_number' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_number&direction={% if sort == 'contract_number' and direction == 'asc' %}desc{% else %}asc{% endif %}">{{ labels.contract_number }}</a></th>
+              <th><a class="sort-link {% if show_sort_indicator and sort == 'contract_number' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_number&direction={% if sort == 'contract_number' and direction == 'asc' %}desc{% else %}asc{% endif %}">业务编号</a></th>
               <th><a class="sort-link {% if show_sort_indicator and sort == 'contract_type' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_type&direction={% if sort == 'contract_type' and direction == 'asc' %}desc{% else %}asc{% endif %}">{{ labels.contract_type }}</a></th>
               <th><a class="sort-link {% if show_sort_indicator and sort == 'party_name' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=party_name&direction={% if sort == 'party_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">{{ labels.party_name }}</a></th>
               <th><a class="sort-link {% if show_sort_indicator and sort == 'amount' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=amount&direction={% if sort == 'amount' and direction == 'asc' %}desc{% else %}asc{% endif %}">{{ labels.contract_amount }}</a></th>

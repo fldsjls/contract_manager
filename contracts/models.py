@@ -11,6 +11,7 @@ from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 
 
+# 将编号片段提取为固定宽度的纯数字字符串。
 def normalize_contract_number_part(value, width: int) -> str:
     text = str(value or "").strip()
     if not text:
@@ -23,14 +24,17 @@ def normalize_contract_number_part(value, width: int) -> str:
     return digits[-width:].zfill(width)
 
 
+# 规范合同位置编号，空值回退为 00。
 def normalize_storage_location_number(value) -> str:
     return normalize_contract_number_part(value, 2) or "00"
 
 
+# 规范项目记录位置编号，空值回退为 000。
 def normalize_record_position_number(value) -> str:
     return normalize_contract_number_part(value, 3) or "000"
 
 
+# 规范项目记录分册编号，空值回退为 01。
 def normalize_record_volume_number(value) -> str:
     return normalize_contract_number_part(value, 2) or "01"
 
@@ -201,9 +205,17 @@ class Contract(models.Model):
 
     @property
     def archive_number(self) -> str:
+        # 存档编号由文件夹编号 3 位和位置编号 2 位组成。
         folder_number = normalize_contract_number_part(self.original_contract_folder, 3)
         if not folder_number:
             return ""
+        location_number = normalize_storage_location_number(self.storage_location_number)
+        return f"{folder_number}{location_number}"
+
+    @property
+    def archive_number_display(self) -> str:
+        # 归档页编辑中即使文件夹编号为空，也用 000 补齐显示。
+        folder_number = normalize_contract_number_part(self.original_contract_folder, 3) or "000"
         location_number = normalize_storage_location_number(self.storage_location_number)
         return f"{folder_number}{location_number}"
 
@@ -491,6 +503,7 @@ class AppSetting(models.Model):
         return setting
 
 
+# 保存系统操作审计日志，用于列表展示、导出和撤回判断。
 class OperationLog(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

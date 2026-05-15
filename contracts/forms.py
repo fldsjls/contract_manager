@@ -118,6 +118,7 @@ class ContractForm(forms.ModelForm):
     def clean_original_contract_inner_number(self):
         return normalize_contract_number_part(self.cleaned_data.get("original_contract_inner_number"), 5)
 
+    # 将合同位置编号统一补齐为两位数字。
     def clean_storage_location_number(self):
         return normalize_storage_location_number(self.cleaned_data.get("storage_location_number"))
 
@@ -156,6 +157,7 @@ def default_contract_number() -> str:
     return default_contract_numbers()[0]
 
 
+# 批量生成当前分钟内可用的默认合同编号。
 def default_contract_numbers(count: int = 1) -> list[str]:
     if count < 1:
         return []
@@ -174,9 +176,11 @@ def default_contract_numbers(count: int = 1) -> list[str]:
     return [f"{prefix}{suffix:02d}" for suffix in available_suffixes[:count]]
 
 
+# 合同导入页的 Excel 上传表单。
 class ContractImportUploadForm(forms.Form):
     excel_file = forms.FileField(label="Excel 文件")
 
+    # 限制文件选择控件只显示 xlsx 文件。
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["excel_file"].widget.attrs.update(
@@ -186,6 +190,7 @@ class ContractImportUploadForm(forms.Form):
             }
         )
 
+    # 校验导入文件必须是当前支持的 xlsx 格式。
     def clean_excel_file(self):
         uploaded_file = self.cleaned_data["excel_file"]
         if not uploaded_file.name.lower().endswith(".xlsx"):

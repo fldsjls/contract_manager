@@ -8,6 +8,7 @@ app_name = "contracts"
 
 # 合同应用内部路由配置。
 urlpatterns = [
+    # 首页、登录、文档和系统设置入口。
     path("", views.dashboard, name="dashboard"),
     path("login/", views.login_view, name="login"),
     path("guest/", views.guest_login_view, name="guest_login"),
@@ -19,11 +20,13 @@ urlpatterns = [
     path("operation-logs/export/", views.operation_log_export, name="operation_log_export"),
     path("settings/", views.settings_view, name="settings"),
     path("settings/password/", views.password_change, name="password_change"),
+    # 回收站和归档项目相关操作。
     path("trash/", views.trash_list, name="trash"),
     path("trash/<int:pk>/restore/", views.contract_restore, name="contract_restore"),
     path("archive/", views.archive_list, name="archive_list"),
     path("archive/<int:pk>/archive/", views.contract_archive, name="contract_archive"),
     path("archive/<int:pk>/storage-number/", views.contract_storage_number_update, name="contract_storage_number_update"),
+    # 合同列表、导入导出和基础增删改查。
     path("contracts/", views.contract_list, name="contract_list"),
     path("contracts/undo/", views.undo_last_operation, name="undo_last_operation"),
     path("contracts/export/", views.contract_list_export, name="contract_list_export"),
@@ -40,6 +43,7 @@ urlpatterns = [
     path("contracts/<int:pk>/stats-data/", views.contract_stats_data, name="contract_stats_data"),
     path("contracts/<int:pk>/stats-export/", views.contract_stats_export, name="contract_stats_export"),
     path("contracts/<int:pk>/maintenance-data/", views.maintenance_record_data, name="maintenance_record_data"),
+    # 合同附件、图片目录和文件预览相关入口。
     path("contracts/<int:pk>/image-folder/open/", views.contract_image_folder_open, name="contract_image_folder_open"),
     path("contracts/<int:pk>/file-folder/open/", views.contract_file_folder_open, name="contract_file_folder_open"),
     path("files/<int:pk>/preview/", views.contract_file_preview, name="contract_file_preview"),
@@ -52,6 +56,7 @@ urlpatterns = [
     path("contracts/<int:pk>/settlement-files/", views.settlement_file_list, name="settlement_file_list"),
     path("settlement-files/<int:pk>/preview/", views.settlement_file_preview, name="settlement_file_preview"),
     path("settlement-files/<int:pk>/delete/", views.settlement_file_delete, name="settlement_file_delete"),
+    # 票据记录、项目记录和记录附件的维护入口。
     path("contracts/<int:pk>/edit/", views.contract_update, name="contract_update"),
     path("contracts/<int:pk>/delete/", views.contract_delete, name="contract_delete"),
     path("contracts/<int:pk>/records/new/", views.record_add, name="record_add"),

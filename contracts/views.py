@@ -3355,7 +3355,8 @@ def contract_list_export(request):
         "序号",
         UI_LABELS["contract_name"],
         "默认编号",
-        "显示合同编号",
+        "业务编号",
+        "存档编号",
         UI_LABELS["contract_type"],
         UI_LABELS["party_name"],
         UI_LABELS["contract_amount"],
@@ -3374,6 +3375,7 @@ def contract_list_export(request):
                 contract.contract_name,
                 contract.contract_number,
                 contract.display_contract_number,
+                contract.archive_number_display,
                 contract.contract_type,
                 contract.party_name,
                 float(contract.amount or 0),
@@ -3387,7 +3389,7 @@ def contract_list_export(request):
         )
 
     response = HttpResponse(
-        build_contract_list_xlsx(headers, rows, numeric_columns={7}),
+        build_contract_list_xlsx(headers, rows, numeric_columns={8}),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     response["Content-Disposition"] = 'attachment; filename="contract_list.xlsx"'
@@ -3415,11 +3417,16 @@ def contract_records_export(request, pk: int):
             queryset = queryset.filter(record_date__lte=end_date)
         return queryset
 
-    record_headers = ["合同编号", "日期", "位置编号", "分册编号", "备注"]
+    record_headers = ["记录编号", "日期", "位置编号", "分册编号", "备注"]
     maintenance_records = filter_record_dates(contract.maintenancerecord_set.all()).order_by("record_date", "id")
     record_rows = [
         [
-            contract_key,
+            maintenance_record_number(
+                contract,
+                record.record_date,
+                record.storage_location_number,
+                record.record_position_number,
+            ),
             record.record_date.strftime("%Y-%m-%d") if record.record_date else "",
             record.record_position_number or "000",
             record.storage_location_number or "00",
@@ -3446,7 +3453,7 @@ def contract_records_export(request, pk: int):
     )
     for sheet_name in invoice_sheet_names:
         amount_label, actual_amount_label = INVOICE_IMPORT_SHEET_LABELS[sheet_name]
-        headers = ["合同编号", "日期", amount_label, actual_amount_label, "备注"]
+        headers = ["业务编号", "日期", amount_label, actual_amount_label, "备注"]
         rows = []
         for record in all_money_records:
             if record.record_type != sheet_name:
@@ -3856,6 +3863,7 @@ def import_contract_lookup() -> dict[str, Contract]:
         keys = {
             contract.contract_number,
             contract.display_contract_number,
+            display_code_for_ui(contract.display_contract_number),
             contract.full_display_contract_number,
             contract.contract_name,
         }
@@ -3916,6 +3924,7 @@ def parse_invoice_import_xlsx(uploaded_file):
             continue
         amount_label, actual_amount_label = INVOICE_IMPORT_SHEET_LABELS[record_type]
         field_map = {
+            "业务编号": "contract_key",
             "合同编号": "contract_key",
             "合同名称": "contract_key",
             "日期": "record_date",
@@ -4010,6 +4019,8 @@ def validate_invoice_import_rows(parsed_rows):
 def parse_maintenance_import_xlsx(uploaded_file):
     rows = next(iter(parse_xlsx_sheets(uploaded_file).values()), [])
     field_map = {
+        "记录编号": "contract_key",
+        "业务编号": "contract_key",
         "合同编号": "contract_key",
         "合同名称": "contract_key",
         "日期": "record_date",
@@ -4025,13 +4036,24 @@ def parse_maintenance_import_xlsx(uploaded_file):
             index = header_map.get(field_name)
             return values[index] if index is not None and index < len(values) else ""
 
+        record_key = normalize_import_cell(value_for("contract_key"))
+        compact_record_key = re.sub(r"[-\s]", "", record_key)
+        if len(compact_record_key) >= 13 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
+            contract_key = compact_record_key[:8]
+            record_position = value_for("record_position_number") or compact_record_key[8:11]
+            storage_location = value_for("storage_location_number") or compact_record_key[11:13]
+        else:
+            contract_key = compact_record_key if len(compact_record_key) == 8 and compact_record_key[:1].isalpha() else record_key
+            record_position = value_for("record_position_number")
+            storage_location = value_for("storage_location_number")
+
         return {
             "row_number": excel_row_number,
             "data": {
-                "contract_key": normalize_import_cell(value_for("contract_key")),
+                "contract_key": contract_key,
                 "record_date": normalize_import_value("record_date", value_for("record_date")),
-                "record_position_number": normalize_record_position_number(value_for("record_position_number")),
-                "storage_location_number": normalize_import_value("storage_location_number", value_for("storage_location_number")),
+                "record_position_number": normalize_record_position_number(record_position),
+                "storage_location_number": normalize_import_value("storage_location_number", storage_location),
                 "remark": normalize_import_cell(value_for("remark")),
             },
         }
@@ -4165,9 +4187,9 @@ def invoice_import_template(request):
     sheets = []
     for record_type in ("开票", "收票"):
         amount_label, actual_amount_label = INVOICE_IMPORT_SHEET_LABELS[record_type]
-        headers = ["合同编号", "日期", amount_label, actual_amount_label, "备注"]
+        headers = ["业务编号", "日期", amount_label, actual_amount_label, "备注"]
         comments = {
-            "合同编号": "填写已有合同编号或合同名称，用于匹配合同。",
+            "业务编号": "填写已有业务编号或合同名称，用于匹配合同。",
             "日期": "必填。日期格式：YYYY-MM-DD。",
             amount_label: "必填。填写数字金额。",
             actual_amount_label: "可选。未填时按 0 计算。",
@@ -4191,9 +4213,9 @@ def invoice_import_template(request):
 # 视图函数：下载项目记录导入 Excel 模板。
 @true_admin_required
 def record_import_template(request):
-    headers = ["合同编号", "日期", "位置编号", "分册编号", "备注"]
+    headers = ["记录编号", "日期", "位置编号", "分册编号", "备注"]
     comments = {
-        "合同编号": "填写已有合同编号或合同名称，用于匹配合同。",
+        "记录编号": "填写完整记录编号；也可填写业务编号并继续填写位置编号、分册编号。",
         "日期": "必填。日期格式：YYYY-MM-DD。",
         "位置编号": "填写 3 位记录位置编号，前一位为柜号，后两位为栏目，例如 101。",
         "分册编号": "填写 2 位分册编号，例如 00。",
@@ -5082,11 +5104,18 @@ def archive_list(request):
 def contract_archive(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if request.method == "POST" and contract.status == "待归档" and not contract.uses_default_display_contract_number:
-        old_position_number = normalize_storage_location_number(contract.storage_location_number)
+        old_archive_number = contract.archive_number_display
+        folder_number = normalize_contract_number_part(request.POST.get("original_contract_folder"), 3)
         storage_location = normalize_storage_location_number(request.POST.get("storage_location_number"))
+        changed_fields = []
+        if folder_number != normalize_contract_number_part(contract.original_contract_folder, 3):
+            contract.original_contract_folder = folder_number
+            changed_fields.append("original_contract_folder")
         if storage_location != normalize_storage_location_number(contract.storage_location_number):
             contract.storage_location_number = storage_location
-            contract.save(update_fields=["storage_location_number", "updated_at"])
+            changed_fields.append("storage_location_number")
+        if changed_fields:
+            contract.save(update_fields=[*changed_fields, "updated_at"])
         contract.archive()
         archive_path = archive_contract_snapshot_to_file(contract, "contract archived")
         deleted_versions = clear_contract_snapshot_versions(contract)
@@ -5095,34 +5124,38 @@ def contract_archive(request, pk: int):
             "归档",
             contract,
             detail=(
-                f"position number: {old_position_number} -> {storage_location}; "
+                f"archive number: {old_archive_number} -> {contract.archive_number_display}; "
                 f"snapshot archived: {archive_path}; cleared versions: {deleted_versions}"
             ),
         )
     return redirect("contracts:archive_list")
 
 
-# 视图函数：更新归档合同的位置编号。
+# 视图函数：更新归档合同的存档编号。
 @admin_required
 def contract_storage_number_update(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if request.method != "POST":
-        return JsonResponse({"error": "只允许保存位置编号。"}, status=405)
+        return JsonResponse({"error": "只允许保存存档编号。"}, status=405)
 
-    old_position_number = normalize_storage_location_number(contract.storage_location_number)
+    old_archive_number = contract.archive_number_display
+    folder_number = normalize_contract_number_part(request.POST.get("original_contract_folder"), 3)
     storage_location = normalize_storage_location_number(request.POST.get("storage_location_number"))
+    contract.original_contract_folder = folder_number
     contract.storage_location_number = storage_location
-    contract.save(update_fields=["storage_location_number", "updated_at"])
+    contract.save(update_fields=["original_contract_folder", "storage_location_number", "updated_at"])
     log_operation(
         request,
         "修改",
         contract,
-        detail=f"position number: {old_position_number} -> {storage_location}",
+        detail=f"archive number: {old_archive_number} -> {contract.archive_number_display}",
     )
     return JsonResponse(
         {
             "ok": True,
+            "original_contract_folder": folder_number,
             "storage_location_number": storage_location,
+            "archive_number": contract.archive_number_display,
             "display_contract_number": contract.display_contract_number,
         }
     )

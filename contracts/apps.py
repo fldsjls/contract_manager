@@ -11,6 +11,7 @@ class ContractsConfig(AppConfig):
     # 后台中显示的应用中文名。
     verbose_name = "合同管理"
 
+    # 应用启动时注册需要审计历史的模型。
     def ready(self):
         import reversion
 

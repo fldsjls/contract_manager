@@ -3365,7 +3365,7 @@ def contract_list_export(request):
                 index,
                 contract.contract_name,
                 contract.contract_number,
-                contract.full_display_contract_number,
+                contract.display_contract_number,
                 contract.contract_type,
                 contract.party_name,
                 float(contract.amount or 0),

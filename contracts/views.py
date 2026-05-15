@@ -446,15 +446,27 @@ def role_label_for_request(request) -> str:
 # 按当前用户权限组装使用文档章节。
 def usage_docs_for_request(request) -> list[dict]:
     common_read = [
-        "在合同列表中搜索合同名称、合同编号、原合同编号、甲方名称或负责人。",
+        "在合同列表中搜索合同名称、业务编号、合同编号、甲方名称或负责人，也可以用业务编号查找合同文件或记录文件的存档编号。",
         "单击表格行可选中项目，双击或点击查看详情进入合同详情。",
         "在详情页查看合同基础信息、合同文件和项目记录。",
     ]
     business_sections = [
         {
+            "title": "编号关系说明",
+            "items": [
+                "默认编号是系统自动生成的 12 位合同基础编号，用于保证每份合同在数据库和文件目录中有稳定标识；新增和编辑合同页面中不可手动修改。",
+                "业务编号是面向日常业务使用的合同编号，由合同类型代码、年份后两位和 5 位文件编号组成，例如维保合同会显示为 W-26-00001；如果文件编号缺失，页面会临时回退显示默认编号。",
+                "存档编号用于纸质或归档文件定位，合同文件存档编号由 3 位文件夹编号和 2 位位置编号组成，页面显示为“文件夹编号-位置编号”，例如 011-00。",
+                "项目记录文件编号在业务编号后继续拼接 3 位位置编号和 2 位分册编号，形成“业务编号-位置编号-分册编号”的记录编号，用于区分同一合同下的不同记录文件。",
+                "查询和导入时，合同编号、业务编号、带横线业务编号、存档编号和合同名称都可以作为定位合同的线索；系统会先去掉横线和空格，再按内部编号匹配。",
+                "代码中的 contract_number 表示默认编号，display_contract_number 表示业务编号，archive_number_display 表示存档编号；模板显示时分别通过 display_code 和 archive_code 转成带横线的可读格式。",
+            ],
+        },
+        {
             "title": "产值计算逻辑",
             "items": [
                 "默认统计总览和产值趋势图显示“未来可到期产值”：按某一天查看时，只统计该日尚未到期且已有开始日期、截止日期和合同金额的合同。",
+                "总览项目可用合同编号、业务编号或存档编号定位单个项目；带横线展示的编号会在查询时按无横线编号匹配。",
                 "未来可到期产值按合同金额在开始日期至截止日期之间线性分摊；某日累计值 = 合同金额 / 合同天数 × 已经过天数。",
                 "产值计算面板选择同一天作为开始和结束日期时，仍按未来可到期产值口径计算，不计入已经到期的合同。",
                 "产值计算面板选择日期范围时显示“当前已完成产值”：对每个合同分别计算结束日累计产值减开始日累计产值，再将多个合同相加。",
@@ -519,8 +531,9 @@ def usage_docs_for_request(request) -> list[dict]:
         {
             "title": "导入与撤回逻辑",
             "items": [
-                "合同导入按合同编号校验重复；票据和项目记录导入按合同显示编号匹配目标合同。",
-                "导入页右侧可通过项目名称查找显示编号；项目名称可能重复，应以显示编号作为最终导入依据。",
+                "合同导入按合同编号校验重复；票据和项目记录导入可按业务编号、合同编号或合同名称匹配目标合同。",
+                "导入页右侧可通过业务编号、合同名称或甲方名称查找项目；项目名称可能重复，应以业务编号作为最终导入依据。",
+                "代码里的 code 通常表示可展示或复制的业务编号/存档编号；number 保留既有编号语义，可能是合同编号，也可能是未加横线的业务编号，页面会用 display_code 和 archive_code 转成带横线的可读格式。",
                 "票据导入中实际金额为空时按 0 保存；票面金额和实际金额彼此独立。",
                 "合同列表标题旁的撤回按钮可单击撤回最近一次支持的操作，也可悬停预览最近 10 条并选择撤回到某一位置。",
                 "撤回仅处理系统支持的新增、删除、恢复等操作；不支持的历史操作会在预览中标明。",
@@ -2510,21 +2523,11 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
 
     if project_mode:
         mode = "project"
-        contracts = [contract for contract in contracts if contract.display_contract_number == project_code]
+        contracts = [contract for contract in contracts if contract_identity_matches(contract, project_code)]
         if not contracts:
-            message = "未找到该项目显示编码，或项目缺少合同金额、起始日期、截止日期。"
+            message = "未找到该项目编号，或项目缺少合同金额、起始日期、截止日期。"
     elif filter_mode:
         mode = "filter"
-        if keyword:
-            contracts = contracts.filter(
-                Q(contract_name__icontains=keyword)
-                | Q(contract_number__icontains=keyword)
-                | Q(original_contract_folder__icontains=keyword)
-                | Q(original_contract_inner_number__icontains=keyword)
-                | Q(party_name__icontains=keyword)
-                | Q(responsible_person__icontains=keyword)
-            )
-
         valid_contract_types = {value for value, _ in Contract.CONTRACT_TYPES}
         valid_invoice_statuses = {value for value, _ in Contract.INVOICE_STATUS}
         if filter_contract_type in valid_contract_types:
@@ -2536,6 +2539,8 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
 
         status_choices = {"进行中", "即将到期", "已到期", "待归档", "已归档"}
         contracts = list(contracts)
+        if keyword:
+            contracts = [contract for contract in contracts if production_keyword_matches(contract, keyword)]
         if not keyword and filter_status not in {"待归档", "已归档"}:
             contracts = [contract for contract in contracts if contract.status not in {"待归档", "已归档"}]
         if filter_status in status_choices:
@@ -2543,7 +2548,7 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
     else:
         contracts = []
         if project_code and filter_active:
-            message = "项目显示编码和筛选不能同时使用。"
+            message = "项目编号和筛选不能同时使用。"
 
     contracts = list(contracts)
     if project_mode and contracts:
@@ -2715,6 +2720,9 @@ def dashboard(request):
         {
             "name": contract.contract_name,
             "number": contract.display_contract_number,
+            "display_number": display_code_for_ui(contract.display_contract_number),
+            "contract_number": contract.contract_number,
+            "archive_number": contract.archive_number_display,
             "party": contract.party_name,
             "responsible": contract.responsible_person,
         }
@@ -2832,6 +2840,36 @@ def archive_lookup_matches(contract: Contract, keyword: str) -> bool:
         if any(compact_keyword in compact_archive_lookup_text(value) for value in values):
             return True
     return False
+
+
+# 函数说明：封装可复用的业务处理。
+def contract_identity_matches(contract: Contract, keyword: str) -> bool:
+    compact_keyword = compact_archive_lookup_text(keyword)
+    if not compact_keyword:
+        return True
+    values = [
+        contract.contract_number,
+        contract.display_contract_number,
+        display_code_for_ui(contract.display_contract_number),
+        contract.full_display_contract_number,
+        contract.archive_number_display,
+    ]
+    return any(compact_keyword in compact_archive_lookup_text(value) for value in values)
+
+
+# 函数说明：封装可复用的业务处理。
+def production_keyword_matches(contract: Contract, keyword: str) -> bool:
+    compact_keyword = compact_archive_lookup_text(keyword)
+    if not compact_keyword:
+        return True
+    values = [
+        contract.contract_name,
+        contract.party_name,
+        contract.responsible_person,
+    ]
+    return contract_identity_matches(contract, keyword) or any(
+        compact_keyword in compact_archive_lookup_text(value) for value in values
+    )
 
 
 # 函数说明：封装可复用的业务处理。
@@ -3938,7 +3976,7 @@ def import_contract_lookup() -> dict[str, Contract]:
     return lookup
 
 
-# 为导入页业务编码查找功能准备搜索数据。
+# 为导入页业务编号查找功能准备搜索数据。
 def project_code_lookup_items() -> list[dict]:
     contracts = Contract.objects.filter(is_deleted=False).order_by("contract_name", "id")
     items = []

@@ -53,6 +53,7 @@ class ContractForm(forms.ModelForm):
         self.fields["end_date"].required = True
         for field in self.fields.values():
             field.widget.attrs.setdefault("class", "form-control")
+        self.fields["contract_number"].label = "默认编号"
         self.fields["original_contract_folder"].label = "文件夹编号"
         self.fields["original_contract_inner_number"].label = "文件编号"
         self.fields["storage_location_number"].label = "位置编号"

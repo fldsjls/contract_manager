@@ -43,12 +43,12 @@
           </div>
           <div class="production-controls">
             <label>
-              <span>项目编码</span>
+              <span>项目编号</span>
               <input
                 data-production-project
                 name="production_project_code"
                 value="{{ production_summary.project_code }}"
-                placeholder="输入显示编码"
+                placeholder="合同编号、业务编号、存档编号"
               >
             </label>
             <label>
@@ -171,11 +171,13 @@
               <thead>
                 <tr>
                   <th>合同名称</th>
-                  <th>合同编号</th>
+                  <th>业务编号</th>
+                  <th>存档编号</th>
+                  <th>合同类型</th>
                   <th>甲方名称</th>
                   <th>合同金额</th>
+                  <th>负责人</th>
                   <th>状态</th>
-                  <th>默认编号</th>
                 </tr>
               </thead>
               <tbody>
@@ -190,10 +192,12 @@
                       class="{% if contract.uses_default_display_contract_number %}default-contract-number{% endif %}"
                       title="{{ contract.display_contract_number }}"
                     >{{ contract.display_contract_number|display_code }}</td>
+                    <td>{{ contract.archive_number_display|archive_code }}</td>
+                    <td>{{ contract.contract_type }}</td>
                     <td class="party">{{ contract.party_name }}</td>
                     <td>¥ {{ contract.amount|floatformat:2 }}</td>
+                    <td>{{ contract.responsible_person }}</td>
                     <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
-                    <td>{{ contract.contract_number }}</td>
                   </tr>
                 {% endfor %}
               </tbody>
@@ -247,7 +251,7 @@
             <div>
               <label for="productionFilterKeyword">搜索</label>
               <div class="search-preview-wrap">
-                <input class="search-input" id="productionFilterKeyword" name="production_q" value="{{ production_summary.keyword }}" placeholder="名称、编号、甲方、负责人">
+                <input class="search-input" id="productionFilterKeyword" name="production_q" value="{{ production_summary.keyword }}" placeholder="名称、业务编号、合同编号、存档编号、甲方、负责人">
                 <div class="search-preview" id="productionSearchPreview" hidden></div>
               </div>
             </div>
@@ -557,10 +561,22 @@
       return text;
     }
 
+    function formatArchiveCode(value) {
+      const text = String(value || "");
+      if (/^\d{5}$/.test(text)) {
+        return `${text.slice(0, 3)}-${text.slice(3)}`;
+      }
+      return text;
+    }
+
     function productionSearchText(contract) {
       return [
         contract.name,
         contract.number,
+        contract.display_number,
+        contract.contract_number,
+        contract.archive_number,
+        formatArchiveCode(contract.archive_number),
         contract.party,
         contract.responsible,
       ].join(" ").toLowerCase();
@@ -663,7 +679,7 @@
           item.type = "button";
           item.innerHTML = `
             <span class="search-preview-title">${escapeHtml(contract.name)}</span>
-            <span class="search-preview-meta">编号: ${escapeHtml(formatDisplayCode(contract.number))}　甲方: ${escapeHtml(contract.party)}　负责人: ${escapeHtml(contract.responsible || "未填写")}</span>
+            <span class="search-preview-meta">业务编号: ${escapeHtml(formatDisplayCode(contract.number))}　合同编号: ${escapeHtml(contract.contract_number || "未填写")}　存档编号: ${escapeHtml(formatArchiveCode(contract.archive_number) || "未填写")}</span>
           `;
           item.addEventListener("mousedown", (event) => {
             event.preventDefault();

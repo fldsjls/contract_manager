@@ -32,8 +32,8 @@
         <div class="search-preview" id="searchPreview" hidden></div>
       </div>
       <div class="search-preview-wrap archive-search-wrap">
-        <input class="search-input" id="archiveLookupInput" name="archive_q" value="{{ archive_keyword }}" type="search" placeholder="业务编码查找">
-        <button class="archive-lookup-clear" id="archiveLookupClear" type="button" aria-label="清空业务编码查找" {% if not archive_keyword %}hidden{% endif %}>×</button>
+        <input class="search-input" id="archiveLookupInput" name="archive_q" value="{{ archive_keyword }}" type="search" placeholder="业务编号查找存档编号">
+        <button class="archive-lookup-clear" id="archiveLookupClear" type="button" aria-label="清空业务编号查找" {% if not archive_keyword %}hidden{% endif %}>×</button>
         <div class="search-preview archive-search-preview" id="archiveLookupPreview" hidden></div>
       </div>
       <input name="contract_type" type="hidden" value="{{ contract_type_filter }}">
@@ -1128,7 +1128,7 @@
         button.type = "button";
         button.innerHTML = `
           <span class="search-preview-title"><span class="archive-lookup-kind">${escapeHtml(item.kind_label || "合同文件")}</span>${escapeHtml(formatDisplayCode(item.code || ""))}</span>
-          <span class="search-preview-meta">存档编码: ${escapeHtml(formatArchiveCode(item.archive_code) || "未填写")}　合同: ${escapeHtml(item.name || "未填写")}　${escapeHtml(item.party || "未填写")}</span>
+          <span class="search-preview-meta">存档编号: ${escapeHtml(formatArchiveCode(item.archive_code) || "未填写")}　合同: ${escapeHtml(item.name || "未填写")}　${escapeHtml(item.party || "未填写")}</span>
         `;
         button.addEventListener("mousedown", (event) => {
           event.preventDefault();

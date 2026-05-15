@@ -22,7 +22,7 @@
       <!-- 复用合同详情信息表，便于在记录页确认当前合同。 -->
       <section class="panel">
         <div class="summary">
-          <span>{{ labels.contract_number }}：{{ contract.display_contract_number|display_code }}</span>
+          <span>业务编号：{{ contract.display_contract_number|display_code }}</span>
           <span>{{ labels.contract_type }}：{{ contract.contract_type }}</span>
           <span>{{ labels.status }}：<span class="status {{ contract.status_class }}">{{ contract.status }}</span></span>
         </div>

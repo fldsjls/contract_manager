@@ -239,6 +239,20 @@ class LoginForm(forms.Form):
 # 系统设置表单。
 # 表单类：配置表单字段、校验和控件表现。
 class AppSettingForm(forms.ModelForm):
+    # 根据当前权限控制图片保存目录是否允许编辑。
+    def __init__(self, *args, allow_image_root_path_edit: bool = True, **kwargs):
+        super().__init__(*args, **kwargs)
+        image_field = self.fields["image_root_path"]
+        if not allow_image_root_path_edit:
+            image_field.disabled = True
+            image_field.widget.attrs["readonly"] = "readonly"
+
+    # 禁用时忽略提交值，始终保留数据库中的原目录。
+    def clean_image_root_path(self):
+        if self.fields["image_root_path"].disabled:
+            return self.instance.image_root_path
+        return self.cleaned_data["image_root_path"]
+
     # 元数据类：配置字段、排序或显示名称。
     class Meta:
         model = AppSetting

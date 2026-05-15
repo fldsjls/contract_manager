@@ -797,6 +797,28 @@
     .context-menu-item[aria-disabled="true"]:focus {
       background: #fff;
     }
+    .shortcut-toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 70;
+      max-width: min(360px, calc(100vw - 44px));
+      padding: 10px 14px;
+      border: 1px solid #cbd3df;
+      border-radius: 6px;
+      background: #111827;
+      color: #fff;
+      box-shadow: 0 14px 28px rgba(15, 23, 42, 0.22);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .shortcut-toast.error {
+      background: #991b1b;
+      border-color: #dc2626;
+    }
+    .shortcut-toast[hidden] {
+      display: none;
+    }
     td.name, td.party {
       overflow: hidden;
       text-overflow: ellipsis;
@@ -2060,11 +2082,21 @@
     </div>
   </div>
   <!-- 全局点击空白区域时清除表格选中状态。 -->
+  {% if can_manage %}
+    <form id="globalUndoForm" method="post" action="{% url 'contracts:undo_last_operation' %}" hidden>
+      {% csrf_token %}
+    </form>
+    <div class="shortcut-toast" id="shortcutToast" role="status" aria-live="polite" hidden></div>
+  {% endif %}
   <script>
     const adminLoginModal = document.querySelector("#adminLoginModal");
     const adminLoginCancel = document.querySelector("#adminLoginCancel");
     const adminLoginConfirm = document.querySelector("#adminLoginConfirm");
     const adminOnlyLinks = document.querySelectorAll(".requires-admin-login");
+    const globalUndoForm = document.querySelector("#globalUndoForm");
+    const shortcutToast = document.querySelector("#shortcutToast");
+    let globalUndoInProgress = false;
+    let shortcutToastTimer = null;
 
     // 函数说明：处理页面交互和数据展示逻辑。
     function closeInlineRemarkEditor(editor) {
@@ -2096,6 +2128,58 @@
     function getInlineRemarkToken(editor) {
       const tokenInput = editor.querySelector("input[name='csrfmiddlewaretoken']");
       return tokenInput ? tokenInput.value : "";
+    }
+
+    function getGlobalUndoToken() {
+      return globalUndoForm?.querySelector("input[name='csrfmiddlewaretoken']")?.value || "";
+    }
+
+    function showShortcutToast(message, error = false) {
+      if (!shortcutToast) {
+        if (error) {
+          alert(message);
+        }
+        return;
+      }
+      window.clearTimeout(shortcutToastTimer);
+      shortcutToast.textContent = message;
+      shortcutToast.classList.toggle("error", error);
+      shortcutToast.hidden = false;
+      shortcutToastTimer = window.setTimeout(() => {
+        shortcutToast.hidden = true;
+      }, error ? 2800 : 1400);
+    }
+
+    function isEditableShortcutTarget(target) {
+      return target instanceof Element && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+    }
+
+    async function undoLastOperationByShortcut() {
+      if (!globalUndoForm || globalUndoInProgress) {
+        return;
+      }
+      globalUndoInProgress = true;
+      showShortcutToast("正在撤回最近操作...");
+      try {
+        const response = await fetch(globalUndoForm.action, {
+          method: "POST",
+          headers: {
+            "X-CSRFToken": getGlobalUndoToken(),
+            "X-Requested-With": "XMLHttpRequest",
+          },
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || "撤回失败。");
+        }
+        showShortcutToast(data.message || "已撤回最近操作。");
+        window.setTimeout(() => {
+          window.location.reload();
+        }, 450);
+      } catch (error) {
+        globalUndoInProgress = false;
+        showShortcutToast(error.message || "撤回失败。", true);
+      }
     }
 
     // 函数说明：处理页面交互和数据展示逻辑。
@@ -2174,6 +2258,15 @@
     }
 
     initInlineRemarkEditors();
+
+    document.addEventListener("keydown", (event) => {
+      const isUndoShortcut = (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "z";
+      if (!isUndoShortcut || event.defaultPrevented || isEditableShortcutTarget(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      undoLastOperationByShortcut();
+    });
 
     document.addEventListener("pointerdown", (event) => {
       document.querySelectorAll(".inline-remark-editor.editing").forEach((editor) => {

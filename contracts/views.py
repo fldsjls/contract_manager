@@ -5216,14 +5216,19 @@ def usage_docs(request):
 def settings_view(request):
     setting = AppSetting.current()
     host_ip = local_ip_address()
+    can_edit_image_root_path = is_super_admin_mode(request)
     if request.method == "POST":
-        form = AppSettingForm(request.POST, instance=setting)
+        form = AppSettingForm(
+            request.POST,
+            instance=setting,
+            allow_image_root_path_edit=can_edit_image_root_path,
+        )
         if form.is_valid():
             form.save()
             log_operation(request, "修改", setting, detail="updated system settings")
             return redirect("contracts:settings")
     else:
-        form = AppSettingForm(instance=setting)
+        form = AppSettingForm(instance=setting, allow_image_root_path_edit=can_edit_image_root_path)
     return render(
         request,
         "contracts/settings.html",
@@ -5233,6 +5238,7 @@ def settings_view(request):
                 "form": form,
                 "host_ip": host_ip,
                 "lan_url": f"http://{host_ip}:8000",
+                "can_edit_image_root_path": can_edit_image_root_path,
                 "active_nav": "settings",
             },
         ),

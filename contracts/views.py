@@ -2777,9 +2777,68 @@ def sort_contracts_by_number(contracts: list[Contract], direction: str, explicit
 
 
 # 函数说明：封装可复用的业务处理。
+def compact_archive_lookup_text(value) -> str:
+    return re.sub(r"[-\s]", "", str(value or "")).lower()
+
+
+# 函数说明：封装可复用的业务处理。
+def contract_archive_lookup_items(contract: Contract) -> list[dict]:
+    items = [
+        {
+            "kind": "contract",
+            "kind_label": "合同文件",
+            "code": contract.display_contract_number,
+            "archive_code": contract.archive_number_display,
+            "name": contract.contract_name,
+            "party": contract.party_name,
+            "type": contract.contract_type,
+        }
+    ]
+    for record in contract.maintenancerecord_set.all():
+        record_code = maintenance_record_number(
+            contract,
+            record.record_date,
+            record.storage_location_number,
+            record.record_position_number,
+        )
+        items.append(
+            {
+                "kind": "record",
+                "kind_label": "记录文件",
+                "code": record_code,
+                "archive_code": record_code,
+                "name": contract.contract_name,
+                "party": record.record_date.strftime("%Y-%m-%d") if record.record_date else "",
+                "type": record.month or contract.contract_type,
+            }
+        )
+    return items
+
+
+# 函数说明：封装可复用的业务处理。
+def archive_lookup_matches(contract: Contract, keyword: str) -> bool:
+    compact_keyword = compact_archive_lookup_text(keyword)
+    if not compact_keyword:
+        return True
+    for item in contract_archive_lookup_items(contract):
+        values = [
+            item.get("code"),
+            display_code_for_ui(item.get("code") or ""),
+            item.get("archive_code"),
+            item.get("name"),
+            item.get("party"),
+            item.get("type"),
+        ]
+        if any(compact_keyword in compact_archive_lookup_text(value) for value in values):
+            return True
+    return False
+
+
+# 函数说明：封装可复用的业务处理。
 def contracts_for_list_request(request):
     # 合同列表和 Excel 导出共用这一套搜索、筛选、排序规则，避免两处结果不一致。
     keyword = request.GET.get("q", "").strip()
+    archive_keyword = request.GET.get("archive_q", "").strip()
     filter_contract_type = request.GET.get("contract_type", "").strip()
     filter_invoice_status = request.GET.get("invoice_status", "").strip()
     filter_status = request.GET.get("status", "").strip()
@@ -2831,7 +2890,9 @@ def contracts_for_list_request(request):
         contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
 
     contracts = list(contracts)
-    if not keyword and filter_status not in {"待归档", "已归档"}:
+    if archive_keyword:
+        contracts = [contract for contract in contracts if archive_lookup_matches(contract, archive_keyword)]
+    if not keyword and not archive_keyword and filter_status not in {"待归档", "已归档"}:
         contracts = [contract for contract in contracts if contract.status not in {"待归档", "已归档"}]
     if filter_status in status_choices:
         contracts = [contract for contract in contracts if contract.status == filter_status]
@@ -3232,6 +3293,7 @@ def clear_contract_snapshot_versions(contract: Contract) -> int:
 def contract_list(request):
     purge_expired_trash()
     keyword = request.GET.get("q", "").strip()
+    archive_keyword = request.GET.get("archive_q", "").strip()
     filter_contract_type = request.GET.get("contract_type", "").strip()
     filter_invoice_status = request.GET.get("invoice_status", "").strip()
     filter_status = request.GET.get("status", "").strip()
@@ -3285,7 +3347,9 @@ def contract_list(request):
         contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
 
     contracts = list(contracts)
-    if not keyword and filter_status not in {"待归档", "已归档"}:
+    if archive_keyword:
+        contracts = [contract for contract in contracts if archive_lookup_matches(contract, archive_keyword)]
+    if not keyword and not archive_keyword and filter_status not in {"待归档", "已归档"}:
         contracts = [contract for contract in contracts if contract.status not in {"待归档", "已归档"}]
     if filter_status:
         contracts = [contract for contract in contracts if contract.status == filter_status]
@@ -3314,6 +3378,7 @@ def contract_list(request):
         {
             "contracts": contracts,
             "keyword": keyword,
+            "archive_keyword": archive_keyword,
             "sort": sort,
             "direction": direction,
             "show_sort_indicator": explicit_sort,
@@ -3340,6 +3405,7 @@ def contract_list(request):
             "query_base": query_params.urlencode(),
             "export_query": request.GET.urlencode(),
             "expiring_contracts": expiring_contract_queryset(),
+            "archive_lookup_items": project_code_lookup_items(),
             "active_nav": "contracts",
         },
     )
@@ -3872,18 +3938,13 @@ def import_contract_lookup() -> dict[str, Contract]:
     return lookup
 
 
-# 为导入页项目名称查编码功能准备搜索数据。
+# 为导入页业务编码查找功能准备搜索数据。
 def project_code_lookup_items() -> list[dict]:
     contracts = Contract.objects.filter(is_deleted=False).order_by("contract_name", "id")
-    return [
-        {
-            "code": contract.display_contract_number,
-            "name": contract.contract_name,
-            "party": contract.party_name,
-            "type": contract.contract_type,
-        }
-        for contract in contracts
-    ]
+    items = []
+    for contract in contracts:
+        items.extend(contract_archive_lookup_items(contract))
+    return items
 
 
 # 按字段映射解析票据或项目记录导入工作表。

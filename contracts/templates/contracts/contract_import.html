@@ -253,8 +253,8 @@
     </div>
 
     <aside class="project-code-panel">
-      <h2 class="project-code-title">项目编码查找</h2>
-      <input id="projectCodeSearch" type="search" placeholder="输入项目名称" autocomplete="off">
+      <h2 class="project-code-title">业务编码查找</h2>
+      <input id="projectCodeSearch" type="search" placeholder="输入业务编码、合同名称、甲方名称" autocomplete="off">
       <div class="project-code-results" id="projectCodeResults"></div>
     </aside>
   </div>
@@ -315,10 +315,17 @@
         return;
       }
       const matches = projectLookupData
-        .filter((item) => normalizeProjectQuery(item.name).includes(query))
+        .filter((item) => [
+          item.code,
+          formatDisplayCode(item.code || ""),
+          item.archive_code,
+          item.name,
+          item.party,
+          item.type,
+        ].some((value) => normalizeProjectQuery(value).includes(query)))
         .slice(0, 30);
       if (!matches.length) {
-        projectLookupResults.innerHTML = '<div class="project-code-empty">未找到匹配项目</div>';
+        projectLookupResults.innerHTML = '<div class="project-code-empty">未找到匹配业务编码</div>';
         return;
       }
       matches.forEach((item) => {

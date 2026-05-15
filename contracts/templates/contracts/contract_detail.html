@@ -23,7 +23,7 @@
             <span>
               {{ labels.contract_number }}：
               <a
-                class="contract-folder-link"
+                class="contract-folder-link{% if contract.uses_default_display_contract_number %} default-contract-number{% endif %}"
                 href="{% url 'contracts:contract_file_folder_open' contract.id %}"
                 data-folder-url="{% url 'contracts:contract_file_folder_open' contract.id %}"
               >{{ contract.contract_number }}</a>

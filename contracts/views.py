@@ -531,7 +531,7 @@ def usage_docs_for_request(request) -> list[dict]:
         {
             "title": "导入与撤回逻辑",
             "items": [
-                "合同导入按合同编号校验重复；票据和项目记录导入可按业务编号、合同编号或合同名称匹配目标合同。",
+                "合同导入按业务编号匹配已有项目；业务编号已存在时更新其他字段并保留默认编号，未匹配时新建合同。",
                 "导入页右侧可通过业务编号、合同名称或甲方名称查找项目；项目名称可能重复，应以业务编号作为最终导入依据。",
                 "代码里的 code 通常表示可展示或复制的业务编号/存档编号；number 保留既有编号语义，可能是合同编号，也可能是未加横线的业务编号，页面会用 display_code 和 archive_code 转成带横线的可读格式。",
                 "票据导入中实际金额为空时按 0 保存；票面金额和实际金额彼此独立。",
@@ -3859,14 +3859,36 @@ def parse_contract_import_xlsx(uploaded_file):
 
 
 # 校验合同导入预览行并标记错误信息。
+def contract_import_display_number_from_data(data: dict) -> str:
+    inner_number = normalize_contract_number_part(data.get("original_contract_inner_number"), 5)
+    if not inner_number:
+        return ""
+    sign_date = parse_form_date(data.get("sign_date"))
+    start_date = parse_form_date(data.get("start_date"))
+    base_date = sign_date or start_date or timezone.localdate()
+    type_code = Contract.CONTRACT_TYPE_CODES.get(data.get("contract_type"), "")
+    return f"{type_code}{str(base_date.year)[-2:]}{inner_number}"
+
+
+def contract_for_import_display_number(display_number: str) -> Contract | None:
+    if not display_number:
+        return None
+    for contract in Contract.objects.filter(is_deleted=False, original_contract_inner_number__gt=""):
+        if contract.display_contract_number == display_number:
+            return contract
+    return None
+
+
 def validate_contract_import_rows(parsed_rows, contract_numbers=None):
     contract_numbers = contract_numbers or default_contract_numbers(max(len(parsed_rows), 1))
     results = []
     display_numbers = {}
     for index, item in enumerate(parsed_rows):
         data = item["data"].copy()
-        data["contract_number"] = contract_numbers[index]
-        form = ContractForm(data=data)
+        display_number = contract_import_display_number_from_data(data)
+        existing_contract = contract_for_import_display_number(display_number)
+        data["contract_number"] = existing_contract.contract_number if existing_contract else contract_numbers[index]
+        form = ContractForm(data=data, instance=existing_contract) if existing_contract else ContractForm(data=data)
         errors = []
         is_valid = form.is_valid()
         if not is_valid:
@@ -3912,6 +3934,7 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
             {
                 "row_number": item["row_number"],
                 "data": item["data"],
+                "existing_contract_id": existing_contract.pk if existing_contract else None,
                 "preview_cells": [
                     {"value": item["row_number"] - 1},
                     {"value": preview_contract.contract_name, "css_class": "truncate-cell", "title": preview_contract.contract_name},
@@ -4097,7 +4120,10 @@ def validate_invoice_import_rows(parsed_rows):
                 "preview_cells": [
                     {"value": len(results) + 1},
                     {"value": contract.contract_name if contract else data.get("contract_key", ""), "css_class": "truncate-cell", "title": contract.contract_name if contract else data.get("contract_key", "")},
-                    {"value": display_code_for_ui(contract.display_contract_number) if contract else ""},
+                    {
+                        "value": display_code_for_ui(contract.display_contract_number) if contract else "",
+                        "css_class": "default-contract-number" if contract and contract.uses_default_display_contract_number else "",
+                    },
                     {"value": data.get("record_type", "")},
                     {"value": record_date.strftime("%Y-%m-%d") if record_date else data.get("record_date", "")},
                     {"value": f"¥ {amount:.2f}" if amount is not None else data.get("amount", "")},
@@ -4187,7 +4213,10 @@ def validate_maintenance_import_rows(parsed_rows):
                 "preview_cells": [
                     {"value": len(results) + 1},
                     {"value": contract.contract_name if contract else data.get("contract_key", ""), "css_class": "truncate-cell", "title": contract.contract_name if contract else data.get("contract_key", "")},
-                    {"value": display_code_for_ui(contract.display_contract_number) if contract else ""},
+                    {
+                        "value": display_code_for_ui(contract.display_contract_number) if contract else "",
+                        "css_class": "default-contract-number" if contract and contract.uses_default_display_contract_number else "",
+                    },
                     {"value": record_date.strftime("%Y-%m-%d") if record_date else data.get("record_date", "")},
                     {"value": display_code_for_ui(record_number)},
                     {"value": record_position},
@@ -4417,13 +4446,26 @@ def contract_import(request):
                     log_operation(request, "新增", contract, object_type="项目记录", object_name=str(record), object_id=str(record.pk), detail=f"Excel import row: {row['row_number']}", version_obj=record)
                 else:
                     data = row["data"].copy()
-                    data["contract_number"] = contract_numbers[index]
-                    form = ContractForm(data=data)
+                    existing_contract_id = row.get("existing_contract_id")
+                    existing_contract = (
+                        Contract.objects.get(pk=existing_contract_id, is_deleted=False)
+                        if existing_contract_id
+                        else None
+                    )
+                    data["contract_number"] = (
+                        existing_contract.contract_number if existing_contract else contract_numbers[index]
+                    )
+                    form = (
+                        ContractForm(data=data, instance=existing_contract)
+                        if existing_contract
+                        else ContractForm(data=data)
+                    )
                     if not form.is_valid():
                         raise RuntimeError("确认导入时数据校验失败，请重新上传 Excel。")
                     contract = form.save()
                     ensure_contract_image_folder(contract)
-                    log_operation(request, "新增", contract, detail=f"Excel import row: {row['row_number']}")
+                    log_action = "修改" if existing_contract else "新增"
+                    log_operation(request, log_action, contract, detail=f"Excel import row: {row['row_number']}")
                 created_count += 1
         import_name = {"contract": "合同", "invoice": "票据记录", "maintenance": "项目记录"}.get(import_kind, "数据")
         return render(

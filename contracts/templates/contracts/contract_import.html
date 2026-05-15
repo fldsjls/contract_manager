@@ -24,6 +24,9 @@
       font-size: 13px;
       line-height: 1.25;
     }
+    .contract-import-preview-table tr.import-existing-row td {
+      background: #eaf6ff;
+    }
     .contract-import-preview-table th:nth-child(1),
     .contract-import-preview-table td:nth-child(1) { width: 54px; }
     .contract-import-preview-table th:nth-child(2),
@@ -170,7 +173,7 @@
         {% if selected_contract %}
           <div class="summary" style="margin-bottom: 12px;">
             <span>当前合同：{{ selected_contract.contract_name }}</span>
-            <span>合同编号：{{ selected_contract.display_contract_number|display_code }}</span>
+            <span>合同编号：<span class="{% if selected_contract.uses_default_display_contract_number %}default-contract-number{% endif %}">{{ selected_contract.display_contract_number|display_code }}</span></span>
           </div>
         {% endif %}
         {% if form.non_field_errors %}
@@ -217,7 +220,7 @@
               </thead>
               <tbody>
                 {% for row in results %}
-                  <tr>
+                  <tr{% if row.existing_contract_id %} class="import-existing-row"{% endif %}>
                     {% for cell in row.preview_cells %}
                       <td{% if cell.css_class %} class="{{ cell.css_class }}"{% endif %}{% if cell.title %} title="{{ cell.title }}"{% endif %}>{{ cell.value }}</td>
                     {% endfor %}

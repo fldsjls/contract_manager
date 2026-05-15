@@ -89,6 +89,10 @@
     <form id="undoForm" method="post" style="display: none;">
       {% csrf_token %}
     </form>
+    <div class="context-menu" id="contractContextMenu" hidden data-keep-selection>
+      <div class="context-menu-title" id="contractContextMenuTitle"></div>
+      <div class="context-menu-list" id="contractContextMenuList"></div>
+    </div>
 
     <!-- 当前列表的数量和金额汇总。 -->
     {% if is_admin_mode or is_super_admin_mode %}
@@ -398,6 +402,9 @@
     const filterModal = document.querySelector("#filterModal");
     const filterModalCancel = document.querySelector("#filterModalCancel");
     const filterResponsiblePerson = document.querySelector("#filterResponsiblePerson");
+    const contractContextMenu = document.querySelector("#contractContextMenu");
+    const contractContextMenuTitle = document.querySelector("#contractContextMenuTitle");
+    const contractContextMenuList = document.querySelector("#contractContextMenuList");
     const projectRangeModal = document.querySelector("#projectRangeModal");
     const projectRangeCancel = document.querySelector("#projectRangeCancel");
     const projectRangeApply = document.querySelector("#projectRangeApply");
@@ -455,6 +462,10 @@
     // 函数说明：处理页面交互和数据展示逻辑。
     function setDisabled(button, disabled) {
       button.setAttribute("aria-disabled", disabled ? "true" : "false");
+    }
+
+    function isDisabled(button) {
+      return !button || button.getAttribute("aria-disabled") === "true";
     }
 
     // 函数说明：处理页面交互和数据展示逻辑。
@@ -649,6 +660,7 @@
 
     // 函数说明：处理页面交互和数据展示逻辑。
     function clearSelection() {
+      hideContractContextMenu();
       document.querySelectorAll(".selectable-row.selected").forEach((row) => {
         row.classList.remove("selected");
       });
@@ -754,6 +766,83 @@
       }
     }
 
+    function hideContractContextMenu() {
+      if (contractContextMenu) {
+        contractContextMenu.hidden = true;
+      }
+    }
+
+    function menuAction(label, target, options = {}) {
+      return {
+        label,
+        target,
+        danger: Boolean(options.danger),
+        hidden: Boolean(options.hidden),
+      };
+    }
+
+    function contractMenuActions() {
+      return [
+        menuAction("查看详情", detailButton),
+        menuAction(moneyRecordButton?.textContent || "添加发票", moneyRecordButton, { hidden: !moneyRecordButton }),
+        menuAction("添加记录", recordButton, { hidden: !recordButton }),
+        menuAction("编辑合同", document.querySelector("#editButton"), { hidden: !document.querySelector("#editButton") }),
+        menuAction("预览合同", fileButton),
+        menuAction("统计", statsButton, { hidden: !statsButton }),
+        menuAction("结算", document.querySelector("#settlementButton"), { hidden: !document.querySelector("#settlementButton") }),
+        menuAction("导出快照", document.querySelector("#snapshotExportButton"), { hidden: !document.querySelector("#snapshotExportButton") }),
+        menuAction("图片查看", imageFolderButton, { hidden: !imageFolderButton }),
+        menuAction("删除合同", deleteButton, { danger: true, hidden: !deleteButton }),
+      ];
+    }
+
+    function activateContextTarget(target) {
+      if (isDisabled(target)) {
+        return;
+      }
+      hideContractContextMenu();
+      if (target.tagName.toLowerCase() === "a" && target.href && target.getAttribute("href") !== "#") {
+        window.location.href = target.href;
+        return;
+      }
+      target.click();
+    }
+
+    function positionContractContextMenu(x, y) {
+      contractContextMenu.hidden = false;
+      const margin = 8;
+      const rect = contractContextMenu.getBoundingClientRect();
+      const left = Math.min(x, window.innerWidth - rect.width - margin);
+      const top = Math.min(y, window.innerHeight - rect.height - margin);
+      contractContextMenu.style.left = `${Math.max(margin, left)}px`;
+      contractContextMenu.style.top = `${Math.max(margin, top)}px`;
+    }
+
+    function showContractContextMenu(event, row) {
+      if (!contractContextMenu || !contractContextMenuList) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      selectContractRow(row);
+      contractContextMenuTitle.textContent = row.dataset.contractName || "合同操作";
+      contractContextMenuList.textContent = "";
+      contractMenuActions().forEach((action) => {
+        if (action.hidden) {
+          return;
+        }
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = `context-menu-item${action.danger ? " danger" : ""}`;
+        item.textContent = action.label;
+        item.setAttribute("aria-disabled", isDisabled(action.target) ? "true" : "false");
+        item.addEventListener("click", () => activateContextTarget(action.target));
+        contractContextMenuList.appendChild(item);
+      });
+      positionContractContextMenu(event.clientX, event.clientY);
+      contractContextMenu.querySelector(".context-menu-item:not([aria-disabled='true'])")?.focus();
+    }
+
     if (table) {
       table.addEventListener("click", (event) => {
         if (event.target.closest(".inline-invoice-status")) {
@@ -766,6 +855,17 @@
         }
 
         selectContractRow(row);
+      });
+      table.addEventListener("contextmenu", (event) => {
+        if (event.target.closest(".inline-invoice-status, select, button, a, input, label")) {
+          return;
+        }
+        const row = event.target.closest(".selectable-row");
+        if (!row) {
+          hideContractContextMenu();
+          return;
+        }
+        showContractContextMenu(event, row);
       });
       table.addEventListener("dblclick", (event) => {
         if (event.target.closest(".inline-invoice-status, select, button, a, input, label")) {
@@ -953,6 +1053,18 @@
         }
       });
     }
+
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest("#contractContextMenu")) {
+        hideContractContextMenu();
+      }
+    });
+    document.addEventListener("scroll", hideContractContextMenu, true);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        hideContractContextMenu();
+      }
+    });
 
     if (deleteButton && deleteForm) {
       deleteButton.addEventListener("click", () => {

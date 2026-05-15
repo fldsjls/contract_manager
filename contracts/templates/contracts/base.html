@@ -739,6 +739,64 @@
     tbody tr.selectable-row.selected td {
       background: #b9d8ff;
     }
+    .context-menu {
+      position: fixed;
+      z-index: 60;
+      width: 172px;
+      padding: 6px;
+      border: 1px solid #cbd3df;
+      border-radius: 6px;
+      background: #fff;
+      box-shadow: 0 16px 34px rgba(15, 23, 42, 0.2);
+    }
+    .context-menu[hidden] {
+      display: none;
+    }
+    .context-menu-title {
+      padding: 6px 8px 7px;
+      color: #667085;
+      font-size: 12px;
+      line-height: 1.25;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      border-bottom: 1px solid #edf0f5;
+    }
+    .context-menu-list {
+      display: grid;
+      gap: 2px;
+      padding-top: 5px;
+    }
+    .context-menu-item {
+      display: block;
+      width: 100%;
+      padding: 8px 9px;
+      border: 0;
+      border-radius: 4px;
+      background: #fff;
+      color: #111827;
+      font: inherit;
+      font-size: 13px;
+      line-height: 1.25;
+      text-align: left;
+      cursor: pointer;
+    }
+    .context-menu-item:hover,
+    .context-menu-item:focus {
+      background: #eef4ff;
+      outline: none;
+    }
+    .context-menu-item.danger {
+      color: #dc2626;
+    }
+    .context-menu-item[aria-disabled="true"] {
+      color: #98a2b3;
+      cursor: not-allowed;
+    }
+    .context-menu-item[aria-disabled="true"]:hover,
+    .context-menu-item[aria-disabled="true"]:focus {
+      background: #fff;
+    }
     td.name, td.party {
       overflow: hidden;
       text-overflow: ellipsis;

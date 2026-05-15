@@ -1,4 +1,5 @@
 {% extends "contracts/base.html" %}
+{% load contract_codes %}
 <!-- 回收站页面，显示一周内删除的合同并提供恢复操作。 -->
 {% block title %}回收站 - 合同管理系统{% endblock %}
 
@@ -30,7 +31,7 @@
             <tr>
               <td>{{ forloop.counter }}</td>
               <td class="name">{{ contract.contract_name }}</td>
-              <td>{{ contract.display_contract_number }}</td>
+              <td>{{ contract.display_contract_number|display_code }}</td>
               <td class="party">{{ contract.party_name }}</td>
               <td>¥ {{ contract.amount|floatformat:2 }}</td>
               <td>{{ contract.deleted_at|date:"Y-m-d H:i" }}</td>

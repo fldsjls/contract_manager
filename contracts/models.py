@@ -27,6 +27,14 @@ def normalize_storage_location_number(value) -> str:
     return normalize_contract_number_part(value, 2) or "00"
 
 
+def normalize_record_position_number(value) -> str:
+    return normalize_contract_number_part(value, 3) or "000"
+
+
+def normalize_record_volume_number(value) -> str:
+    return normalize_contract_number_part(value, 2) or "01"
+
+
 # 清理项目文件夹名称，避免 Windows 和 URL 路径中的非法字符。
 # 函数说明：封装可复用的业务处理。
 def safe_project_folder_name(contract: "Contract") -> str:
@@ -95,7 +103,6 @@ class Contract(models.Model):
         ("检测", "检测"),
         ("改造", "改造"),
         ("新建", "新建"),
-        ("其他", "其他"),
     ]
     # 票据状态用于控制发票记录或收据记录入口。
     INVOICE_STATUS = [
@@ -103,9 +110,19 @@ class Contract(models.Model):
         ("待开票", "待开票"),
         ("票已结", "票已结"),
     ]
+    CONTRACT_TYPE_SEQUENCE_CODES = {
+        "维保": "1",
+        "评估": "2",
+        "检测": "3",
+        "改造": "4",
+        "新建": "5",
+    }
     CONTRACT_TYPE_CODES = {
-        value: f"{index:02d}"
-        for index, (value, _label) in enumerate(CONTRACT_TYPES, start=1)
+        "维保": "W",
+        "评估": "P",
+        "检测": "J",
+        "改造": "G",
+        "新建": "X",
     }
 
     # 合同基础字段会映射成数据库 contracts_contract 表中的列。
@@ -113,7 +130,7 @@ class Contract(models.Model):
     contract_number = models.CharField("合同编号", max_length=50, unique=True)
     original_contract_folder = models.CharField("原合同文件夹", max_length=100, blank=True)
     original_contract_inner_number = models.CharField("文件编号", max_length=100, blank=True)
-    storage_location_number = models.CharField("存储编号", max_length=100, default="00", blank=True)
+    storage_location_number = models.CharField("位置编号", max_length=100, default="00", blank=True)
     contract_type = models.CharField("合同类型", max_length=20, choices=CONTRACT_TYPES, default="维保")
     party_name = models.CharField("甲方名称", max_length=200)
     amount = models.DecimalField("金额", max_digits=14, decimal_places=2, default=0)
@@ -147,24 +164,25 @@ class Contract(models.Model):
     # 函数说明：封装可复用的业务处理。
     @property
     def display_contract_number(self) -> str:
-        # 列表显示编号由签订年份、文件编号、文件编号和合同类型编码组成。
+        # 合同显示编号由类型 1 位、年份 2 位和文件编号 5 位组成。
         if self.uses_default_display_contract_number:
             return self.contract_number
         year = str((self.sign_date or self.start_date or self.created_at).year)
-        folder = normalize_contract_number_part(self.original_contract_folder, 2)
-        inner_number = normalize_contract_number_part(self.original_contract_inner_number, 4)
-        type_code = self.CONTRACT_TYPE_CODES.get(self.contract_type, "06")
-        storage_location = normalize_storage_location_number(self.storage_location_number)
-        return f"{year[-2:]}{folder}{inner_number}{type_code}{storage_location}"
+        file_number = normalize_contract_number_part(self.original_contract_inner_number, 5)
+        type_code = self.CONTRACT_TYPE_CODES.get(self.contract_type, "")
+        return f"{type_code}{year[-2:]}{file_number}"
 
     # 函数说明：封装可复用的业务处理。
     @property
     def uses_default_display_contract_number(self) -> bool:
-        # 文件编号或文件编号任一缺失时，列表回退显示默认自动编号。
-        return not (
-            normalize_contract_number_part(self.original_contract_folder, 2)
-            and normalize_contract_number_part(self.original_contract_inner_number, 4)
-        )
+        # 文件编号缺失时，列表回退显示默认自动编号。
+        return not normalize_contract_number_part(self.original_contract_inner_number, 5)
+
+    @property
+    def project_years(self) -> int:
+        if not self.start_date or not self.end_date:
+            return 0
+        return max(self.end_date.year - self.start_date.year + 1, 1)
 
     # 函数说明：封装可复用的业务处理。
     @property
@@ -180,6 +198,14 @@ class Contract(models.Model):
         if display_number == self.contract_number:
             return self.contract_number
         return f"{self.contract_number}   {display_number}"
+
+    @property
+    def archive_number(self) -> str:
+        folder_number = normalize_contract_number_part(self.original_contract_folder, 3)
+        if not folder_number:
+            return ""
+        location_number = normalize_storage_location_number(self.storage_location_number)
+        return f"{folder_number}{location_number}"
 
     # 函数说明：封装可复用的业务处理。
     @property
@@ -361,7 +387,8 @@ class MaintenanceRecord(models.Model):
     contract = models.ForeignKey(Contract, on_delete=models.CASCADE, verbose_name="所属合同")
     record_date = models.DateField("日期")
     month = models.CharField("月份", max_length=30)
-    storage_location_number = models.CharField("存储编号", max_length=100, default="00", blank=True)
+    record_position_number = models.CharField("位置编号", max_length=100, default="000", blank=True)
+    storage_location_number = models.CharField("分册编号", max_length=100, default="01", blank=True)
     file = models.FileField("附件", upload_to=project_file_upload_path, null=True, blank=True)
     remark = models.CharField("备注", max_length=255, blank=True)
     created_at = models.DateTimeField("创建时间", default=timezone.now)

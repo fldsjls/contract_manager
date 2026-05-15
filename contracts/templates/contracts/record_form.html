@@ -1,4 +1,5 @@
 {% extends "contracts/base.html" %}
+{% load contract_codes %}
 
 {% block title %}{{ title }}{% endblock %}
 
@@ -10,7 +11,7 @@
   <section class="panel">
     <div class="summary">
       <span>所属合同：{{ contract.contract_name }}</span>
-      <span>{{ labels.contract_number }}：{{ contract.display_contract_number }}</span>
+      <span>{{ labels.contract_number }}：{{ contract.display_contract_number|display_code }}</span>
     </div>
 
     <!-- 上传附件时必须使用 multipart 表单。 -->
@@ -24,7 +25,11 @@
           <thead>
             <tr>
               <th>{{ labels.date }}</th>
-              {% if month_field %}<th>记录编号</th><th>存储编号</th>{% endif %}
+              {% if month_field %}
+                <th>记录编号 <small class="subtle-heading-note">业务编号-位置编号-分册编号</small></th>
+                <th>位置编号 <small class="subtle-heading-note">柜号1位-栏目2位</small></th>
+                <th>分册编号 <small class="subtle-heading-note">项目年限 {{ project_years }}</small></th>
+              {% endif %}
               {% if record_type_options %}<th>类型</th>{% endif %}
               {% if not month_field %}<th>{{ amount_label|default:labels.contract_amount }}</th>{% endif %}
               {% if actual_amount_field %}<th>{{ labels.actual_amount }}</th>{% endif %}
@@ -40,7 +45,8 @@
               </td>
               {% if month_field %}
                 <td><output class="record-number-output"></output></td>
-                <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="00" maxlength="2" inputmode="numeric" pattern="\d{0,2}"></td>
+                <td><input class="record-position-number-input" name="record_position_number" type="text" value="000" maxlength="3" inputmode="numeric" pattern="\d{0,3}"></td>
+                <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="01" maxlength="2" inputmode="numeric" pattern="\d{0,2}"></td>
               {% endif %}
               {% if record_type_options %}
                 <td>
@@ -84,9 +90,8 @@
     const recordTableBody = document.querySelector("#recordTable tbody");
     const addRecordRowButton = document.querySelector("#addRecordRow");
     const isMaintenanceForm = {{ month_field|yesno:"true,false" }};
-    const recordFileNumber = "{{ record_file_number|default:''|escapejs }}";
-    const recordTypeCode = "{{ record_type_code|default:''|escapejs }}";
-    const recordSignYear = Number("{{ record_sign_year|default:''|escapejs }}");
+    const businessRecordNumber = "{{ business_record_number|default:''|escapejs }}";
+    const recordNumberMemoryKey = `contract_record_number_memory_${businessRecordNumber || "default"}`;
     let nextRecordIndex = 1;
 
     function monthFromDateValue(dateValue) {
@@ -95,17 +100,72 @@
 
     function normalizeStorageLocation(value) {
       const digits = (value || "").replace(/\D/g, "").slice(0, 2);
-      return (digits || "00").padStart(2, "0");
+      return (digits || "01").padStart(2, "0");
     }
 
-    function recordNumberFromDateValue(dateValue, storageLocationValue) {
-      const recordYear = Number((dateValue || "").slice(0, 4));
-      if (!recordYear || !recordSignYear) {
+    function normalizeRecordPosition(value) {
+      const digits = (value || "").replace(/\D/g, "").slice(0, 3);
+      return (digits || "000").padStart(3, "0");
+    }
+
+    function rememberedRecordNumbers() {
+      try {
+        const data = JSON.parse(localStorage.getItem(recordNumberMemoryKey) || "{}");
+        return {
+          recordPosition: normalizeRecordPosition(data.recordPosition),
+          storageLocation: normalizeStorageLocation(data.storageLocation),
+        };
+      } catch (error) {
+        return { recordPosition: "000", storageLocation: "01" };
+      }
+    }
+
+    function rememberRecordNumbers(row) {
+      if (!isMaintenanceForm || !row) {
+        return;
+      }
+      const recordPositionInput = row.querySelector(".record-position-number-input");
+      const storageLocationInput = row.querySelector(".storage-location-number-input");
+      const data = {
+        recordPosition: normalizeRecordPosition(recordPositionInput?.value || ""),
+        storageLocation: normalizeStorageLocation(storageLocationInput?.value || ""),
+      };
+      localStorage.setItem(recordNumberMemoryKey, JSON.stringify(data));
+    }
+
+    function applyRememberedRecordNumbers(row) {
+      if (!isMaintenanceForm || !row) {
+        return;
+      }
+      const values = rememberedRecordNumbers();
+      const recordPositionInput = row.querySelector(".record-position-number-input");
+      const storageLocationInput = row.querySelector(".storage-location-number-input");
+      if (recordPositionInput) {
+        recordPositionInput.value = values.recordPosition;
+      }
+      if (storageLocationInput) {
+        storageLocationInput.value = values.storageLocation;
+      }
+    }
+
+    function recordNumberFromValues(recordPositionValue, storageLocationValue) {
+      if (!businessRecordNumber) {
         return "";
       }
-      const periodSequence = String(recordYear - recordSignYear + 1).padStart(2, "0");
-      const shortRecordYear = String(recordYear).slice(-2);
-      return `${recordFileNumber}${shortRecordYear}${periodSequence}${recordTypeCode}${normalizeStorageLocation(storageLocationValue)}`;
+      return formatDisplayCode(`${businessRecordNumber}${normalizeRecordPosition(recordPositionValue)}${normalizeStorageLocation(storageLocationValue)}`);
+    }
+
+    function formatDisplayCode(value) {
+      const text = String(value || "");
+      if (/^[A-Za-z]\d{12,}$/.test(text)) {
+        return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 11), text.slice(11, 13), text.slice(13)]
+          .filter(Boolean)
+          .join("-");
+      }
+      if (/^[A-Za-z]\d{7}$/.test(text)) {
+        return `${text.slice(0, 1)}-${text.slice(1, 3)}-${text.slice(3)}`;
+      }
+      return text;
     }
 
     function syncMaintenanceRow(row) {
@@ -115,8 +175,12 @@
       const dateInput = row.querySelector(".record-date-input");
       const monthInput = row.querySelector(".record-month-input");
       const numberOutput = row.querySelector(".record-number-output");
+      const recordPositionInput = row.querySelector(".record-position-number-input");
       const storageLocationInput = row.querySelector(".storage-location-number-input");
       const dateValue = dateInput?.value || "";
+      if (recordPositionInput) {
+        recordPositionInput.value = recordPositionInput.value.replace(/\D/g, "").slice(0, 3);
+      }
       if (storageLocationInput) {
         storageLocationInput.value = storageLocationInput.value.replace(/\D/g, "").slice(0, 2);
       }
@@ -124,27 +188,37 @@
         monthInput.value = monthFromDateValue(dateValue);
       }
       if (numberOutput) {
-        const recordNumber = recordNumberFromDateValue(dateValue, storageLocationInput?.value || "00");
+        const recordNumber = recordNumberFromValues(recordPositionInput?.value || "000", storageLocationInput?.value || "01");
         numberOutput.value = recordNumber;
         numberOutput.textContent = recordNumber;
       }
     }
 
     recordTableBody.addEventListener("input", (event) => {
-      if (event.target.matches(".record-date-input") || event.target.matches(".storage-location-number-input")) {
+      if (event.target.matches(".record-date-input") || event.target.matches(".record-position-number-input") || event.target.matches(".storage-location-number-input")) {
         syncMaintenanceRow(event.target.closest("tr"));
       }
     });
 
     recordTableBody.addEventListener("blur", (event) => {
-      if (!event.target.matches(".storage-location-number-input")) {
+      if (!event.target.matches(".record-position-number-input") && !event.target.matches(".storage-location-number-input")) {
         return;
       }
-      event.target.value = normalizeStorageLocation(event.target.value);
-      syncMaintenanceRow(event.target.closest("tr"));
+      event.target.value = event.target.matches(".record-position-number-input")
+        ? normalizeRecordPosition(event.target.value)
+        : normalizeStorageLocation(event.target.value);
+      const row = event.target.closest("tr");
+      syncMaintenanceRow(row);
+      rememberRecordNumbers(row);
     }, true);
 
-    recordTableBody.querySelectorAll("tr").forEach(syncMaintenanceRow);
+    recordTableBody.querySelectorAll("tr").forEach((row) => {
+      applyRememberedRecordNumbers(row);
+      syncMaintenanceRow(row);
+    });
+    recordTableBody.closest("form")?.addEventListener("submit", () => {
+      Array.from(recordTableBody.querySelectorAll("tr")).forEach(rememberRecordNumbers);
+    });
 
     addRecordRowButton.addEventListener("click", () => {
       const index = nextRecordIndex++;
@@ -157,7 +231,8 @@
         </td>
         {% if month_field %}
           <td><output class="record-number-output"></output></td>
-          <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="00" maxlength="2" inputmode="numeric" pattern="\\d{0,2}"></td>
+          <td><input class="record-position-number-input" name="record_position_number" type="text" value="000" maxlength="3" inputmode="numeric" pattern="\\d{0,3}"></td>
+          <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="01" maxlength="2" inputmode="numeric" pattern="\\d{0,2}"></td>
         {% endif %}
         {% if record_type_options %}
           <td>
@@ -185,6 +260,7 @@
         </td>
       `;
       recordTableBody.appendChild(row);
+      applyRememberedRecordNumbers(row);
       syncMaintenanceRow(row);
     });
 

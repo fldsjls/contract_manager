@@ -90,13 +90,6 @@ PROJECT_RECORD_LABELS = {
         "file": "新建文件",
         "empty": "暂无新建记录",
     },
-    "其他": {
-        "button": "其他记录",
-        "new_title": "新增其他记录",
-        "list_title": "其他记录",
-        "file": "其他文件",
-        "empty": "暂无其他记录",
-    },
 }
 
 
@@ -107,7 +100,7 @@ def invoice_mode_labels(invoice_status: str) -> dict:
 
 # 函数说明：根据合同类型返回扩展项目记录文案。
 def project_record_labels(contract_type: str) -> dict:
-    return PROJECT_RECORD_LABELS.get(contract_type, PROJECT_RECORD_LABELS["其他"])
+    return PROJECT_RECORD_LABELS.get(contract_type, PROJECT_RECORD_LABELS["维保"])
 
 
 # 函数说明：把全局文案注入所有模板。

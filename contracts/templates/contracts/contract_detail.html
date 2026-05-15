@@ -1,4 +1,5 @@
 {% extends "contracts/base.html" %}
+{% load contract_codes %}
 
 {% block title %}合同详情{% endblock %}
 
@@ -27,7 +28,10 @@
                 data-folder-url="{% url 'contracts:contract_file_folder_open' contract.id %}"
               >{{ contract.contract_number }}</a>
               {% if contract.display_contract_number != contract.contract_number %}
-                <span class="display-contract-number">{{ contract.display_contract_number }}</span>
+                <span class="display-contract-number">{{ contract.display_contract_number|display_code }}</span>
+              {% endif %}
+              {% if contract.archive_number %}
+                <span class="archive-contract-number">{{ contract.archive_number|archive_code }}</span>
               {% endif %}
             </span>
             <span>{{ labels.contract_type }}：{{ contract.contract_type }}</span>

@@ -55,8 +55,10 @@ class ContractForm(forms.ModelForm):
             field.widget.attrs.setdefault("class", "form-control")
         self.fields["original_contract_folder"].label = "文件夹编号"
         self.fields["original_contract_inner_number"].label = "文件编号"
-        self.fields["storage_location_number"].label = "存储编号"
+        self.fields["storage_location_number"].label = "位置编号"
         self.fields["archive_years"].label = "归档时间（年）"
+        self.fields["original_contract_folder"].required = False
+        self.fields["original_contract_inner_number"].required = True
         self.fields["contract_number"].widget.attrs.update(
             {
                 "readonly": "readonly",
@@ -64,21 +66,25 @@ class ContractForm(forms.ModelForm):
                 "title": "默认合同编号自动生成，不能手动修改。",
             }
         )
-        self.fields["original_contract_folder"].widget.attrs.setdefault("placeholder", "文件夹编号")
-        self.fields["original_contract_inner_number"].widget.attrs.setdefault("placeholder", "文件编号")
-        self.fields["storage_location_number"].widget.attrs.setdefault("placeholder", "存储编号")
+        self.fields["original_contract_folder"].widget.attrs.pop("placeholder", None)
+        self.fields["original_contract_inner_number"].widget.attrs.pop("placeholder", None)
+        self.fields["storage_location_number"].widget.attrs.pop("placeholder", None)
         self.fields["original_contract_folder"].widget.attrs.update(
             {
-                "maxlength": "2",
+                "maxlength": "3",
                 "inputmode": "numeric",
-                "pattern": r"\d{0,2}",
+                "pattern": r"\d{0,3}",
             }
         )
+        if not self.is_bound:
+            storage_value = self.initial.get("storage_location_number") or getattr(self.instance, "storage_location_number", "")
+            if normalize_storage_location_number(storage_value) == "00":
+                self.initial["storage_location_number"] = ""
         self.fields["original_contract_inner_number"].widget.attrs.update(
             {
-                "maxlength": "4",
+                "maxlength": "5",
                 "inputmode": "numeric",
-                "pattern": r"\d{0,4}",
+                "pattern": r"\d{0,5}",
             }
         )
         self.fields["storage_location_number"].widget.attrs.update(
@@ -91,10 +97,10 @@ class ContractForm(forms.ModelForm):
 
     # 方法说明：执行表单字段或整表校验。
     def clean_contract_number(self):
-        # 校验合同编号必须是 12 位数字。
+        # 校验默认业务编号必须是 12 位数字。
         value = self.cleaned_data["contract_number"].strip()
         if len(value) != 12 or not value.isdigit():
-            raise forms.ValidationError("合同编号必须是 12 位数字。")
+            raise forms.ValidationError("业务编号必须是 12 位数字。")
         return value
 
     # 方法说明：执行表单字段或整表校验。
@@ -106,11 +112,11 @@ class ContractForm(forms.ModelForm):
 
     # 方法说明：执行表单字段或整表校验。
     def clean_original_contract_folder(self):
-        return normalize_contract_number_part(self.cleaned_data.get("original_contract_folder"), 2)
+        return normalize_contract_number_part(self.cleaned_data.get("original_contract_folder"), 3)
 
     # 方法说明：执行表单字段或整表校验。
     def clean_original_contract_inner_number(self):
-        return normalize_contract_number_part(self.cleaned_data.get("original_contract_inner_number"), 4)
+        return normalize_contract_number_part(self.cleaned_data.get("original_contract_inner_number"), 5)
 
     def clean_storage_location_number(self):
         return normalize_storage_location_number(self.cleaned_data.get("storage_location_number"))
@@ -124,20 +130,14 @@ class ContractForm(forms.ModelForm):
         if not end_date:
             self.add_error("end_date", "必须填写截止日期。")
 
-        folder = normalize_contract_number_part(cleaned_data.get("original_contract_folder"), 2)
-        file_number = normalize_contract_number_part(cleaned_data.get("original_contract_inner_number"), 4)
-        storage_location = normalize_storage_location_number(cleaned_data.get("storage_location_number"))
-        if folder and file_number:
+        file_number = normalize_contract_number_part(cleaned_data.get("original_contract_inner_number"), 5)
+        if file_number:
             base_date = cleaned_data.get("sign_date") or cleaned_data.get("start_date") or timezone.localdate()
             display_contract_number = (
-                f"{str(base_date.year)[-2:]}"
-                f"{folder}"
                 f"{file_number}"
-                f"{Contract.CONTRACT_TYPE_CODES.get(contract_type, '06')}"
-                f"{storage_location}"
             )
+            display_contract_number = f"{Contract.CONTRACT_TYPE_CODES.get(contract_type, '')}{str(base_date.year)[-2:]}{file_number}"
             candidates = Contract.objects.filter(
-                original_contract_folder__gt="",
                 original_contract_inner_number__gt="",
             )
             if self.instance and self.instance.pk:

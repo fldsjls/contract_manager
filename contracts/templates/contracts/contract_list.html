@@ -1,6 +1,7 @@
 ﻿{% extends "contracts/base.html" %}
 
 {% load static %}
+{% load contract_codes %}
 
 {% block title %}合同列表{% endblock %}
 
@@ -180,8 +181,8 @@
                 <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
                 <td
                   class="{% if contract.uses_default_display_contract_number %}default-contract-number{% endif %}"
-                  title="{{ contract.display_contract_number }}"
-                >{{ contract.display_contract_number }}</td>
+                  title="{{ contract.display_contract_number|display_code }}{% if contract.archive_number %}   {{ contract.archive_number|archive_code }}{% endif %}"
+                >{{ contract.display_contract_number|display_code }}</td>
                 <td>{{ contract.contract_type }}</td>
                 <td class="party" title="{{ contract.party_name }}">{{ contract.party_name }}</td>
                 <td>¥ {{ contract.amount|floatformat:2 }}</td>
@@ -493,6 +494,19 @@
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;");
+    }
+
+    function formatDisplayCode(value) {
+      const text = String(value || "");
+      if (/^[A-Za-z]\d{12,}$/.test(text)) {
+        return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 11), text.slice(11, 13), text.slice(13)]
+          .filter(Boolean)
+          .join("-");
+      }
+      if (/^[A-Za-z]\d{7}$/.test(text)) {
+        return `${text.slice(0, 1)}-${text.slice(1, 3)}-${text.slice(3)}`;
+      }
+      return text;
     }
 
     // 函数说明：处理页面交互和数据展示逻辑。
@@ -1029,7 +1043,7 @@
         item.type = "button";
         item.innerHTML = `
           <span class="search-preview-title">${escapeHtml(row.dataset.contractName)}</span>
-          <span class="search-preview-meta">编号: ${escapeHtml(row.dataset.contractNumber)}　甲方: ${escapeHtml(row.dataset.partyName)}　负责人: ${escapeHtml(row.dataset.responsiblePerson || "未填写")}</span>
+            <span class="search-preview-meta">编号: ${escapeHtml(formatDisplayCode(row.dataset.contractNumber))}　甲方: ${escapeHtml(row.dataset.partyName)}　负责人: ${escapeHtml(row.dataset.responsiblePerson || "未填写")}</span>
         `;
         item.addEventListener("mousedown", (event) => {
           event.preventDefault();
@@ -1285,7 +1299,7 @@
           return `
             <div class="maintenance-month-record">
               <span>日期: ${escapeHtml(record.date)}</span>
-              <span>编号: ${escapeHtml(record.record_number)}</span>
+              <span>编号: ${escapeHtml(formatDisplayCode(record.record_number))}</span>
               <span title="${escapeHtml(record.remark)}">备注: ${escapeHtml(record.remark)}</span>
               <span>附件: ${attachment}</span>
             </div>

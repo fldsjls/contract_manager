@@ -1,4 +1,5 @@
 {% extends "contracts/base.html" %}
+{% load contract_codes %}
 
 {% block title %}{{ record_label }}{% endblock %}
 
@@ -21,7 +22,7 @@
       <!-- 复用合同详情信息表，便于在记录页确认当前合同。 -->
       <section class="panel">
         <div class="summary">
-          <span>{{ labels.contract_number }}：{{ contract.display_contract_number }}</span>
+          <span>{{ labels.contract_number }}：{{ contract.display_contract_number|display_code }}</span>
           <span>{{ labels.contract_type }}：{{ contract.contract_type }}</span>
           <span>{{ labels.status }}：<span class="status {{ contract.status_class }}">{{ contract.status }}</span></span>
         </div>
@@ -107,7 +108,7 @@
                   <thead>
                     <tr>
                       <th>{{ labels.date }}</th>
-                      <th>记录编号</th>
+                      <th>记录编号 <small class="subtle-heading-note">业务编号-位置编号-分册编号</small></th>
                       <th>{{ labels.remark }}</th>
                       <th>{{ project_record_labels.file }}</th>
                       {% if can_manage %}<th class="select-col"><input type="checkbox" data-record-select-all></th>{% endif %}
@@ -117,7 +118,7 @@
                     {% for record in maintenance_records %}
                       <tr>
                         <td>{{ record.record_date|date:"Y-m-d" }}</td>
-                        <td>{{ record.record_number }}</td>
+                        <td>{{ record.record_number|display_code }}</td>
                         <td class="remark">
                           {% if can_manage %}
                             <div class="inline-remark-editor">

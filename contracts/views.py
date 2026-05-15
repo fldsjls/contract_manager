@@ -3355,8 +3355,7 @@ def contract_list_export(request):
         "序号",
         UI_LABELS["contract_name"],
         "默认编号",
-        "业务编号",
-        "存档编号",
+        UI_LABELS["contract_number"],
         UI_LABELS["contract_type"],
         UI_LABELS["party_name"],
         UI_LABELS["contract_amount"],
@@ -3374,8 +3373,7 @@ def contract_list_export(request):
                 index,
                 contract.contract_name,
                 contract.contract_number,
-                contract.display_contract_number,
-                contract.archive_number_display,
+                f"{contract.display_contract_number}{contract.archive_number_display}",
                 contract.contract_type,
                 contract.party_name,
                 float(contract.amount or 0),
@@ -3389,7 +3387,7 @@ def contract_list_export(request):
         )
 
     response = HttpResponse(
-        build_contract_list_xlsx(headers, rows, numeric_columns={8}),
+        build_contract_list_xlsx(headers, rows, numeric_columns={7}),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     response["Content-Disposition"] = 'attachment; filename="contract_list.xlsx"'

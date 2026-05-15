@@ -209,7 +209,19 @@
                 </td>
                 <td>{{ contract.start_date|date:"Y-m-d" }}</td>
                 <td>{{ contract.end_date|date:"Y-m-d" }}</td>
-                <td>{{ contract.responsible_person|default:"" }}</td>
+                <td>
+                  {% if can_manage %}
+                    <div class="inline-remark-editor inline-responsible-editor">
+                      <span class="inline-remark-display {% if not contract.responsible_person %}empty{% endif %}" title="{{ contract.responsible_person|default:'' }}">{{ contract.responsible_person|default:"" }}</span>
+                      <div class="inline-remark-form" data-action="{% url 'contracts:contract_responsible_person_update' contract.id %}" data-field="responsible_person" data-empty-label="点击填写" hidden>
+                        {% csrf_token %}
+                        <input name="responsible_person" type="text" value="{{ contract.responsible_person|default:'' }}" autocomplete="off">
+                      </div>
+                    </div>
+                  {% else %}
+                    {{ contract.responsible_person|default:"" }}
+                  {% endif %}
+                </td>
                 <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
                 <td>{% if contract.file_is_uploaded %}已上传{% else %}<span class="file-missing">未上传</span>{% endif %}</td>
               </tr>
@@ -1243,7 +1255,7 @@
       const responsiblePersonHistoryKey = "contract_responsible_person_history";
       const legacyResponsiblePerson = localStorage.getItem(responsiblePersonStorageKey);
       const savedResponsiblePeople = JSON.parse(localStorage.getItem(responsiblePersonHistoryKey) || "[]");
-      const responsiblePeople = Array.from(new Set([legacyResponsiblePerson, ...savedResponsiblePeople].filter(Boolean)));
+      let responsiblePeople = Array.from(new Set([legacyResponsiblePerson, ...savedResponsiblePeople].filter(Boolean)));
       const fieldWrap = document.createElement("div");
       const dropdown = document.createElement("div");
       fieldWrap.className = "memory-field-wrap";
@@ -1283,6 +1295,7 @@
           return;
         }
         const nextPeople = [value, ...responsiblePeople.filter((item) => item !== value)].slice(0, 20);
+        responsiblePeople = nextPeople;
         localStorage.setItem(responsiblePersonStorageKey, value);
         localStorage.setItem(responsiblePersonHistoryKey, JSON.stringify(nextPeople));
       }
@@ -1290,6 +1303,7 @@
       input.addEventListener("focus", renderOptions);
       input.addEventListener("click", renderOptions);
       input.addEventListener("input", renderOptions);
+      input.addEventListener("responsible-memory-save", saveValue);
       input.closest("form")?.addEventListener("submit", saveValue);
       document.addEventListener("click", (event) => {
         if (!fieldWrap.contains(event.target)) {
@@ -1299,6 +1313,7 @@
     }
 
     setupResponsibleMemory(filterResponsiblePerson);
+    document.querySelectorAll(".inline-responsible-editor input[name='responsible_person']").forEach(setupResponsibleMemory);
 
     if (imageFolderButton) {
       imageFolderButton.addEventListener("click", async () => {

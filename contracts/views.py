@@ -4591,6 +4591,19 @@ def contract_remark_update(request, pk: int):
     return redirect(next_url)
 
 
+# 函数说明：在合同列表中即时更新负责人。
+@admin_required
+def contract_responsible_person_update(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    if request.method != "POST":
+        return JsonResponse({"error": "只允许保存负责人。"}, status=405)
+    responsible_person = request.POST.get("responsible_person", "").strip()
+    contract.responsible_person = responsible_person
+    contract.save(update_fields=["responsible_person", "updated_at"])
+    log_operation(request, "修改", contract, detail=f"responsible person: {responsible_person or 'empty'}")
+    return JsonResponse({"ok": True, "responsible_person": contract.responsible_person})
+
+
 # 函数说明：在合同列表中即时更新票据状态。
 @admin_required
 def contract_invoice_status_update(request, pk: int):

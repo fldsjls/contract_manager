@@ -1903,7 +1903,8 @@
     .inline-remark-editor.editing .inline-remark-form {
       display: block !important;
     }
-    .inline-remark-form textarea {
+    .inline-remark-form textarea,
+    .inline-remark-form input[type="text"] {
       display: block;
       width: 100%;
       height: 28px;
@@ -1915,6 +1916,9 @@
       overflow: hidden;
       line-height: 20px;
       scrollbar-width: none;
+    }
+    .inline-remark-form input[type="text"] {
+      text-align: center;
     }
     .inline-remark-form textarea::-webkit-scrollbar {
       display: none;
@@ -2270,14 +2274,16 @@
     async function saveInlineRemarkEditor(editor) {
       const display = editor.querySelector(".inline-remark-display");
       const panel = editor.querySelector(".inline-remark-form");
-      const textarea = editor.querySelector("textarea");
-      if (!display || !panel || !textarea || !panel.dataset.action) {
+      const input = editor.querySelector("textarea, input[type='text']");
+      if (!display || !panel || !input || !panel.dataset.action) {
         closeInlineRemarkEditor(editor);
         return;
       }
 
+      const fieldName = panel.dataset.field || input.name || "remark";
+      const emptyLabel = panel.dataset.emptyLabel || "点击添加备注";
       const formData = new FormData();
-      formData.append("remark", textarea.value);
+      formData.append(fieldName, input.value);
       formData.append("next", window.location.pathname + window.location.search);
 
       const response = await fetch(panel.dataset.action, {
@@ -2293,10 +2299,23 @@
         return;
       }
 
-      const remark = textarea.value.trim();
-      display.textContent = remark || "点击添加备注";
-      display.title = remark;
-      display.classList.toggle("empty", !remark);
+      let savedValue = input.value.trim();
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const data = await response.json();
+        savedValue = (data[fieldName] ?? savedValue).trim();
+      }
+      input.value = savedValue;
+      display.textContent = savedValue || emptyLabel;
+      display.title = savedValue;
+      display.classList.toggle("empty", !savedValue);
+      if (fieldName === "responsible_person") {
+        const row = editor.closest(".selectable-row");
+        if (row) {
+          row.dataset.responsiblePerson = savedValue;
+        }
+        input.dispatchEvent(new CustomEvent("responsible-memory-save", { bubbles: true }));
+      }
       closeInlineRemarkEditor(editor);
     }
 
@@ -2304,9 +2323,9 @@
     function initInlineRemarkEditors() {
       document.querySelectorAll(".inline-remark-editor").forEach((editor) => {
         const display = editor.querySelector(".inline-remark-display");
-        const textarea = editor.querySelector("textarea");
+        const input = editor.querySelector("textarea, input[type='text']");
         const panel = editor.querySelector(".inline-remark-form");
-        if (!display || !textarea || !panel) {
+        if (!display || !input || !panel) {
           return;
         }
         closeInlineRemarkEditor(editor);
@@ -2318,9 +2337,12 @@
             }
           });
           openInlineRemarkEditor(editor);
-          textarea.focus();
+          input.focus();
+          if (typeof input.select === "function") {
+            input.select();
+          }
         });
-        textarea.addEventListener("keydown", (event) => {
+        input.addEventListener("keydown", (event) => {
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
             saveInlineRemarkEditor(editor);
@@ -2328,7 +2350,7 @@
             closeInlineRemarkEditor(editor);
           }
         });
-        textarea.addEventListener("blur", () => {
+        input.addEventListener("blur", () => {
           setTimeout(() => {
             if (!editor.contains(document.activeElement)) {
               closeInlineRemarkEditor(editor);

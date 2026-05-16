@@ -151,7 +151,7 @@
         forwardDirection = recordPositionSettings.direction;
         cabinetStep = 1;
       } else {
-        columnSteps = Math.floor((-offset) / capacity) + 1;
+        columnSteps = Math.floor((-offset - 1) / capacity) + 1;
         forwardDirection = recordPositionSettings.direction === "increment" ? "decrement" : "increment";
         cabinetStep = -1;
       }
@@ -165,9 +165,6 @@
         const wraps = columnIndex < 0 ? Math.floor((-columnIndex - 1) / columnCount) + 1 : 0;
         cabinet += cabinetStep * wraps;
         column = ((columnIndex % columnCount) + columnCount) % columnCount + 1;
-      }
-      if (offset <= 0) {
-        column = columnCount - column + 1;
       }
       return `${String(Math.max(cabinet, 1)).padStart(2, "0")}${String(column).padStart(2, "0")}`;
     }

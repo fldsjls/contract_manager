@@ -102,8 +102,17 @@
             <input type="hidden" name="next" value="{{ request.path }}">
             <div class="record-panel-title">
               <h2>{{ invoice_labels.income_record_title }}</h2>
-              {% if can_manage and invoice_records %}
-                <button class="button danger record-delete-button" type="submit">删除</button>
+              {% if can_add_money_records %}
+                <div class="record-panel-actions">
+                  {% if invoice_records %}
+                    <button class="button danger record-delete-button" type="submit">删除</button>
+                  {% endif %}
+                  {% if contract.invoice_status == "开收据" %}
+                    <a class="button" href="{% url 'contracts:payment_record_create' contract.id %}?next={{ request.get_full_path|urlencode }}&return_id={{ contract.id }}">添加开据</a>
+                  {% else %}
+                    <a class="button" href="{% url 'contracts:invoice_record_create' contract.id %}?next={{ request.get_full_path|urlencode }}&return_id={{ contract.id }}">添加开票</a>
+                  {% endif %}
+                </div>
               {% endif %}
             </div>
             {% if contract.invoice_status == "开收据" %}
@@ -173,8 +182,17 @@
             <input type="hidden" name="next" value="{{ request.path }}">
             <div class="record-panel-title">
               <h2>{{ invoice_labels.expense_record_title }}</h2>
-              {% if can_manage and payment_records %}
-                <button class="button danger record-delete-button" type="submit">删除</button>
+              {% if can_add_money_records %}
+                <div class="record-panel-actions">
+                  {% if payment_records %}
+                    <button class="button danger record-delete-button" type="submit">删除</button>
+                  {% endif %}
+                  {% if contract.invoice_status == "开收据" %}
+                    <a class="button" href="{% url 'contracts:payment_record_create' contract.id %}?next={{ request.get_full_path|urlencode }}&return_id={{ contract.id }}">添加收据</a>
+                  {% else %}
+                    <a class="button" href="{% url 'contracts:invoice_record_create' contract.id %}?next={{ request.get_full_path|urlencode }}&return_id={{ contract.id }}">添加收票</a>
+                  {% endif %}
+                </div>
               {% endif %}
             </div>
             {% if payment_records %}

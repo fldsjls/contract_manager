@@ -91,8 +91,13 @@
             <input type="hidden" name="next" value="{{ request.path }}">
             <div class="record-panel-title">
               <h2>{{ record_label }}</h2>
-              {% if can_manage and maintenance_records %}
-                <button class="button danger record-delete-button" type="submit">删除</button>
+              {% if can_manage %}
+                <div class="record-panel-actions">
+                  {% if maintenance_records %}
+                    <button class="button danger record-delete-button" type="submit">删除</button>
+                  {% endif %}
+                  <a class="button" href="{% url 'contracts:maintenance_record_create' contract.id %}?next={{ request.get_full_path|urlencode }}&return_id={{ contract.id }}">添加{{ contract.contract_type }}</a>
+                </div>
               {% endif %}
             </div>
             {% if maintenance_records %}

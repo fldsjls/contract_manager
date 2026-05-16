@@ -1439,7 +1439,7 @@ def record_position_number_from_sequence(sequence_number: int, setting: AppSetti
         forward_direction = setting.record_position_direction
         cabinet_step = 1
     else:
-        column_steps = (-sequence_number) // capacity + 1
+        column_steps = ((-sequence_number - 1) // capacity) + 1
         forward_direction = "decrement" if setting.record_position_direction == "increment" else "increment"
         cabinet_step = -1
     if forward_direction == "increment":
@@ -1451,8 +1451,6 @@ def record_position_number_from_sequence(sequence_number: int, setting: AppSetti
         wraps = ((-column_index - 1) // column_count + 1) if column_index < 0 else 0
         cabinet += cabinet_step * wraps
         column = (column_index % column_count) + 1
-    if sequence_number <= 0:
-        column = column_count - column + 1
     return f"{max(cabinet, 1):02d}{column:02d}"
 
 
@@ -6032,12 +6030,14 @@ def settings_view(request):
     setting = AppSetting.current()
     host_ip = local_ip_address()
     can_edit_image_root_path = is_super_admin_mode(request)
+    can_edit_record_position_generation = is_super_admin_mode(request)
     if request.method == "POST":
         old_start_file = int(setting.record_position_start_file_number or 1)
         form = AppSettingForm(
             request.POST,
             instance=setting,
             allow_image_root_path_edit=can_edit_image_root_path,
+            allow_record_position_generation_edit=can_edit_record_position_generation,
         )
         if form.is_valid():
             with transaction.atomic():
@@ -6050,7 +6050,11 @@ def settings_view(request):
             log_operation(request, "修改", setting, detail=detail)
             return redirect("contracts:settings")
     else:
-        form = AppSettingForm(instance=setting, allow_image_root_path_edit=can_edit_image_root_path)
+        form = AppSettingForm(
+            instance=setting,
+            allow_image_root_path_edit=can_edit_image_root_path,
+            allow_record_position_generation_edit=can_edit_record_position_generation,
+        )
     return render(
         request,
         "contracts/settings.html",
@@ -6061,6 +6065,7 @@ def settings_view(request):
                 "host_ip": host_ip,
                 "lan_url": f"http://{host_ip}:8000",
                 "can_edit_image_root_path": can_edit_image_root_path,
+                "can_edit_record_position_generation": can_edit_record_position_generation,
                 "active_nav": "settings",
             },
         ),

@@ -43,6 +43,11 @@
               <span>插入重排序</span>
             </label>
           </div>
+          {% if not can_edit_record_position_generation %}
+            <p style="color: #667085; line-height: 1.8; margin-top: 0;">
+              当前账号可切换插入重排序；柜号、栏目、起始界限点和存放逻辑仅超级管理员可修改。
+            </p>
+          {% endif %}
           <div class="form-grid" style="max-width: 950px; grid-template-columns: repeat(3, minmax(0, 1fr));">
             <div class="form-row">
               <label class="field-label" for="{{ form.record_position_cabinet_number.id_for_label }}">柜号</label>

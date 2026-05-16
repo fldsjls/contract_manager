@@ -246,6 +246,15 @@ class LoginForm(forms.Form):
 # 系统设置表单。
 # 表单类：配置表单字段、校验和控件表现。
 class AppSettingForm(forms.ModelForm):
+    RECORD_POSITION_GENERATION_FIELDS = [
+        "record_position_cabinet_number",
+        "record_position_column_count",
+        "record_position_column_capacity",
+        "record_position_start_file_number",
+        "record_position_start_column",
+        "record_position_direction",
+    ]
+
     record_position_cabinet_number = forms.CharField(
         label="记录位置柜号",
         max_length=2,
@@ -259,8 +268,14 @@ class AppSettingForm(forms.ModelForm):
         ),
     )
 
-    # 根据当前权限控制图片保存目录是否允许编辑。
-    def __init__(self, *args, allow_image_root_path_edit: bool = True, **kwargs):
+    # 根据当前权限控制图片保存目录和记录位置生成参数是否允许编辑。
+    def __init__(
+        self,
+        *args,
+        allow_image_root_path_edit: bool = True,
+        allow_record_position_generation_edit: bool = True,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         image_field = self.fields["image_root_path"]
         numeric_fields = [
@@ -278,6 +293,12 @@ class AppSettingForm(forms.ModelForm):
         if not allow_image_root_path_edit:
             image_field.disabled = True
             image_field.widget.attrs["readonly"] = "readonly"
+        if not allow_record_position_generation_edit:
+            for field_name in self.RECORD_POSITION_GENERATION_FIELDS:
+                field = self.fields[field_name]
+                field.disabled = True
+                field.widget.attrs["readonly"] = "readonly"
+                field.widget.attrs["title"] = "只有超级管理员可修改记录位置编号生成参数。"
 
     # 柜号在界面中统一显示为两位，保存时仍转为数字字段。
     def clean_record_position_cabinet_number(self):

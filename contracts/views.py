@@ -23,7 +23,7 @@ from django.conf import settings
 from django.core import signing
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -1058,6 +1058,31 @@ def hydrate_contract_file_status(contracts: list[Contract]) -> None:
         contract.preview_file = preview_file
         contract.legacy_file_available = legacy_file_available
         contract.file_is_uploaded = bool(preview_file or legacy_file_available)
+
+
+def hydrate_contract_record_counts(contracts: list[Contract]) -> None:
+    contract_ids = [contract.pk for contract in contracts]
+    maintenance_counts = {
+        item["contract_id"]: item["total"]
+        for item in MaintenanceRecord.objects.filter(contract_id__in=contract_ids)
+        .values("contract_id")
+        .annotate(total=Count("id"))
+    }
+    invoice_counts = {
+        item["contract_id"]: item["total"]
+        for item in InvoiceRecord.objects.filter(contract_id__in=contract_ids)
+        .values("contract_id")
+        .annotate(total=Count("id"))
+    }
+    payment_counts = {
+        item["contract_id"]: item["total"]
+        for item in PaymentRecord.objects.filter(contract_id__in=contract_ids)
+        .values("contract_id")
+        .annotate(total=Count("id"))
+    }
+    for contract in contracts:
+        contract.maintenance_record_count = maintenance_counts.get(contract.pk, 0)
+        contract.money_record_count = invoice_counts.get(contract.pk, 0) + payment_counts.get(contract.pk, 0)
 
 
 # 返回文件内容给预览页，避免局域网用户直接触发浏览器下载。
@@ -3427,6 +3452,7 @@ def contract_list(request):
     if sort == "payment_rate":
         contracts.sort(key=lambda item: item.payment_rate, reverse=direction == "desc")
     hydrate_contract_file_status(contracts)
+    hydrate_contract_record_counts(contracts)
     query_params = request.GET.copy()
     query_params.pop("sort", None)
     query_params.pop("direction", None)

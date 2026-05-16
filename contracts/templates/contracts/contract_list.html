@@ -177,6 +177,8 @@
                 data-invoice-total="¥ {{ contract.invoice_total|floatformat:2 }}"
                 data-payment-total="¥ {{ contract.payment_total|floatformat:2 }}"
                 data-payment-rate="{{ contract.payment_rate|floatformat:1 }}%"
+                data-record-count="{{ contract.maintenance_record_count|default:0 }}"
+                data-money-record-count="{{ contract.money_record_count|default:0 }}"
                 data-stats-url="{% url 'contracts:contract_stats_data' contract.id %}"
                 data-stats-export-url="{% url 'contracts:contract_stats_export' contract.id %}"
                 data-maintenance-url="{% url 'contracts:maintenance_record_data' contract.id %}"
@@ -780,7 +782,12 @@
       if (recordButton && row.dataset.hasFileNumber !== "true") {
         recordButton.href = "#";
         recordButton.dataset.currentUrl = "";
+        recordButton.dataset.recordCount = row.dataset.recordCount || "0";
+        recordButton.textContent = "添加记录";
         setDisabled(recordButton, true);
+      } else if (recordButton) {
+        recordButton.dataset.recordCount = row.dataset.recordCount || "0";
+        recordButton.textContent = "添加记录";
       }
 
       if (fileButton && row.dataset.fileUrl) {
@@ -796,8 +803,11 @@
         const template = invoiceStatus === "开收据"
           ? moneyRecordButton.dataset.receiptUrlTemplate
           : moneyRecordButton.dataset.invoiceUrlTemplate;
+        const moneyRecordLabel = invoiceStatus === "开收据" ? "添加收据" : "添加发票";
         moneyRecordButton.href = urlWithListState(template.replace("/0/", `/${id}/`), id);
-        moneyRecordButton.textContent = invoiceStatus === "开收据" ? "添加收据" : "添加发票";
+        moneyRecordButton.dataset.recordCount = row.dataset.moneyRecordCount || "0";
+        moneyRecordButton.dataset.menuLabel = moneyRecordLabel;
+        moneyRecordButton.textContent = moneyRecordLabel;
         setDisabled(moneyRecordButton, false);
       }
 
@@ -837,16 +847,20 @@
       return {
         label,
         target,
+        count: options.count ?? "",
         danger: Boolean(options.danger),
         hidden: Boolean(options.hidden),
       };
     }
 
     function contractMenuActions() {
+      const moneyRecordLabel = moneyRecordButton?.dataset.menuLabel || moneyRecordButton?.textContent || "添加发票";
+      const moneyRecordCount = moneyRecordButton?.dataset.recordCount || "0";
+      const maintenanceRecordCount = recordButton?.dataset.recordCount || "0";
       return [
         menuAction("查看详情", detailButton),
-        menuAction(moneyRecordButton?.textContent || "添加发票", moneyRecordButton, { hidden: !moneyRecordButton }),
-        menuAction("添加记录", recordButton, { hidden: !recordButton }),
+        menuAction(moneyRecordLabel, moneyRecordButton, { count: moneyRecordCount, hidden: !moneyRecordButton }),
+        menuAction("添加记录", recordButton, { count: maintenanceRecordCount, hidden: !recordButton }),
         menuAction("编辑合同", document.querySelector("#editButton"), { hidden: !document.querySelector("#editButton") }),
         menuAction("预览合同", fileButton),
         menuAction("统计", statsButton, { hidden: !statsButton }),
@@ -895,7 +909,16 @@
         const item = document.createElement("button");
         item.type = "button";
         item.className = `context-menu-item${action.danger ? " danger" : ""}`;
-        item.textContent = action.label;
+        const label = document.createElement("span");
+        label.className = "context-menu-item-label";
+        label.textContent = action.label;
+        item.appendChild(label);
+        if (action.count !== "") {
+          const count = document.createElement("span");
+          count.className = "context-menu-item-count";
+          count.textContent = `${action.count} 条`;
+          item.appendChild(count);
+        }
         item.setAttribute("aria-disabled", isDisabled(action.target) ? "true" : "false");
         item.addEventListener("click", () => activateContextTarget(action.target));
         contractContextMenuList.appendChild(item);

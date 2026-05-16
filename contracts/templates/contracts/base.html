@@ -798,7 +798,10 @@
       padding-top: 5px;
     }
     .context-menu-item {
-      display: block;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
       width: 100%;
       padding: 8px 9px;
       border: 0;
@@ -810,6 +813,20 @@
       line-height: 1.25;
       text-align: left;
       cursor: pointer;
+    }
+    .context-menu-item-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .context-menu-item-count {
+      flex: 0 0 auto;
+      margin-left: auto;
+      color: #60a5fa;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      white-space: nowrap;
     }
     .context-menu-item:hover,
     .context-menu-item:focus {

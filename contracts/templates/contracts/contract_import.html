@@ -232,7 +232,7 @@
             </table>
           </div>
           {% if completed %}
-            <div class="toolbar" style="margin-top: 16px;">
+            <div class="toolbar" id="contractImportCompletedActions" style="margin-top: 16px;">
               <a class="button primary" href="{% url 'contracts:contract_list' %}">返回列表</a>
               <button class="button import-preview-button" type="button" data-import-kind="{{ import_kind }}">继续导入</button>
             </div>
@@ -283,6 +283,15 @@
     if (contractImportAlertMessage) {
       window.alert(contractImportAlertMessage);
     }
+
+    {% if completed %}
+      window.requestAnimationFrame(() => {
+        document.querySelector("#contractImportCompletedActions")?.scrollIntoView({
+          block: "center",
+          behavior: "auto",
+        });
+      });
+    {% endif %}
 
     if (importUploadForm && importFileInput && importKindInput) {
       importFileButtons.forEach((button) => {

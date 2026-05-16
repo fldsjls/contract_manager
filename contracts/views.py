@@ -4972,6 +4972,18 @@ def contract_import(request):
     )
 
 
+# 计算新增合同时建议使用的下一个文件编号。
+def next_contract_inner_number() -> str:
+    max_number = 0
+    for value in Contract.objects.filter(is_deleted=False).values_list("original_contract_inner_number", flat=True):
+        normalized = normalize_contract_number_part(value, 5)
+        if normalized:
+            max_number = max(max_number, int(normalized))
+    if max_number >= 99999:
+        return ""
+    return f"{max_number + 1:05d}"
+
+
 # 视图函数：导出单个合同的归档快照。
 @true_admin_required
 def contract_snapshot_export(request, pk: int):
@@ -5242,6 +5254,7 @@ def contract_create(request):
         form = ContractForm(
             initial={
                 "contract_number": default_contract_number(),
+                "original_contract_inner_number": next_contract_inner_number(),
                 "contract_type": "维保",
                 "sign_date": today,
                 "start_date": today,

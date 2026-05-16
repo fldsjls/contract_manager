@@ -172,6 +172,56 @@
       width: 48px;
       height: 26px;
     }
+    .record-position-settings {
+      max-width: 1220px;
+    }
+    .record-position-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      column-gap: 18px;
+      row-gap: 14px;
+      align-items: start;
+      max-width: 100%;
+    }
+    .record-position-grid .field-label {
+      white-space: nowrap;
+    }
+    .record-position-side-card {
+      align-self: stretch;
+      min-height: 0;
+      transform: translateY(-16px);
+      padding: 12px 18px;
+      border: 0;
+      box-sizing: border-box;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .record-position-side-card strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.15;
+      color: #0f172a;
+    }
+    .record-position-reserved-row input {
+      white-space: nowrap;
+      overflow-x: auto;
+    }
+    @media (max-width: 1180px) {
+      .record-position-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 760px) {
+      .record-position-grid {
+        grid-template-columns: 1fr;
+      }
+    }
     .page-title { margin: 0 0 16px; font-size: 24px; }
     .contract-list-title-row {
       display: flex;
@@ -1230,6 +1280,16 @@
     .contract-number-row #id_storage_location_number {
       text-align: center;
     }
+    .split-setting-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
+    }
+    .split-setting-row input {
+      width: 100%;
+      text-align: center;
+    }
     .icon-button {
       flex: 0 0 auto;
       min-width: 42px;
@@ -2204,7 +2264,7 @@
           <a href="{% url 'contracts:usage_docs' %}">使用文档</a>
         {% else %}
           <strong>未登录</strong>
-          <a href="{% url 'contracts:login' %}">登录 / 游客登入</a>
+          <a href="{% url 'contracts:login' %}">登录</a>
           <a href="{% url 'contracts:usage_docs' %}">使用文档</a>
         {% endif %}
       </div>

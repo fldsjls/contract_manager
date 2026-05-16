@@ -10,6 +10,7 @@ from .models import (
     InvoiceRecordFileVersion,
     MaintenanceRecord,
     MaintenanceRecordFileVersion,
+    MaintenanceRecordVolumeSequence,
     OperationLog,
     PaymentRecord,
     PaymentRecordFileVersion,
@@ -123,6 +124,14 @@ class MaintenanceRecordAdmin(HistoryOnlyVersionAdmin):
     search_fields = ("contract__contract_name", "contract__contract_number", "month", "remark")
     # 后台按日期筛选维护保养记录。
     list_filter = ("record_date",)
+
+
+# 后台类：查看项目记录分册和实序编号的对应关系。
+@admin.register(MaintenanceRecordVolumeSequence)
+class MaintenanceRecordVolumeSequenceAdmin(HistoryOnlyVersionAdmin):
+    list_display = ("contract", "storage_location_number", "real_sequence_number", "shelf_position_number", "is_reserved", "updated_at")
+    search_fields = ("contract__contract_name", "contract__contract_number", "storage_location_number")
+    list_filter = ("storage_location_number", "shelf_position_number", "is_reserved")
 
 
 # 后台类：查看开票记录附件的历史版本。

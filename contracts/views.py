@@ -49,6 +49,7 @@ from .models import (
     InvoiceRecordFileVersion,
     MaintenanceRecord,
     MaintenanceRecordFileVersion,
+    MaintenanceRecordVolumeSequence,
     OperationLog,
     PaymentRecord,
     PaymentRecordFileVersion,
@@ -461,6 +462,24 @@ def usage_docs_for_request(request) -> list[dict]:
                 "项目记录文件编号在业务编号后继续拼接 4 位年月编号（年份后两位 + 月份两位）、4 位位置编号和 2 位分册编号，形成“业务编号-年月编号-位置编号-分册编号”的记录编号，用于区分同一合同下的不同记录文件。",
                 "查询和导入时，合同编号、业务编号、带横线业务编号、存档编号和合同名称都可以作为定位合同的线索；系统会先去掉横线和空格，再按内部编号匹配。",
                 "代码中的 contract_number 表示默认编号，display_contract_number 表示业务编号，archive_number_display 表示存档编号；模板显示时分别通过 display_code 和 archive_code 转成带横线的可读格式。",
+            ],
+        },
+        {
+            "title": "项目记录实序编号与位置生成",
+            "items": [
+                "实序编号是项目记录分册的内部排位依据，不显示在记录编号中；系统按“合同-分册-实序编号-排位”保存对应关系，避免同一分册下多条记录重复保存同一实序位置。",
+                "01 册的实序编号默认等于合同的 5 位文件编号；同一合同新增后续分册时，会先查找上一分册的实序编号，再生成当前分册的实序编号。",
+                "未开启插入重排序时，新增 02 册及后续分册会追加到当前最大实序编号之后，适合把新记录放到现有档案末尾。",
+                "开启插入重排序时，新分册按“上一分册实序编号 + 1”插入，并把该位置之后的排位整体后移 1；因此 02 册不会跳过 01 册直接生成，03 册也会接在 02 册之后。",
+                "正常生成实序编号时，系统会把已生效的空排位视为档案柜中真实空出的位置：只有目标实序编号正好落到空排位上时，才会向后顺延到下一个可用排位；目标前方的空排位不会额外影响当前目标编号。",
+                "位置编号由实序编号和设置页的起始界限点、柜号范围、栏目量、栏目存放数、存放栏目、存放逻辑共同换算；记录表单中的位置编号是 4 位可见值，排位字段保存 6 位实际位置（柜号 2 位 + 栏目 2 位 + 排位 2 位）。",
+                "设置页的剩余排位数按当前柜号范围和存放逻辑计算容量，再扣除“最大实序编号 - 起始界限点 + 1”，最后加上可复用的空排位；剩余为 0 时，新增项目记录页面会把保存按钮置灰，避免继续写入超出范围的位置。",
+                "排位预留值按 6 位实际位置填写，多个值用英文分号分隔，例如 011205;020101；当该排位换算出的实序编号大于当前最大实序编号时，它只作为等待值保存在设置中，不进入空排位池。",
+                "当排位预留值换算出的实序编号不大于当前最大实序编号时，它会进入空排位池，效果等同于合同归档后释放的空排位；已进入空排位池的值会被锁定保存，即使从输入框删除也会重新显示，只有仍在等待中的值可以真正删除。",
+                "排位预留值支持批量输入，格式为“柜号范围,栏目范围,排位范围”，例如 01-03,03-04,01-10 表示 01 至 03 柜、03 至 04 栏、01 至 10 排位全部预留；保存后会展开成单独条目显示，也可以在设置页导出 Excel 快速核对。",
+                "如果需要移除预留值，在值前添加 - 号即可反向删除，单条写法如 -011205，批量写法如 -01-03,03-04,01-10；删除后保存，系统会从等待值、冲突值或已锁定空排位中移除对应条目。",
+                "合同归档后，该合同已占用的项目记录分册映射会清空合同和分册绑定，保留实序编号和排位作为可复用空排位；当新增记录已到终止柜号且存在可复用空排位时，系统会优先取第一个空排位重新绑定当前合同分册；开启强制空排位后，即使未到终止柜号，也会优先使用第一个空排位。",
+                "删除某分册最后一条项目记录时，不会自动释放该分册的实序映射；该分册再次新增记录时仍沿用原来的实序编号和排位，避免普通删除造成后续档案位置反复变化。",
             ],
         },
         {
@@ -1408,22 +1427,19 @@ def record_real_sequence_number(contract: Contract, volume_number: str, setting:
         return 0
     file_value = int(file_number)
     volume_value = int(volume)
-    start_file = max(int(setting.record_position_start_file_number or 1), 1)
-    base_sequence = (file_value - start_file) + 1
     if volume_value == 1:
-        return base_sequence
+        return sequence_after_empty_record_positions(file_value)
     if getattr(contract, "pk", None):
-        base_record = (
-            MaintenanceRecord.objects.filter(contract=contract, storage_location_number="01")
-            .exclude(real_sequence_number=0)
-            .order_by("id")
+        sequence = (
+            MaintenanceRecordVolumeSequence.objects.filter(contract=contract, storage_location_number=volume)
+            .values_list("real_sequence_number", flat=True)
             .first()
         )
-        if base_record:
-            return int(base_record.real_sequence_number or 0) + volume_value - 1
+        if sequence:
+            return int(sequence or 0)
     if volume_value > 1 and not setting.record_position_enable_insert_sort:
-        return max_record_real_sequence_number(base_sequence) + volume_value - 1
-    return base_sequence + volume_value - 1
+        return max_record_real_sequence_number(file_value) + 1
+    return sequence_after_empty_record_positions(file_value + volume_value - 1)
 
 
 # 将实序编号换算为可见位置编号。
@@ -1434,12 +1450,14 @@ def record_position_number_from_sequence(sequence_number: int, setting: AppSetti
     start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
     cabinet = max(int(setting.record_position_cabinet_number or 1), 1)
     sequence_number = int(sequence_number or 0)
-    if sequence_number > 0:
-        column_steps = (sequence_number - 1) // capacity
+    start_file = max(int(setting.record_position_start_file_number or 1), 1)
+    sequence_offset = sequence_number - start_file + 1
+    if sequence_offset > 0:
+        column_steps = (sequence_offset - 1) // capacity
         forward_direction = setting.record_position_direction
         cabinet_step = 1
     else:
-        column_steps = ((-sequence_number - 1) // capacity) + 1
+        column_steps = ((-sequence_offset - 1) // capacity) + 1
         forward_direction = "decrement" if setting.record_position_direction == "increment" else "increment"
         cabinet_step = -1
     if forward_direction == "increment":
@@ -1454,6 +1472,37 @@ def record_position_number_from_sequence(sequence_number: int, setting: AppSetti
     return f"{max(cabinet, 1):02d}{column:02d}"
 
 
+def shelf_position_number_from_sequence(sequence_number: int, setting: AppSetting | None = None) -> str:
+    setting = setting or AppSetting.current()
+    capacity = max(int(setting.record_position_column_capacity or 1), 1)
+    column_count = max(int(setting.record_position_column_count or 1), 1)
+    start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
+    cabinet = max(int(setting.record_position_cabinet_number or 1), 1)
+    sequence_number = int(sequence_number or 0)
+    start_file = max(int(setting.record_position_start_file_number or 1), 1)
+    sequence_offset = sequence_number - start_file + 1
+    if sequence_offset > 0:
+        column_steps = (sequence_offset - 1) // capacity
+        rank = ((sequence_offset - 1) % capacity) + 1
+        forward_direction = setting.record_position_direction
+        cabinet_step = 1
+    else:
+        column_steps = ((-sequence_offset - 1) // capacity) + 1
+        rank = capacity - ((-sequence_offset - 1) % capacity)
+        forward_direction = "decrement" if setting.record_position_direction == "increment" else "increment"
+        cabinet_step = -1
+    if forward_direction == "increment":
+        column_index = start_column - 1 + column_steps
+        cabinet += cabinet_step * (column_index // column_count)
+        column = (column_index % column_count) + 1
+    else:
+        column_index = start_column - 1 - column_steps
+        wraps = ((-column_index - 1) // column_count + 1) if column_index < 0 else 0
+        cabinet += cabinet_step * wraps
+        column = (column_index % column_count) + 1
+    return f"{max(cabinet, 1):02d}{column:02d}{rank:02d}"
+
+
 # 读取当前系统中最大的合同文件编号。
 def max_contract_file_number(fallback: int = 0) -> int:
     max_file_number = fallback
@@ -1466,46 +1515,315 @@ def max_contract_file_number(fallback: int = 0) -> int:
 
 # 获取当前项目记录的最大实序编号，追加分册时作为末尾基准。
 def max_record_real_sequence_number(fallback: int = 0) -> int:
-    max_sequence = MaintenanceRecord.objects.aggregate(max_sequence=Max("real_sequence_number")).get("max_sequence")
+    max_sequence = MaintenanceRecordVolumeSequence.objects.aggregate(max_sequence=Max("real_sequence_number")).get("max_sequence")
     return max(int(max_sequence or 0), fallback)
 
 
-# 插入多册记录时，把后续实序编号和位置编号整体后移。
-def reorder_maintenance_records_for_insert(contract: Contract, max_volume: int, setting: AppSetting) -> None:
-    if not setting.record_position_enable_insert_sort or max_volume <= 1:
-        return
-    base_sequence = record_real_sequence_number(contract, "01", setting)
-    shift_count = max_volume - 1
+def max_active_record_real_sequence_number(fallback: int = 0) -> int:
+    max_sequence = (
+        MaintenanceRecordVolumeSequence.objects.filter(is_reserved=False)
+        .aggregate(max_sequence=Max("real_sequence_number"))
+        .get("max_sequence")
+    )
+    return max(int(max_sequence or 0), fallback)
+
+
+def reusable_empty_record_position_count() -> int:
+    return MaintenanceRecordVolumeSequence.objects.filter(contract__isnull=True).exclude(real_sequence_number=0).count()
+
+
+def sequence_after_empty_record_positions(real_sequence_number: int) -> int:
+    adjusted_sequence = int(real_sequence_number or 0)
+    while MaintenanceRecordVolumeSequence.objects.filter(
+        contract__isnull=True,
+        real_sequence_number=adjusted_sequence,
+    ).exists():
+        adjusted_sequence += 1
+    return adjusted_sequence
+
+
+def record_position_remaining_count(setting: AppSetting | None = None) -> int:
+    setting = setting or AppSetting.current()
+    start_file = int(setting.record_position_start_file_number or 1)
+    start_column = int(setting.record_position_start_column or 1)
+    column_count = int(setting.record_position_column_count or 1)
+    capacity = int(setting.record_position_column_capacity or 1)
+    start_cabinet = int(setting.record_position_cabinet_number or 1)
+    end_cabinet = int(getattr(setting, "record_position_end_cabinet_number", start_cabinet) or start_cabinet)
+    cabinet_count = max(end_cabinet - start_cabinet + 1, 1)
+    if setting.record_position_direction == "increment":
+        total_positions = max(column_count - start_column, 0) * capacity * cabinet_count
+    else:
+        total_positions = max(start_column, 0) * capacity * cabinet_count
+    max_sequence = MaintenanceRecordVolumeSequence.objects.aggregate(max_sequence=Max("real_sequence_number")).get("max_sequence")
+    used_positions = max(int(max_sequence or 0) - start_file + 1, 0) if max_sequence else 0
+    return max(total_positions - used_positions + reusable_empty_record_position_count(), 0)
+
+
+def sequence_number_from_reserved_position(position_text: str, setting: AppSetting) -> int | None:
+    if not position_text.isdigit() or len(position_text) != 6:
+        return None
+    cabinet = int(position_text[:2])
+    column = int(position_text[2:4])
+    rank = int(position_text[4:6])
+    start_cabinet = int(setting.record_position_cabinet_number or 1)
+    column_count = int(setting.record_position_column_count or 1)
+    capacity = int(setting.record_position_column_capacity or 1)
+    start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
+    start_file = int(setting.record_position_start_file_number or 1)
+    if cabinet < start_cabinet or not (1 <= column <= column_count) or not (1 <= rank <= capacity):
+        return None
+    cabinet_steps = cabinet - start_cabinet
+    if setting.record_position_direction == "increment":
+        column_steps = cabinet_steps * column_count + (column - start_column)
+    else:
+        column_steps = cabinet_steps * column_count + ((start_column - column) % column_count)
+    if column_steps < 0:
+        return None
+    offset = column_steps * capacity + rank
+    return start_file + offset - 1
+
+
+def locked_reserved_record_position_values() -> list[str]:
+    return list(
+        MaintenanceRecordVolumeSequence.objects.filter(is_reserved=True, contract__isnull=True)
+        .exclude(real_sequence_number=0)
+        .order_by("real_sequence_number", "id")
+        .values_list("shelf_position_number", flat=True)
+    )
+
+
+def merged_reserved_record_position_values(waiting_values: list[str], conflict_values: list[str] | None = None) -> str:
+    values = []
+    seen = set()
+    for value in [*locked_reserved_record_position_values(), *(conflict_values or []), *waiting_values]:
+        value = str(value or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        values.append(value)
+    return ";".join(values)
+
+
+def reserved_record_position_export_rows(setting: AppSetting) -> list[list]:
+    values = [item.strip() for item in str(setting.record_position_reserved_slots or "").split(";") if item.strip()]
+    current_max_sequence = max_active_record_real_sequence_number()
+    rows = []
+    seen = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        sequence_number = sequence_number_from_reserved_position(value, setting)
+        cabinet = value[:2] if len(value) >= 2 else ""
+        column = value[2:4] if len(value) >= 4 else ""
+        rank = value[4:6] if len(value) >= 6 else ""
+        status = "格式无效"
+        bound_contract = ""
+        bound_volume = ""
+        if sequence_number:
+            sequence = (
+                MaintenanceRecordVolumeSequence.objects.select_related("contract")
+                .filter(real_sequence_number=sequence_number)
+                .order_by("id")
+                .first()
+            )
+            if sequence and sequence.contract_id:
+                status = "已占用"
+                bound_contract = sequence.contract.display_contract_number
+                bound_volume = sequence.storage_location_number
+            elif sequence and sequence.contract_id is None:
+                status = "已进入空排位"
+            elif sequence_number > current_max_sequence:
+                status = "等待中"
+            else:
+                status = "可进入空排位"
+        rows.append([value, cabinet, column, rank, sequence_number or "", status, bound_contract, bound_volume])
+    return rows
+
+
+def sync_reserved_record_positions(setting: AppSetting, remove_values: list[str] | None = None) -> int:
+    raw_values = [item.strip() for item in str(setting.record_position_reserved_slots or "").split(";") if item.strip()]
+    remove_values = [str(value or "").strip() for value in (remove_values or []) if str(value or "").strip()]
+    remove_set = set(remove_values)
+    reserved_sequences = {}
+    for value in raw_values:
+        if value in remove_set:
+            continue
+        sequence_number = sequence_number_from_reserved_position(value, setting)
+        if sequence_number:
+            reserved_sequences[sequence_number] = value
+    current_max_sequence = max_active_record_real_sequence_number()
+    conflict_values = []
+    locked_sequences = {
+        sequence_number: value
+        for sequence_number, value in reserved_sequences.items()
+        if sequence_number <= current_max_sequence
+    }
+    waiting_values = [
+        value
+        for sequence_number, value in sorted(reserved_sequences.items())
+        if sequence_number > current_max_sequence
+    ]
+    MaintenanceRecordVolumeSequence.objects.filter(
+        is_reserved=True,
+        contract__isnull=True,
+        real_sequence_number__gt=current_max_sequence,
+    ).delete()
+    remove_sequences = [
+        sequence_number_from_reserved_position(value, setting)
+        for value in remove_values
+    ]
+    MaintenanceRecordVolumeSequence.objects.filter(
+        is_reserved=True,
+        contract__isnull=True,
+        real_sequence_number__in=[value for value in remove_sequences if value],
+    ).delete()
+    synced_count = 0
+    for sequence_number in sorted(locked_sequences):
+        sequence = MaintenanceRecordVolumeSequence.objects.filter(real_sequence_number=sequence_number).first()
+        if sequence is None:
+            sequence = MaintenanceRecordVolumeSequence(real_sequence_number=sequence_number)
+        if sequence.contract_id:
+            conflict_values.append(locked_sequences[sequence_number])
+            continue
+        sequence.contract = None
+        sequence.storage_location_number = ""
+        sequence.shelf_position_number = locked_sequences[sequence_number]
+        sequence.is_reserved = True
+        sequence.save()
+        synced_count += 1
+    merged_values = merged_reserved_record_position_values(waiting_values, conflict_values)
+    if setting.record_position_reserved_slots != merged_values:
+        setting.record_position_reserved_slots = merged_values
+        setting.save(update_fields=["record_position_reserved_slots", "updated_at"])
+    return synced_count
+
+
+def update_records_for_volume_sequence(sequence: MaintenanceRecordVolumeSequence, setting: AppSetting) -> int:
+    position_number = record_position_number_from_sequence(sequence.real_sequence_number, setting)
+    shelf_position_number = shelf_position_number_from_sequence(sequence.real_sequence_number, setting)
+    if sequence.shelf_position_number != shelf_position_number:
+        sequence.shelf_position_number = shelf_position_number
+        sequence.save(update_fields=["shelf_position_number", "updated_at"])
+    if not sequence.contract_id:
+        return 0
+    return MaintenanceRecord.objects.filter(
+        contract=sequence.contract,
+        storage_location_number=sequence.storage_location_number,
+    ).update(record_position_number=position_number)
+
+
+def is_terminal_cabinet_sequence(real_sequence_number: int, setting: AppSetting) -> bool:
+    position_number = record_position_number_from_sequence(real_sequence_number, setting)
+    cabinet_number = int(position_number[:2] or 0)
+    end_cabinet = int(getattr(setting, "record_position_end_cabinet_number", 99) or 99)
+    return cabinet_number >= end_cabinet
+
+
+def reconnect_empty_record_volume_sequence(
+    contract: Contract,
+    volume: str,
+    setting: AppSetting,
+) -> MaintenanceRecordVolumeSequence | None:
+    empty_sequence = (
+        MaintenanceRecordVolumeSequence.objects.filter(contract__isnull=True)
+        .exclude(real_sequence_number=0)
+        .order_by("real_sequence_number", "id")
+        .first()
+    )
+    if empty_sequence is None:
+        return None
+    empty_sequence.contract = contract
+    empty_sequence.storage_location_number = volume
+    empty_sequence.shelf_position_number = shelf_position_number_from_sequence(empty_sequence.real_sequence_number, setting)
+    empty_sequence.is_reserved = False
+    empty_sequence.save(update_fields=["contract", "storage_location_number", "shelf_position_number", "is_reserved", "updated_at"])
+    return empty_sequence
+
+
+def shift_record_volume_sequences_after(real_sequence_number: int, setting: AppSetting) -> None:
+    sequences = MaintenanceRecordVolumeSequence.objects.filter(
+        real_sequence_number__gt=real_sequence_number,
+    ).order_by("-real_sequence_number", "-id")
+    for sequence in sequences:
+        sequence.real_sequence_number = int(sequence.real_sequence_number or 0) + 1
+        sequence.shelf_position_number = shelf_position_number_from_sequence(sequence.real_sequence_number, setting)
+        sequence.save(update_fields=["real_sequence_number", "shelf_position_number", "updated_at"])
+        update_records_for_volume_sequence(sequence, setting)
+
+
+def ensure_record_volume_sequence(
+    contract: Contract,
+    volume_number: str,
+    setting: AppSetting | None = None,
+) -> MaintenanceRecordVolumeSequence | None:
+    setting = setting or AppSetting.current()
     file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
-    current_file_value = int(file_number) if file_number else 0
-    records = []
-    for record in MaintenanceRecord.objects.select_related("contract").exclude(contract=contract):
-        record_file_number = normalize_contract_number_part(record.contract.original_contract_inner_number, 5)
-        record_file_value = int(record_file_number) if record_file_number else 0
-        record_sequence = int(record.real_sequence_number or 0)
-        if not record_sequence:
-            record_sequence = record_real_sequence_number(record.contract, record.storage_location_number, setting)
-            record.real_sequence_number = record_sequence
-        if record_sequence > base_sequence or record_file_value > current_file_value:
-            records.append(record)
-    records.sort(key=lambda item: (int(item.real_sequence_number or 0), item.pk or 0), reverse=True)
-    for record in records:
-        record.real_sequence_number = int(record.real_sequence_number or 0) + shift_count
-        record.record_position_number = record_position_number_from_sequence(record.real_sequence_number, setting)
-        record.save(update_fields=["real_sequence_number", "record_position_number", "updated_at"])
+    volume = normalize_record_volume_number(volume_number)
+    if not file_number or not volume:
+        return None
+    file_value = int(file_number)
+    volume_value = int(volume)
+    sequence = MaintenanceRecordVolumeSequence.objects.filter(
+        contract=contract,
+        storage_location_number=volume,
+    ).first()
+    if sequence:
+        if volume_value == 1 and sequence.real_sequence_number != file_value:
+            sequence.real_sequence_number = file_value
+            sequence.save(update_fields=["real_sequence_number", "updated_at"])
+        return sequence
+    if setting.record_position_force_empty_slot:
+        empty_sequence = reconnect_empty_record_volume_sequence(contract, volume, setting)
+        if empty_sequence:
+            return empty_sequence
+    if volume_value == 1:
+        real_sequence = sequence_after_empty_record_positions(file_value)
+    elif setting.record_position_enable_insert_sort:
+        previous_volume = f"{volume_value - 1:02d}"
+        previous_sequence = ensure_record_volume_sequence(contract, previous_volume, setting)
+        if previous_sequence is None:
+            return None
+        real_sequence = sequence_after_empty_record_positions(int(previous_sequence.real_sequence_number or 0) + 1)
+        if is_terminal_cabinet_sequence(real_sequence, setting):
+            empty_sequence = reconnect_empty_record_volume_sequence(contract, volume, setting)
+            if empty_sequence:
+                return empty_sequence
+        shift_record_volume_sequences_after(real_sequence - 1, setting)
+    else:
+        real_sequence = max_record_real_sequence_number(file_value) + 1
+    if is_terminal_cabinet_sequence(real_sequence, setting):
+        empty_sequence = reconnect_empty_record_volume_sequence(contract, volume, setting)
+        if empty_sequence:
+            return empty_sequence
+    return MaintenanceRecordVolumeSequence.objects.create(
+        contract=contract,
+        storage_location_number=volume,
+        real_sequence_number=real_sequence,
+        shelf_position_number=shelf_position_number_from_sequence(real_sequence, setting),
+    )
 
 
-# 起始界限点变化时，按差值整体平移已有记录实序编号。
+def release_record_volume_sequences_for_contract(contract: Contract, setting: AppSetting) -> int:
+    released_count = 0
+    for sequence in MaintenanceRecordVolumeSequence.objects.filter(contract=contract).order_by("real_sequence_number", "id"):
+        sequence.contract = None
+        sequence.storage_location_number = ""
+        sequence.shelf_position_number = shelf_position_number_from_sequence(sequence.real_sequence_number, setting)
+        sequence.is_reserved = False
+        sequence.save(update_fields=["contract", "storage_location_number", "shelf_position_number", "is_reserved", "updated_at"])
+        released_count += 1
+    return released_count
+
+
+# 起始界限点变化时，只刷新已有记录的位置编号，实序编号本身保持合同分册映射。
 def shift_record_sequences_for_start_file_change(old_start_file: int, new_start_file: int, setting: AppSetting) -> int:
-    shift_value = int(old_start_file or 0) - int(new_start_file or 0)
-    if not shift_value:
+    if int(old_start_file or 0) == int(new_start_file or 0):
         return 0
     changed_count = 0
-    for record in MaintenanceRecord.objects.all().order_by("id"):
-        record.real_sequence_number = int(record.real_sequence_number or 0) + shift_value
-        record.record_position_number = record_position_number_from_sequence(record.real_sequence_number, setting)
-        record.save(update_fields=["real_sequence_number", "record_position_number", "updated_at"])
-        changed_count += 1
+    for sequence in MaintenanceRecordVolumeSequence.objects.select_related("contract").order_by("id"):
+        changed_count += update_records_for_volume_sequence(sequence, setting)
     return changed_count
 
 
@@ -1518,14 +1836,10 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
     storage_locations = request.POST.getlist("storage_location_number")
     remarks = request.POST.getlist("remark")
     setting = AppSetting.current()
+    if record_position_remaining_count(setting) <= 0:
+        return 0
     saved_count = 0
-    submitted_volumes = [
-        int(normalize_record_volume_number(value))
-        for value in storage_locations
-        if normalize_record_volume_number(value).isdigit()
-    ]
     with transaction.atomic():
-        reorder_maintenance_records_for_insert(contract, max(submitted_volumes, default=1), setting)
         for index, record_date in enumerate(dates):
             month = months[index] if index < len(months) else ""
             date_number = date_numbers[index] if index < len(date_numbers) else ""
@@ -1539,7 +1853,8 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
             if "-" in month:
                 year_text, month_text = month.split("-", 1)
                 month = f"{year_text}年{int(month_text):02d}月"
-            real_sequence = record_real_sequence_number(contract, storage_location, setting)
+            sequence = ensure_record_volume_sequence(contract, storage_location, setting)
+            real_sequence = int(sequence.real_sequence_number or 0) if sequence else 0
             uploaded_file = request.FILES.get(f"file_{index}")
             record = MaintenanceRecord.objects.create(
                 contract=contract,
@@ -1548,7 +1863,6 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
                 date_number=normalize_record_date_number(date_number, parsed_record_date),
                 record_position_number=record_position_number_from_sequence(real_sequence, setting),
                 storage_location_number=normalize_record_volume_number(storage_location),
-                real_sequence_number=real_sequence,
                 remark=remark,
             )
             attach_record_file_version(record, uploaded_file)
@@ -4973,12 +5287,12 @@ def contract_import(request):
                             else None
                         )
                         if record:
-                            real_sequence = record_real_sequence_number(contract, data.get("storage_location_number"), app_setting)
+                            sequence = ensure_record_volume_sequence(contract, data.get("storage_location_number"), app_setting)
+                            real_sequence = int(sequence.real_sequence_number or 0) if sequence else 0
                             record.record_date = record_date
                             record.month = month
                             record.date_number = date_number
                             record.storage_location_number = normalize_record_volume_number(data.get("storage_location_number"))
-                            record.real_sequence_number = real_sequence
                             record.record_position_number = normalize_record_position_number(data.get("record_position_number") or record_position_number_from_sequence(real_sequence, app_setting))
                             record.remark = data.get("remark", "")
                             record.save(
@@ -4988,21 +5302,20 @@ def contract_import(request):
                                     "date_number",
                                     "record_position_number",
                                     "storage_location_number",
-                                    "real_sequence_number",
                                     "remark",
                                     "updated_at",
                                 ]
                             )
                             log_action = "修改"
                         else:
-                            real_sequence = record_real_sequence_number(contract, data.get("storage_location_number"), app_setting)
+                            sequence = ensure_record_volume_sequence(contract, data.get("storage_location_number"), app_setting)
+                            real_sequence = int(sequence.real_sequence_number or 0) if sequence else 0
                             record = MaintenanceRecord.objects.create(
                                 contract=contract,
                                 record_date=record_date,
                                 month=month,
                                 date_number=date_number,
                                 storage_location_number=normalize_record_volume_number(data.get("storage_location_number")),
-                                real_sequence_number=real_sequence,
                                 record_position_number=normalize_record_position_number(data.get("record_position_number") or record_position_number_from_sequence(real_sequence, app_setting)),
                                 remark=data.get("remark", ""),
                             )
@@ -5795,6 +6108,11 @@ def maintenance_record_create(request, pk: int):
     project_labels = project_record_labels(contract.contract_type)
     project_years = f"{contract.project_years:02d}" if contract.project_years else "00"
     setting = AppSetting.current()
+    record_volume_sequences = {
+        sequence.storage_location_number: sequence.real_sequence_number
+        for sequence in contract.record_volume_sequences.all()
+    }
+    record_volume_sequences.setdefault("01", record_real_sequence_number(contract, "01", setting))
     return render(
         request,
         "contracts/record_form.html",
@@ -5813,12 +6131,15 @@ def maintenance_record_create(request, pk: int):
                 "record_max_file_number": max_contract_file_number(),
                 "record_max_sequence_number": max_record_real_sequence_number(),
                 "record_base_sequence_number": record_real_sequence_number(contract, "01", setting),
+                "record_position_remaining_count": record_position_remaining_count(setting),
+                "record_volume_sequences": record_volume_sequences,
                 "record_position_settings": {
                     "cabinet": setting.record_position_cabinet_number,
                     "columnCount": setting.record_position_column_count,
                     "capacity": setting.record_position_column_capacity,
                     "startFile": setting.record_position_start_file_number,
                     "startColumn": setting.record_position_start_column,
+                    "endCabinet": setting.record_position_end_cabinet_number,
                     "direction": setting.record_position_direction,
                     "insertSort": setting.record_position_enable_insert_sort,
                 },
@@ -5885,6 +6206,7 @@ def contract_archive(request, pk: int):
         if changed_fields:
             contract.save(update_fields=[*changed_fields, "updated_at"])
         contract.archive()
+        released_sequences = release_record_volume_sequences_for_contract(contract, AppSetting.current())
         archive_path = archive_contract_snapshot_to_file(contract, "contract archived")
         deleted_versions = clear_contract_snapshot_versions(contract)
         log_operation(
@@ -5893,7 +6215,8 @@ def contract_archive(request, pk: int):
             contract,
             detail=(
                 f"archive number: {old_archive_number} -> {contract.archive_number_display}; "
-                f"snapshot archived: {archive_path}; cleared versions: {deleted_versions}"
+                f"snapshot archived: {archive_path}; cleared versions: {deleted_versions}; "
+                f"released record positions: {released_sequences}"
             ),
         )
     return redirect("contracts:archive_list")
@@ -6008,6 +6331,19 @@ def operation_log_export(request):
     return response
 
 
+@admin_required
+def settings_reserved_positions_export(request):
+    setting = AppSetting.current()
+    headers = ["预留值", "柜号", "栏目", "排位", "实序编号", "状态", "绑定合同", "绑定分册"]
+    rows = reserved_record_position_export_rows(setting)
+    response = HttpResponse(
+        build_contract_list_xlsx(headers, rows, numeric_columns=set()),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="reserved_record_positions.xlsx"'
+    return response
+
+
 # 渲染当前用户可见的使用文档页面。
 def usage_docs(request):
     return render(
@@ -6042,16 +6378,27 @@ def settings_view(request):
         if form.is_valid():
             with transaction.atomic():
                 saved_setting = form.save()
+                remove_values = [
+                    item.strip()
+                    for item in str(getattr(form, "removed_record_position_reserved_slots", "") or "").split(";")
+                    if item.strip()
+                ]
+                reserved_count = sync_reserved_record_positions(saved_setting, remove_values=remove_values)
                 new_start_file = int(saved_setting.record_position_start_file_number or 1)
                 shifted_count = shift_record_sequences_for_start_file_change(old_start_file, new_start_file, saved_setting)
             detail = "updated system settings"
             if shifted_count:
-                detail += f"; shifted record real sequences: {shifted_count}"
+                detail += f"; refreshed record positions: {shifted_count}"
+            if reserved_count:
+                detail += f"; synced reserved record positions: {reserved_count}"
             log_operation(request, "修改", setting, detail=detail)
             return redirect("contracts:settings")
     else:
         form = AppSettingForm(
             instance=setting,
+            initial={"record_position_reserved_slots": merged_reserved_record_position_values(
+                [item.strip() for item in str(setting.record_position_reserved_slots or "").split(";") if item.strip()]
+            )},
             allow_image_root_path_edit=can_edit_image_root_path,
             allow_record_position_generation_edit=can_edit_record_position_generation,
         )
@@ -6064,6 +6411,7 @@ def settings_view(request):
                 "form": form,
                 "host_ip": host_ip,
                 "lan_url": f"http://{host_ip}:8000",
+                "record_position_remaining_count": record_position_remaining_count(setting),
                 "can_edit_image_root_path": can_edit_image_root_path,
                 "can_edit_record_position_generation": can_edit_record_position_generation,
                 "active_nav": "settings",

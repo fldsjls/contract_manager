@@ -32,7 +32,7 @@
       </section>
 
       <section class="panel">
-        <div style="max-width: 950px;">
+        <div class="record-position-settings">
           <div class="settings-title-row">
             <h2 class="settings-compact-title">记录位置编号生成</h2>
             <label class="settings-title-switch">
@@ -42,17 +42,29 @@
               </span>
               <span>插入重排序</span>
             </label>
+            <label class="settings-title-switch">
+              <span class="switch-control">
+              {{ form.record_position_force_empty_slot }}
+                <span class="switch-track"></span>
+              </span>
+              <span>强制空排位</span>
+            </label>
           </div>
           {% if not can_edit_record_position_generation %}
             <p style="color: #667085; line-height: 1.8; margin-top: 0;">
-              当前账号可切换插入重排序；柜号、栏目、起始界限点和存放逻辑仅超级管理员可修改。
+              当前账号可切换插入重排序和强制空排位；柜号、栏目、起始界限点、排位预留值和存放逻辑仅超级管理员可修改。
             </p>
           {% endif %}
-          <div class="form-grid" style="max-width: 950px; grid-template-columns: repeat(3, minmax(0, 1fr));">
+          <div class="record-position-grid">
             <div class="form-row">
-              <label class="field-label" for="{{ form.record_position_cabinet_number.id_for_label }}">柜号</label>
-              {{ form.record_position_cabinet_number }}
+              <label class="field-label">柜号</label>
+              <div class="field-control-row split-setting-row">
+                {{ form.record_position_cabinet_number }}
+                <span class="number-separator">至</span>
+                {{ form.record_position_end_cabinet_number }}
+              </div>
               {{ form.record_position_cabinet_number.errors }}
+              {{ form.record_position_end_cabinet_number.errors }}
             </div>
             <div class="form-row">
               <label class="field-label" for="{{ form.record_position_column_count.id_for_label }}">栏目量</label>
@@ -63,6 +75,10 @@
               <label class="field-label" for="{{ form.record_position_column_capacity.id_for_label }}">栏目存放数</label>
               {{ form.record_position_column_capacity }}
               {{ form.record_position_column_capacity.errors }}
+            </div>
+            <div class="form-row record-position-side-card">
+              <span class="field-label">剩余排位数</span>
+              <strong>{{ record_position_remaining_count }}</strong>
             </div>
             <div class="form-row">
               <label class="field-label" for="{{ form.record_position_start_file_number.id_for_label }}">起始界限点</label>
@@ -79,10 +95,18 @@
               {{ form.record_position_direction }}
               {{ form.record_position_direction.errors }}
             </div>
+            <div class="form-row record-position-reserved-row">
+              <div class="field-control-row" style="align-items: center; justify-content: space-between; gap: 10px;">
+                <label class="field-label" for="{{ form.record_position_reserved_slots.id_for_label }}" style="margin: 0;">排位预留值</label>
+                <a class="button compact" href="{% url 'contracts:settings_reserved_positions_export' %}">导出</a>
+              </div>
+              {{ form.record_position_reserved_slots }}
+              {{ form.record_position_reserved_slots.errors }}
+            </div>
           </div>
           <p style="color: #667085; line-height: 1.8;">
-            说明：新增项目记录时，系统会保存不可见的实序编号，并根据实序编号自动计算位置编号。
-            启用插入重排序后，新增多册记录会插入到该文件第 1 册后方，并把后续记录的实序编号和位置编号整体后移重算。
+            说明：新增项目记录时，系统会保存合同-分册对应的实序编号和排位，并根据排位自动计算位置编号。
+            启用插入重排序后，新分册会接在上一分册后方，并把后续排位整体后移重算；排位预留值支持单条 6 位值和“柜号范围,栏目范围,排位范围”批量值，保存后会展开显示为单条；在值前加 <code>-</code> 可反向移除预留值，例如 <code>-011205</code> 或 <code>-01-03,03-04,01-10</code>。
           </p>
         </div>
       </section>

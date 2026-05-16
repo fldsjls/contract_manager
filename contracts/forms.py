@@ -248,15 +248,17 @@ class LoginForm(forms.Form):
 class AppSettingForm(forms.ModelForm):
     RECORD_POSITION_GENERATION_FIELDS = [
         "record_position_cabinet_number",
+        "record_position_end_cabinet_number",
         "record_position_column_count",
         "record_position_column_capacity",
         "record_position_start_file_number",
         "record_position_start_column",
         "record_position_direction",
+        "record_position_reserved_slots",
     ]
 
     record_position_cabinet_number = forms.CharField(
-        label="记录位置柜号",
+        label="记录位置起始柜号",
         max_length=2,
         min_length=2,
         widget=forms.TextInput(
@@ -264,6 +266,40 @@ class AppSettingForm(forms.ModelForm):
                 "maxlength": "2",
                 "inputmode": "numeric",
                 "pattern": r"\d{2}",
+            }
+        ),
+    )
+    record_position_end_cabinet_number = forms.CharField(
+        label="记录位置终止柜号",
+        max_length=2,
+        min_length=2,
+        widget=forms.TextInput(
+            attrs={
+                "maxlength": "2",
+                "inputmode": "numeric",
+                "pattern": r"\d{2}",
+            }
+        ),
+    )
+    record_position_start_column = forms.CharField(
+        label="记录位置存放栏目",
+        max_length=2,
+        min_length=2,
+        widget=forms.TextInput(
+            attrs={
+                "maxlength": "2",
+                "inputmode": "numeric",
+                "pattern": r"\d{2}",
+            }
+        ),
+    )
+    record_position_reserved_slots = forms.CharField(
+        label="记录位置预留排位",
+        required=False,
+        widget=forms.TextInput(
+            attrs={
+                "placeholder": "例如：011205;020101",
+                "autocomplete": "off",
             }
         ),
     )
@@ -282,7 +318,6 @@ class AppSettingForm(forms.ModelForm):
             "record_position_column_count",
             "record_position_column_capacity",
             "record_position_start_file_number",
-            "record_position_start_column",
         ]
         for field_name in numeric_fields:
             self.fields[field_name].widget.attrs.update({"min": "1", "step": "1", "inputmode": "numeric"})
@@ -290,6 +325,14 @@ class AppSettingForm(forms.ModelForm):
         if cabinet_value is None:
             cabinet_value = getattr(self.instance, "record_position_cabinet_number", 1)
         self.initial["record_position_cabinet_number"] = f"{int(cabinet_value or 1):02d}"
+        end_cabinet_value = self.initial.get("record_position_end_cabinet_number")
+        if end_cabinet_value is None:
+            end_cabinet_value = getattr(self.instance, "record_position_end_cabinet_number", 99)
+        self.initial["record_position_end_cabinet_number"] = f"{int(end_cabinet_value or 99):02d}"
+        start_column_value = self.initial.get("record_position_start_column")
+        if start_column_value is None:
+            start_column_value = getattr(self.instance, "record_position_start_column", 1)
+        self.initial["record_position_start_column"] = f"{int(start_column_value or 1):02d}"
         if not allow_image_root_path_edit:
             image_field.disabled = True
             image_field.widget.attrs["readonly"] = "readonly"
@@ -310,6 +353,88 @@ class AppSettingForm(forms.ModelForm):
             raise forms.ValidationError("柜号必须大于 00。")
         return number
 
+    # 终止柜号在界面中统一显示为两位，且不能小于起始柜号。
+    def clean_record_position_end_cabinet_number(self):
+        value = str(self.cleaned_data["record_position_end_cabinet_number"] or "").strip()
+        if not value.isdigit() or len(value) != 2:
+            raise forms.ValidationError("终止柜号必须填写两位数字。")
+        number = int(value)
+        if number < 1:
+            raise forms.ValidationError("终止柜号必须大于 00。")
+        return number
+
+    # 存放栏目在界面中统一显示为两位，保存时仍转为数字字段。
+    def clean_record_position_start_column(self):
+        value = str(self.cleaned_data["record_position_start_column"] or "").strip()
+        if not value.isdigit() or len(value) != 2:
+            raise forms.ValidationError("存放栏目必须填写两位数字。")
+        number = int(value)
+        if number < 1:
+            raise forms.ValidationError("存放栏目必须大于 00。")
+        column_count = self.cleaned_data.get("record_position_column_count")
+        if column_count and number > int(column_count):
+            raise forms.ValidationError("存放栏目不能大于栏目量。")
+        return number
+
+    # 方法说明：执行表单字段或整表校验。
+    def clean(self):
+        cleaned_data = super().clean()
+        start_cabinet = cleaned_data.get("record_position_cabinet_number")
+        end_cabinet = cleaned_data.get("record_position_end_cabinet_number")
+        if start_cabinet and end_cabinet and end_cabinet < start_cabinet:
+            self.add_error("record_position_end_cabinet_number", "终止柜号不能小于起始柜号。")
+        return cleaned_data
+
+    @staticmethod
+    def _expand_record_position_reserved_part(part: str) -> list[str]:
+        if part.isdigit() and len(part) == 6:
+            return [part]
+        ranges = [item.strip() for item in part.split(",")]
+        if len(ranges) != 3:
+            raise forms.ValidationError("预留排位可填写 6 位数字，或按 柜号范围,栏目范围,排位范围 批量填写。")
+        expanded_ranges = []
+        for value in ranges:
+            bounds = [item.strip() for item in value.split("-")]
+            if len(bounds) != 2 or any(not item.isdigit() or len(item) != 2 for item in bounds):
+                raise forms.ValidationError("批量预留格式必须为 01-03,03-04,01-10 这类两位数字范围。")
+            start, end = (int(bounds[0]), int(bounds[1]))
+            step = 1 if start <= end else -1
+            expanded_ranges.append(range(start, end + step, step))
+        values = []
+        for cabinet in expanded_ranges[0]:
+            for column in expanded_ranges[1]:
+                for rank in expanded_ranges[2]:
+                    values.append(f"{cabinet:02d}{column:02d}{rank:02d}")
+        return values
+
+    # 预留排位支持单个 6 位值或 柜号范围,栏目范围,排位范围 批量值，多个值用英文分号隔开。
+    def clean_record_position_reserved_slots(self):
+        value = str(self.cleaned_data.get("record_position_reserved_slots") or "").strip()
+        self.removed_record_position_reserved_slots = ""
+        if not value:
+            return ""
+        parts = [item.strip() for item in value.split(";") if item.strip()]
+        values = []
+        removed_values = []
+        seen = set()
+        removed_seen = set()
+        for part in parts:
+            should_remove = part.startswith("-")
+            normalized_part = part[1:].strip() if should_remove else part
+            for expanded_value in self._expand_record_position_reserved_part(normalized_part):
+                if should_remove:
+                    if expanded_value in removed_seen:
+                        continue
+                    removed_seen.add(expanded_value)
+                    removed_values.append(expanded_value)
+                    continue
+                if expanded_value in seen:
+                    continue
+                seen.add(expanded_value)
+                values.append(expanded_value)
+        self.removed_record_position_reserved_slots = ";".join(removed_values)
+        return ";".join(value for value in values if value not in removed_seen)
+
     # 禁用时忽略提交值，始终保留数据库中的原目录。
     def clean_image_root_path(self):
         if self.fields["image_root_path"].disabled:
@@ -323,11 +448,14 @@ class AppSettingForm(forms.ModelForm):
             "allow_partial_import_with_errors",
             "allow_force_contract_import_update",
             "record_position_cabinet_number",
+            "record_position_end_cabinet_number",
             "record_position_column_count",
             "record_position_column_capacity",
             "record_position_start_file_number",
             "record_position_start_column",
             "record_position_enable_insert_sort",
+            "record_position_force_empty_slot",
+            "record_position_reserved_slots",
             "record_position_direction",
             "image_root_path",
         ]

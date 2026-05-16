@@ -81,13 +81,14 @@
       <div class="toolbar" style="margin-top: 18px;">
         <button class="button" type="button" id="addRecordRow">新增一行</button>
         <button class="button muted" type="button" id="removeRecordRow" disabled>减少一行</button>
-        <button class="button primary" type="submit">保存</button>
+        <button class="button primary" type="submit" id="saveRecordButton">保存</button>
         <a class="button" href="{{ return_url }}">取消</a>
       </div>
     </form>
   </section>
 
   {{ record_position_settings|json_script:"recordPositionSettingsData" }}
+  {{ record_volume_sequences|json_script:"recordVolumeSequencesData" }}
   {{ month_field|yesno:"true,false"|json_script:"isMaintenanceFormData" }}
   <!-- 新增行的前端交互逻辑。 -->
   <script>
@@ -100,9 +101,19 @@
     const recordMaxFileNumber = Number.parseInt("{{ record_max_file_number|default:'0'|escapejs }}", 10) || recordFileNumber;
     const recordMaxSequenceNumber = Number.parseInt("{{ record_max_sequence_number|default:'0'|escapejs }}", 10) || 0;
     const recordBaseSequenceNumber = Number.parseInt("{{ record_base_sequence_number|default:'0'|escapejs }}", 10) || 0;
+    const recordRemainingPositions = Number.parseInt("{{ record_position_remaining_count|default:'1'|escapejs }}", 10) || 0;
     const recordPositionSettings = JSON.parse(document.querySelector("#recordPositionSettingsData")?.textContent || "{}");
+    const recordVolumeSequences = JSON.parse(document.querySelector("#recordVolumeSequencesData")?.textContent || "{}") || {};
+    const saveRecordButton = document.querySelector("#saveRecordButton");
     const recordNumberMemoryKey = `contract_record_number_memory_${businessRecordNumber || "default"}`;
     let nextRecordIndex = 1;
+
+    if (isMaintenanceForm && recordRemainingPositions <= 0 && saveRecordButton) {
+      saveRecordButton.disabled = true;
+      saveRecordButton.classList.add("muted");
+      saveRecordButton.classList.remove("primary");
+      saveRecordButton.setAttribute("aria-disabled", "true");
+    }
 
     function updateRemoveRecordRowButton() {
       const canRemove = recordTableBody.querySelectorAll("tr").length > 1;
@@ -135,14 +146,20 @@
     }
 
     function autoRecordPosition(storageLocationValue) {
-      const volume = Number.parseInt(normalizeStorageLocation(storageLocationValue), 10) || 1;
+      const normalizedVolume = normalizeStorageLocation(storageLocationValue);
+      const volume = Number.parseInt(normalizedVolume, 10) || 1;
       const startFile = Math.max(Number.parseInt(recordPositionSettings.startFile, 10) || 1, 1);
       const capacity = Math.max(Number.parseInt(recordPositionSettings.capacity, 10) || 1, 1);
       const columnCount = Math.max(Number.parseInt(recordPositionSettings.columnCount, 10) || 1, 1);
       const startColumn = Math.min(Math.max(Number.parseInt(recordPositionSettings.startColumn, 10) || 1, 1), columnCount);
       let cabinet = Math.max(Number.parseInt(recordPositionSettings.cabinet, 10) || 1, 1);
       const appendMode = volume > 1 && !recordPositionSettings.insertSort;
-      const offset = appendMode ? Math.max(recordMaxSequenceNumber, recordBaseSequenceNumber) + volume - 1 : recordBaseSequenceNumber + volume - 1;
+      const rememberedSequence = Number.parseInt(recordVolumeSequences[normalizedVolume], 10) || 0;
+      const previousVolume = String(Math.max(volume - 1, 1)).padStart(2, "0");
+      const rememberedPreviousSequence = Number.parseInt(recordVolumeSequences[previousVolume], 10) || 0;
+      const insertSequence = (volume > 1 ? (rememberedPreviousSequence || recordBaseSequenceNumber + volume - 2) + 1 : recordBaseSequenceNumber);
+      const sequenceNumber = rememberedSequence || (appendMode ? Math.max(recordMaxSequenceNumber, recordBaseSequenceNumber) + volume - 1 : insertSequence);
+      const offset = sequenceNumber - startFile + 1;
       let columnSteps;
       let forwardDirection;
       let cabinetStep;

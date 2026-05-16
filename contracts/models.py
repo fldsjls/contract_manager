@@ -412,7 +412,6 @@ class MaintenanceRecord(models.Model):
     date_number = models.CharField("年月编号", max_length=4, default="0000", blank=True)
     record_position_number = models.CharField("位置编号", max_length=100, default="0000", blank=True)
     storage_location_number = models.CharField("分册编号", max_length=100, default="01", blank=True)
-    real_sequence_number = models.IntegerField("实序编号", default=0)
     file = models.FileField("附件", upload_to=project_file_upload_path, null=True, blank=True)
     remark = models.CharField("备注", max_length=255, blank=True)
     created_at = models.DateTimeField("创建时间", default=timezone.now)
@@ -429,6 +428,34 @@ class MaintenanceRecord(models.Model):
     def __str__(self) -> str:
         # 后台中显示记录所属合同、日期和月份。
         return f"{self.contract.contract_name} - {self.record_date} - {self.month}"
+
+
+# 保存单个合同分册对应的实序编号，避免每条记录重复存储同一档案位置。
+class MaintenanceRecordVolumeSequence(models.Model):
+    contract = models.ForeignKey(
+        Contract,
+        related_name="record_volume_sequences",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        verbose_name="所属合同",
+    )
+    storage_location_number = models.CharField("分册编号", max_length=100, default="01", blank=True)
+    real_sequence_number = models.IntegerField("实序编号", default=0)
+    shelf_position_number = models.CharField("排位", max_length=100, default="0000", blank=True)
+    is_reserved = models.BooleanField("是否预留", default=False)
+    created_at = models.DateTimeField("创建时间", default=timezone.now)
+    updated_at = models.DateTimeField("更新时间", auto_now=True)
+
+    class Meta:
+        ordering = ["real_sequence_number", "contract_id", "storage_location_number"]
+        unique_together = ("contract", "storage_location_number")
+        verbose_name = "项目记录分册实序"
+        verbose_name_plural = "项目记录分册实序"
+
+    def __str__(self) -> str:
+        contract_name = self.contract.contract_name if self.contract_id else "空排位"
+        return f"{contract_name} - {self.storage_location_number or '空'} - {self.real_sequence_number} - {self.shelf_position_number}"
 
 
 # 保存开票记录附件的每次上传版本，记录本身的 file 字段指向最新版本。
@@ -485,11 +512,14 @@ class AppSetting(models.Model):
     allow_partial_import_with_errors = models.BooleanField("Excel 导入存在错误时仍导入通过行", default=False)
     allow_force_contract_import_update = models.BooleanField("合同导入允许强行修改匹配行", default=False)
     record_position_cabinet_number = models.PositiveSmallIntegerField("记录位置柜号", default=1)
+    record_position_end_cabinet_number = models.PositiveSmallIntegerField("记录位置终止柜号", default=99)
     record_position_column_count = models.PositiveSmallIntegerField("记录位置栏目量", default=12)
     record_position_column_capacity = models.PositiveSmallIntegerField("记录位置栏目存放数", default=10)
     record_position_start_file_number = models.PositiveIntegerField("记录位置起始界限点", default=3441)
     record_position_start_column = models.PositiveSmallIntegerField("记录位置存放栏目", default=5)
     record_position_enable_insert_sort = models.BooleanField("记录位置启用插入重排序", default=False)
+    record_position_force_empty_slot = models.BooleanField("记录位置强制空排位", default=False)
+    record_position_reserved_slots = models.TextField("记录位置预留排位", blank=True)
     record_position_direction = models.CharField(
         "记录位置存放逻辑",
         max_length=20,

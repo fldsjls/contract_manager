@@ -532,7 +532,9 @@ def usage_docs_for_request(request) -> list[dict]:
         {
             "title": "导入与撤回逻辑",
             "items": [
-                "合同导入按业务编号匹配已有项目；业务编号已存在时更新其他字段并保留默认编号，未匹配时新建合同。",
+                "合同导入模板包含“导入合同”“业务匹配”“默认匹配”三张工作表：“导入合同”只新增合同，不再自动匹配已有合同。",
+                "“业务匹配”按已有业务编号修改负责人、文件夹编号、位置编号、归档时间和备注，不修改业务编号本身；空白单元格不会覆盖原值。",
+                "“默认匹配”按 12 位默认编号修改已有合同，除默认编号外可修改合同所有基础字段；空白单元格同样保留原值。",
                 "导入页右侧可通过业务编号、合同名称或甲方名称查找项目；项目名称可能重复，应以业务编号作为最终导入依据。",
                 "代码里的 code 通常表示可展示或复制的业务编号/存档编号；number 保留既有编号语义，可能是合同编号，也可能是未加横线的业务编号，页面会用 display_code 和 archive_code 转成带横线的可读格式。",
                 "票据导入中实际金额为空时按 0 保存；票面金额和实际金额彼此独立。",
@@ -3642,17 +3644,58 @@ CONTRACT_IMPORT_COLUMNS = [
     ("archive_years", "归档时间（年）"),
     ("remark", "备注"),
 ]
+CONTRACT_IMPORT_CREATE_SHEET_NAME = "导入合同"
+CONTRACT_IMPORT_DEFAULT_MATCH_SHEET_NAME = "默认匹配"
+CONTRACT_IMPORT_BUSINESS_MATCH_SHEET_NAME = "业务匹配"
+CONTRACT_IMPORT_DEFAULT_MATCH_COLUMNS = [
+    ("contract_number", "默认编号"),
+    *CONTRACT_IMPORT_COLUMNS,
+]
+CONTRACT_IMPORT_BUSINESS_MATCH_COLUMNS = [
+    ("business_number", "业务编号"),
+    ("responsible_person", "负责人"),
+    ("original_contract_folder", "文件夹编号"),
+    ("storage_location_number", "位置编号"),
+    ("archive_years", "归档时间（年）"),
+    ("remark", "备注"),
+]
+CONTRACT_IMPORT_UPDATE_FIELDS = {
+    "default_match": [
+        "contract_name",
+        "contract_type",
+        "party_name",
+        "amount",
+        "invoice_status",
+        "sign_date",
+        "start_date",
+        "end_date",
+        "responsible_person",
+        "original_contract_inner_number",
+        "original_contract_folder",
+        "storage_location_number",
+        "archive_years",
+        "remark",
+    ],
+    "business_match": [
+        "responsible_person",
+        "original_contract_folder",
+        "storage_location_number",
+        "archive_years",
+        "remark",
+    ],
+}
 CONTRACT_IMPORT_PREVIEW_COLUMNS = [
     "序号",
+    "工作表",
+    "处理方式",
     UI_LABELS["contract_name"],
-    UI_LABELS["contract_number"],
-    UI_LABELS["contract_type"],
-    UI_LABELS["party_name"],
-    UI_LABELS["contract_amount"],
-    UI_LABELS["invoice_status"],
-    UI_LABELS["start_date"],
-    UI_LABELS["end_date"],
+    "默认编号",
+    "业务编号",
+    "文件编号",
+    "文件夹编号",
+    "位置编号",
     UI_LABELS["responsible_person"],
+    "归档时间",
     UI_LABELS["status"],
     "错误",
 ]
@@ -3687,6 +3730,11 @@ CONTRACT_IMPORT_HEADER_ALIASES = {
     "文件夹编号": "original_contract_folder",
     "原合同编号": "original_contract_inner_number",
     "文件编号": "original_contract_inner_number",
+    "默认编号": "contract_number",
+    "默认合同编号": "contract_number",
+    "业务编号": "business_number",
+    "显示编号": "business_number",
+    "显示合同编号": "business_number",
     "存储位置": "storage_location_number",
     "存储编号": "storage_location_number",
     "位置编号": "storage_location_number",
@@ -3860,24 +3908,19 @@ def parse_contract_import_xlsx_with_stdlib(uploaded_file):
     return next(iter(sheets.values()), [])
 
 
-# 解析合同导入 Excel 并兼容多种模板结构。
-def parse_contract_import_xlsx(uploaded_file):
-    rows = next(iter(parse_xlsx_sheets(uploaded_file).values()), [])
-    if not rows:
-        return [], ["Excel 文件为空。"]
-
+# 按标题行解析合同导入工作表。
+def parse_contract_import_rows_from_sheet(rows, columns, required_fields, sheet_name, import_mode):
     headers = [normalize_import_cell(value) for value in rows[0]]
     header_map = {}
-    expected_fields = {field for field, _label in CONTRACT_IMPORT_COLUMNS}
-    expected_labels = {label: field for field, label in CONTRACT_IMPORT_COLUMNS}
+    expected_fields = {field for field, _label in columns}
+    expected_labels = {label: field for field, label in columns}
     for index, header in enumerate(headers):
         field_name = expected_labels.get(header) or CONTRACT_IMPORT_HEADER_ALIASES.get(header)
         if field_name in expected_fields:
             header_map[field_name] = index
 
-    required_fields = ["contract_name", "contract_type", "party_name"]
     missing_headers = [
-        dict(CONTRACT_IMPORT_COLUMNS)[field_name]
+        dict(columns)[field_name]
         for field_name in required_fields
         if field_name not in header_map
     ]
@@ -3889,17 +3932,81 @@ def parse_contract_import_xlsx(uploaded_file):
         if not any(normalize_import_cell(value) for value in values):
             continue
         row_data = {}
-        for field_name, _label in CONTRACT_IMPORT_COLUMNS:
+        for field_name, _label in columns:
             column_index = header_map.get(field_name)
             row_data[field_name] = (
                 normalize_import_value(field_name, values[column_index])
                 if column_index is not None and column_index < len(values)
                 else ""
             )
-        parsed_rows.append({"row_number": excel_row_number, "data": row_data})
+        parsed_rows.append(
+            {
+                "row_number": excel_row_number,
+                "sheet_name": sheet_name,
+                "import_mode": import_mode,
+                "data": row_data,
+            }
+        )
+    return parsed_rows, []
+
+
+# 解析合同导入 Excel，三张工作表分别承担新增、默认编号匹配、业务编号匹配。
+def parse_contract_import_xlsx(uploaded_file):
+    sheets = parse_xlsx_sheets(uploaded_file)
+    if not any(rows for rows in sheets.values()):
+        return [], ["Excel 文件为空。"]
+
+    sheet_configs = {
+        CONTRACT_IMPORT_CREATE_SHEET_NAME: {
+            "columns": CONTRACT_IMPORT_COLUMNS,
+            "required_fields": ["contract_name", "contract_type", "party_name"],
+            "import_mode": "create",
+        },
+        CONTRACT_IMPORT_DEFAULT_MATCH_SHEET_NAME: {
+            "columns": CONTRACT_IMPORT_DEFAULT_MATCH_COLUMNS,
+            "required_fields": ["contract_number"],
+            "import_mode": "default_match",
+        },
+        CONTRACT_IMPORT_BUSINESS_MATCH_SHEET_NAME: {
+            "columns": CONTRACT_IMPORT_BUSINESS_MATCH_COLUMNS,
+            "required_fields": ["business_number"],
+            "import_mode": "business_match",
+        },
+    }
+    parsed_rows = []
+    parse_errors = []
+    found_supported_sheet = False
+    for sheet_name, rows in sheets.items():
+        normalized_sheet_name = normalize_import_cell(sheet_name)
+        config = sheet_configs.get(normalized_sheet_name)
+        if config is None:
+            continue
+        found_supported_sheet = True
+        if not rows:
+            continue
+        rows_for_sheet, errors = parse_contract_import_rows_from_sheet(
+            rows,
+            config["columns"],
+            config["required_fields"],
+            normalized_sheet_name,
+            config["import_mode"],
+        )
+        parse_errors.extend([f"{normalized_sheet_name}：{error}" for error in errors])
+        parsed_rows.extend(rows_for_sheet)
+    if not found_supported_sheet:
+        rows = next(iter(sheets.values()), [])
+        if not rows:
+            return [], ["Excel 文件为空。"]
+        parsed_rows, parse_errors = parse_contract_import_rows_from_sheet(
+            rows,
+            CONTRACT_IMPORT_COLUMNS,
+            ["contract_name", "contract_type", "party_name"],
+            CONTRACT_IMPORT_CREATE_SHEET_NAME,
+            "create",
+        )
     if len(parsed_rows) > 99:
         return parsed_rows, ["一次最多导入 99 条合同，请拆分 Excel 后再导入。"]
-    return parsed_rows, []
+    return parsed_rows, parse_errors
 
 
 # 校验合同导入预览行并标记错误信息。
@@ -3914,85 +4021,188 @@ def contract_import_display_number_from_data(data: dict) -> str:
     return f"{type_code}{str(base_date.year)[-2:]}{inner_number}"
 
 
-def contract_for_import_display_number(display_number: str) -> Contract | None:
-    if not display_number:
-        return None
-    for contract in Contract.objects.filter(is_deleted=False, original_contract_inner_number__gt=""):
-        if contract.display_contract_number == display_number:
-            return contract
-    return None
+# 构建按业务编号匹配已有合同的导入索引。
+def contract_business_import_lookup() -> dict[str, Contract]:
+    lookup = {}
+    for contract in Contract.objects.filter(is_deleted=False):
+        for key in (contract.display_contract_number, display_code_for_ui(contract.display_contract_number)):
+            normalized = compact_archive_lookup_text(key)
+            if normalized:
+                lookup.setdefault(normalized, contract)
+    return lookup
+
+
+# 将已有合同转换为可复用的表单数据。
+def contract_form_data_from_instance(contract: Contract) -> dict:
+    return {
+        "contract_name": contract.contract_name,
+        "contract_number": contract.contract_number,
+        "original_contract_folder": contract.original_contract_folder,
+        "original_contract_inner_number": contract.original_contract_inner_number,
+        "storage_location_number": contract.storage_location_number,
+        "contract_type": contract.contract_type,
+        "party_name": contract.party_name,
+        "amount": str(contract.amount),
+        "invoice_status": contract.invoice_status,
+        "sign_date": contract.sign_date.isoformat() if contract.sign_date else "",
+        "start_date": contract.start_date.isoformat() if contract.start_date else "",
+        "end_date": contract.end_date.isoformat() if contract.end_date else "",
+        "responsible_person": contract.responsible_person,
+        "archive_years": str(contract.archive_years),
+        "remark": contract.remark,
+    }
+
+
+# 按导入模式把非空更新字段合并到表单数据。
+def apply_contract_import_updates(base_data: dict, row_data: dict, import_mode: str) -> dict:
+    data = base_data.copy()
+    for field_name in CONTRACT_IMPORT_UPDATE_FIELDS.get(import_mode, []):
+        value = row_data.get(field_name, "")
+        if normalize_import_cell(value):
+            data[field_name] = value
+    return data
+
+
+# 生成合同导入预览表格的一行单元格数据。
+def contract_import_result_preview_cells(item, import_mode, preview_contract, errors):
+    mode_label = {
+        "create": "新增合同",
+        "default_match": "默认匹配修改",
+        "business_match": "业务匹配修改",
+    }.get(import_mode, "合同导入")
+    business_number = display_code_for_ui(preview_contract.display_contract_number)
+    return [
+        {"value": item.get("preview_index", item["row_number"] - 1)},
+        {"value": item.get("sheet_name", "")},
+        {"value": mode_label},
+        {"value": preview_contract.contract_name, "css_class": "truncate-cell", "title": preview_contract.contract_name},
+        {"value": preview_contract.contract_number},
+        {
+            "value": business_number,
+            "css_class": "default-contract-number" if preview_contract.uses_default_display_contract_number else "",
+        },
+        {"value": preview_contract.original_contract_inner_number},
+        {"value": normalize_contract_number_part(preview_contract.original_contract_folder, 3)},
+        {"value": normalize_storage_location_number(preview_contract.storage_location_number)},
+        {"value": preview_contract.responsible_person},
+        {"value": preview_contract.archive_years},
+        {"value": preview_contract.status, "css_class": f"status {preview_contract.status_class}"},
+        {"value": "；".join(errors), "css_class": "truncate-cell error-cell", "title": "；".join(errors)},
+    ]
 
 
 def validate_contract_import_rows(parsed_rows, contract_numbers=None):
-    contract_numbers = contract_numbers or default_contract_numbers(max(len(parsed_rows), 1))
+    create_count = sum(1 for item in parsed_rows if item.get("import_mode", "create") == "create")
+    contract_numbers = contract_numbers or default_contract_numbers(max(create_count, 1))
+    business_lookup = contract_business_import_lookup()
     results = []
     display_numbers = {}
+    create_index = 0
     for index, item in enumerate(parsed_rows):
+        import_mode = item.get("import_mode", "create")
         data = item["data"].copy()
-        display_number = contract_import_display_number_from_data(data)
-        existing_contract = contract_for_import_display_number(display_number)
-        data["contract_number"] = existing_contract.contract_number if existing_contract else contract_numbers[index]
-        form = ContractForm(data=data, instance=existing_contract) if existing_contract else ContractForm(data=data)
         errors = []
+        existing_contract = None
+        if import_mode == "default_match":
+            default_number = normalize_import_cell(data.get("contract_number"))
+            existing_contract = Contract.objects.filter(contract_number=default_number, is_deleted=False).first()
+            if existing_contract is None:
+                errors.append("未找到对应默认编号的合同。")
+            form_data = apply_contract_import_updates(
+                contract_form_data_from_instance(existing_contract) if existing_contract else {"contract_number": default_number},
+                data,
+                import_mode,
+            )
+        elif import_mode == "business_match":
+            business_number = compact_archive_lookup_text(data.get("business_number"))
+            existing_contract = business_lookup.get(business_number)
+            if existing_contract is None:
+                errors.append("未找到对应业务编号的合同。")
+            form_data = apply_contract_import_updates(
+                contract_form_data_from_instance(existing_contract) if existing_contract else {"contract_number": ""},
+                data,
+                import_mode,
+            )
+        else:
+            data["contract_number"] = contract_numbers[create_index]
+            create_index += 1
+            form_data = data
+
+        if import_mode in {"default_match", "business_match"} and existing_contract is None:
+            preview_contract = Contract(
+                contract_number=form_data.get("contract_number", ""),
+                contract_name=data.get("business_number") or form_data.get("contract_number", ""),
+                original_contract_folder=data.get("original_contract_folder", ""),
+                original_contract_inner_number=data.get("original_contract_inner_number", ""),
+                storage_location_number=data.get("storage_location_number", ""),
+                contract_type=form_data.get("contract_type", "维保"),
+                party_name="",
+                amount=Decimal("0"),
+                invoice_status=form_data.get("invoice_status", "待开票"),
+                responsible_person=data.get("responsible_person", ""),
+                archive_years=form_data.get("archive_years") or data.get("archive_years") or 3,
+            )
+            preview_item = {**item, "preview_index": len(results) + 1}
+            results.append(
+                {
+                    "row_number": item["row_number"],
+                    "sheet_name": item.get("sheet_name", ""),
+                    "import_mode": import_mode,
+                    "data": form_data,
+                    "existing_contract_id": None,
+                    "preview_cells": contract_import_result_preview_cells(preview_item, import_mode, preview_contract, errors),
+                    "errors": errors,
+                    "ok": False,
+                }
+            )
+            continue
+
+        form = ContractForm(data=form_data, instance=existing_contract) if existing_contract else ContractForm(data=form_data)
         is_valid = form.is_valid()
         if not is_valid:
             for field_errors in form.errors.values():
                 errors.extend(str(error) for error in field_errors)
         cleaned = form.cleaned_data
-        folder = normalize_contract_number_part(data.get("original_contract_folder"), 3)
-        inner_number = normalize_contract_number_part(data.get("original_contract_inner_number"), 5)
-        storage_location = normalize_storage_location_number(data.get("storage_location_number"))
-        if inner_number:
+        folder = normalize_contract_number_part(form_data.get("original_contract_folder"), 3)
+        inner_number = normalize_contract_number_part(form_data.get("original_contract_inner_number"), 5)
+        storage_location = normalize_storage_location_number(form_data.get("storage_location_number"))
+        if inner_number and import_mode != "business_match":
             base_date = cleaned.get("sign_date") or cleaned.get("start_date") or timezone.localdate()
-            contract_type = cleaned.get("contract_type") or data.get("contract_type")
+            contract_type = cleaned.get("contract_type") or form_data.get("contract_type")
             display_number = f"{Contract.CONTRACT_TYPE_CODES.get(contract_type, '')}{str(base_date.year)[-2:]}{inner_number}"
             if display_number in display_numbers:
                 errors.append(f"显示合同编号 {display_number} 与第 {display_numbers[display_number]} 行重复。")
             else:
                 display_numbers[display_number] = item["row_number"]
         preview_contract = Contract(
-            contract_number=data["contract_number"],
-            contract_name=cleaned.get("contract_name") or data.get("contract_name", ""),
+            contract_number=form_data.get("contract_number", ""),
+            contract_name=cleaned.get("contract_name") or form_data.get("contract_name", ""),
             original_contract_folder=cleaned.get("original_contract_folder") or folder,
             original_contract_inner_number=cleaned.get("original_contract_inner_number") or inner_number,
             storage_location_number=cleaned.get("storage_location_number") or storage_location,
-            contract_type=cleaned.get("contract_type") or data.get("contract_type", ""),
-            party_name=cleaned.get("party_name") or data.get("party_name", ""),
+            contract_type=cleaned.get("contract_type") or form_data.get("contract_type", ""),
+            party_name=cleaned.get("party_name") or form_data.get("party_name", ""),
             amount=cleaned.get("amount") or Decimal("0"),
-            invoice_status=cleaned.get("invoice_status") or data.get("invoice_status", ""),
+            invoice_status=cleaned.get("invoice_status") or form_data.get("invoice_status", ""),
             sign_date=cleaned.get("sign_date"),
             start_date=cleaned.get("start_date"),
             end_date=cleaned.get("end_date"),
-            responsible_person=cleaned.get("responsible_person") or data.get("responsible_person", ""),
+            responsible_person=cleaned.get("responsible_person") or form_data.get("responsible_person", ""),
             archive_years=cleaned.get("archive_years") or 3,
         )
-        invoice_status = preview_contract.invoice_status
-        invoice_status_class = ""
-        if invoice_status == "开收据":
-            invoice_status_class = "invoice-receipt"
-        elif invoice_status == "待开票":
-            invoice_status_class = "invoice-pending"
-        elif invoice_status == "票已结":
-            invoice_status_class = "invoice-done"
         results.append(
             {
                 "row_number": item["row_number"],
-                "data": item["data"],
+                "sheet_name": item.get("sheet_name", ""),
+                "import_mode": import_mode,
+                "data": form_data,
                 "existing_contract_id": existing_contract.pk if existing_contract else None,
-                "preview_cells": [
-                    {"value": item["row_number"] - 1},
-                    {"value": preview_contract.contract_name, "css_class": "truncate-cell", "title": preview_contract.contract_name},
-                    {"value": preview_contract.contract_number},
-                    {"value": preview_contract.contract_type},
-                    {"value": preview_contract.party_name, "css_class": "truncate-cell", "title": preview_contract.party_name},
-                    {"value": f"¥ {preview_contract.amount:.2f}"},
-                    {"value": preview_contract.invoice_status, "css_class": f"invoice-status {invoice_status_class}".strip()},
-                    {"value": preview_contract.start_date.strftime("%Y-%m-%d") if preview_contract.start_date else ""},
-                    {"value": preview_contract.end_date.strftime("%Y-%m-%d") if preview_contract.end_date else ""},
-                    {"value": preview_contract.responsible_person},
-                    {"value": preview_contract.status, "css_class": f"status {preview_contract.status_class}"},
-                    {"value": "；".join(errors), "css_class": "truncate-cell error-cell", "title": "；".join(errors)},
-                ],
+                "preview_cells": contract_import_result_preview_cells(
+                    {**item, "preview_index": len(results) + 1},
+                    import_mode,
+                    preview_contract,
+                    errors,
+                ),
                 "errors": errors,
                 "ok": not errors,
             }
@@ -4381,9 +4591,49 @@ def contract_import_template(request):
         "归档时间（年）": "填写归档年限数字，例如 3。",
         "备注": "可选。填写合同备注。",
     }
+    default_match_headers = [label for _field, label in CONTRACT_IMPORT_DEFAULT_MATCH_COLUMNS]
+    default_match_comments = comments.copy()
+    default_match_comments.update({
+        "默认编号": "必填。填写系统自动生成的 12 位默认编号，用于匹配已有合同。",
+        "合同名称": "可选。填写后修改合同名称，留空则不改。",
+        "合同类型": "可选。填写后修改合同类型，留空则不改。",
+        "甲方名称": "可选。填写后修改甲方名称，留空则不改。",
+        "合同金额": "可选。填写后修改合同金额，留空则不改。",
+        "是否开票": "可选。填写后修改开票状态，留空则不改。",
+        "签订日期": "可选。日期格式：YYYY-MM-DD，留空则不改。",
+        "开始日期": "可选。日期格式：YYYY-MM-DD，留空则不改。",
+        "截止日期": "可选。日期格式：YYYY-MM-DD，留空则不改。",
+        "负责人": "可选。填写后修改负责人，留空则不改。",
+        "文件编号": "可选。填写 5 位文件编号；按默认编号匹配时允许修改业务编号中的文件编号部分，留空则不改。",
+        "文件夹编号": "可选。填写 3 位文件夹编号，留空则不改。",
+        "位置编号": "可选。填写 2 位位置编号，留空则不改。",
+        "归档时间（年）": "可选。填写归档年限数字，留空则不改。",
+        "备注": "可选。填写后修改合同备注，留空则不改。",
+    })
+    business_match_headers = [label for _field, label in CONTRACT_IMPORT_BUSINESS_MATCH_COLUMNS]
+    business_match_comments = {
+        "业务编号": "必填。填写已有业务编号，可带横线；该工作表不会修改业务编号本身。",
+        "负责人": "可选。填写后修改已有合同负责人，留空则不改。",
+        "文件夹编号": "可选。填写 3 位文件夹编号，留空则不改。",
+        "位置编号": "可选。填写 2 位位置编号，留空则不改。",
+        "归档时间（年）": "可选。填写归档年限数字，留空则不改。",
+        "备注": "可选。填写后修改合同备注，留空则不改。",
+    }
     response = HttpResponse(
         build_commented_import_template_xlsx(
-            [{"name": "合同列表", "headers": headers, "comments": comments}]
+            [
+                {"name": CONTRACT_IMPORT_CREATE_SHEET_NAME, "headers": headers, "comments": comments},
+                {
+                    "name": CONTRACT_IMPORT_BUSINESS_MATCH_SHEET_NAME,
+                    "headers": business_match_headers,
+                    "comments": business_match_comments,
+                },
+                {
+                    "name": CONTRACT_IMPORT_DEFAULT_MATCH_SHEET_NAME,
+                    "headers": default_match_headers,
+                    "comments": default_match_comments,
+                },
+            ]
         ),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
@@ -4565,9 +4815,8 @@ def contract_import(request):
                         if existing_contract_id
                         else None
                     )
-                    data["contract_number"] = (
-                        existing_contract.contract_number if existing_contract else contract_numbers[index]
-                    )
+                    if existing_contract:
+                        data["contract_number"] = existing_contract.contract_number
                     form = (
                         ContractForm(data=data, instance=existing_contract)
                         if existing_contract

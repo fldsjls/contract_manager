@@ -23,7 +23,7 @@ from django.conf import settings
 from django.core import signing
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -458,7 +458,7 @@ def usage_docs_for_request(request) -> list[dict]:
                 "默认编号是系统自动生成的 12 位合同基础编号，用于保证每份合同在数据库和文件目录中有稳定标识；新增和编辑合同页面中不可手动修改。",
                 "业务编号是面向日常业务使用的合同编号，由合同类型代码、年份后两位和 5 位文件编号组成，例如维保合同会显示为 W-26-00001；如果文件编号缺失，页面会临时回退显示默认编号。",
                 "存档编号用于纸质或归档文件定位，合同文件存档编号由 3 位文件夹编号和 2 位位置编号组成，页面显示为“文件夹编号-位置编号”，例如 011-00。",
-                "项目记录文件编号在业务编号后继续拼接 4 位年月编号（年份后两位 + 月份两位）、3 位位置编号和 2 位分册编号，形成“业务编号-年月编号-位置编号-分册编号”的记录编号，用于区分同一合同下的不同记录文件。",
+                "项目记录文件编号在业务编号后继续拼接 4 位年月编号（年份后两位 + 月份两位）、4 位位置编号和 2 位分册编号，形成“业务编号-年月编号-位置编号-分册编号”的记录编号，用于区分同一合同下的不同记录文件。",
                 "查询和导入时，合同编号、业务编号、带横线业务编号、存档编号和合同名称都可以作为定位合同的线索；系统会先去掉横线和空格，再按内部编号匹配。",
                 "代码中的 contract_number 表示默认编号，display_contract_number 表示业务编号，archive_number_display 表示存档编号；模板显示时分别通过 display_code 和 archive_code 转成带横线的可读格式。",
             ],
@@ -1393,43 +1393,169 @@ def project_mode_chart_rows(rows: list[dict], records) -> list[dict]:
     return rows
 
 
+# 根据系统设置和分册编号计算项目记录位置编号。
+def auto_record_position_number(contract: Contract, volume_number: str, setting: AppSetting | None = None) -> str:
+    sequence_number = record_real_sequence_number(contract, volume_number, setting)
+    return record_position_number_from_sequence(sequence_number, setting)
+
+
+# 根据合同文件编号和分册编号计算项目记录不可见实序编号。
+def record_real_sequence_number(contract: Contract, volume_number: str, setting: AppSetting | None = None) -> int:
+    setting = setting or AppSetting.current()
+    file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
+    volume = normalize_record_volume_number(volume_number)
+    if not file_number or not volume:
+        return 0
+    file_value = int(file_number)
+    volume_value = int(volume)
+    start_file = max(int(setting.record_position_start_file_number or 1), 1)
+    base_sequence = (file_value - start_file) + 1
+    if volume_value == 1:
+        return base_sequence
+    if getattr(contract, "pk", None):
+        base_record = (
+            MaintenanceRecord.objects.filter(contract=contract, storage_location_number="01")
+            .exclude(real_sequence_number=0)
+            .order_by("id")
+            .first()
+        )
+        if base_record:
+            return int(base_record.real_sequence_number or 0) + volume_value - 1
+    if volume_value > 1 and not setting.record_position_enable_insert_sort:
+        return max_record_real_sequence_number(base_sequence) + volume_value - 1
+    return base_sequence + volume_value - 1
+
+
+# 将实序编号换算为可见位置编号。
+def record_position_number_from_sequence(sequence_number: int, setting: AppSetting | None = None) -> str:
+    setting = setting or AppSetting.current()
+    capacity = max(int(setting.record_position_column_capacity or 1), 1)
+    column_count = max(int(setting.record_position_column_count or 1), 1)
+    start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
+    cabinet = max(int(setting.record_position_cabinet_number or 1), 1)
+    sequence_number = int(sequence_number or 0)
+    if sequence_number > 0:
+        column_steps = (sequence_number - 1) // capacity
+        forward_direction = setting.record_position_direction
+        cabinet_step = 1
+    else:
+        column_steps = (-sequence_number) // capacity + 1
+        forward_direction = "decrement" if setting.record_position_direction == "increment" else "increment"
+        cabinet_step = -1
+    if forward_direction == "increment":
+        column_index = start_column - 1 + column_steps
+        cabinet += cabinet_step * (column_index // column_count)
+        column = (column_index % column_count) + 1
+    else:
+        column_index = start_column - 1 - column_steps
+        wraps = ((-column_index - 1) // column_count + 1) if column_index < 0 else 0
+        cabinet += cabinet_step * wraps
+        column = (column_index % column_count) + 1
+    if sequence_number <= 0:
+        column = column_count - column + 1
+    return f"{max(cabinet, 1):02d}{column:02d}"
+
+
+# 读取当前系统中最大的合同文件编号。
+def max_contract_file_number(fallback: int = 0) -> int:
+    max_file_number = fallback
+    for value in Contract.objects.filter(is_deleted=False).values_list("original_contract_inner_number", flat=True):
+        file_number = normalize_contract_number_part(value, 5)
+        if file_number:
+            max_file_number = max(max_file_number, int(file_number))
+    return max_file_number
+
+
+# 获取当前项目记录的最大实序编号，追加分册时作为末尾基准。
+def max_record_real_sequence_number(fallback: int = 0) -> int:
+    max_sequence = MaintenanceRecord.objects.aggregate(max_sequence=Max("real_sequence_number")).get("max_sequence")
+    return max(int(max_sequence or 0), fallback)
+
+
+# 插入多册记录时，把后续实序编号和位置编号整体后移。
+def reorder_maintenance_records_for_insert(contract: Contract, max_volume: int, setting: AppSetting) -> None:
+    if not setting.record_position_enable_insert_sort or max_volume <= 1:
+        return
+    base_sequence = record_real_sequence_number(contract, "01", setting)
+    shift_count = max_volume - 1
+    file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
+    current_file_value = int(file_number) if file_number else 0
+    records = []
+    for record in MaintenanceRecord.objects.select_related("contract").exclude(contract=contract):
+        record_file_number = normalize_contract_number_part(record.contract.original_contract_inner_number, 5)
+        record_file_value = int(record_file_number) if record_file_number else 0
+        record_sequence = int(record.real_sequence_number or 0)
+        if not record_sequence:
+            record_sequence = record_real_sequence_number(record.contract, record.storage_location_number, setting)
+            record.real_sequence_number = record_sequence
+        if record_sequence > base_sequence or record_file_value > current_file_value:
+            records.append(record)
+    records.sort(key=lambda item: (int(item.real_sequence_number or 0), item.pk or 0), reverse=True)
+    for record in records:
+        record.real_sequence_number = int(record.real_sequence_number or 0) + shift_count
+        record.record_position_number = record_position_number_from_sequence(record.real_sequence_number, setting)
+        record.save(update_fields=["real_sequence_number", "record_position_number", "updated_at"])
+
+
+# 起始界限点变化时，按差值整体平移已有记录实序编号。
+def shift_record_sequences_for_start_file_change(old_start_file: int, new_start_file: int, setting: AppSetting) -> int:
+    shift_value = int(old_start_file or 0) - int(new_start_file or 0)
+    if not shift_value:
+        return 0
+    changed_count = 0
+    for record in MaintenanceRecord.objects.all().order_by("id"):
+        record.real_sequence_number = int(record.real_sequence_number or 0) + shift_value
+        record.record_position_number = record_position_number_from_sequence(record.real_sequence_number, setting)
+        record.save(update_fields=["real_sequence_number", "record_position_number", "updated_at"])
+        changed_count += 1
+    return changed_count
+
+
 # 从批量记录表单中读取多行维护保养数据。
 # 函数说明：封装可复用的业务处理。
 def save_maintenance_records_from_request(request, contract: Contract) -> int:
     dates = request.POST.getlist("record_date")
     months = request.POST.getlist("month")
     date_numbers = request.POST.getlist("date_number")
-    record_positions = request.POST.getlist("record_position_number")
     storage_locations = request.POST.getlist("storage_location_number")
     remarks = request.POST.getlist("remark")
+    setting = AppSetting.current()
     saved_count = 0
-    for index, record_date in enumerate(dates):
-        month = months[index] if index < len(months) else ""
-        date_number = date_numbers[index] if index < len(date_numbers) else ""
-        record_position = record_positions[index] if index < len(record_positions) else ""
-        storage_location = storage_locations[index] if index < len(storage_locations) else ""
-        remark = remarks[index] if index < len(remarks) else ""
-        parsed_record_date = parse_form_date(record_date)
-        if not parsed_record_date:
-            continue
-        if not month and "-" in record_date:
-            month = record_date[:7]
-        if "-" in month:
-            year_text, month_text = month.split("-", 1)
-            month = f"{year_text}年{int(month_text):02d}月"
-        uploaded_file = request.FILES.get(f"file_{index}")
-        record = MaintenanceRecord.objects.create(
-            contract=contract,
-            record_date=parsed_record_date,
-            month=month,
-            date_number=normalize_record_date_number(date_number, parsed_record_date),
-            record_position_number=normalize_record_position_number(record_position),
-            storage_location_number=normalize_record_volume_number(storage_location),
-            remark=remark,
-        )
-        attach_record_file_version(record, uploaded_file)
-        log_operation(request, "新增", contract, object_type="项目记录", object_name=str(record), object_id=str(record.pk), version_obj=record)
-        saved_count += 1
+    submitted_volumes = [
+        int(normalize_record_volume_number(value))
+        for value in storage_locations
+        if normalize_record_volume_number(value).isdigit()
+    ]
+    with transaction.atomic():
+        reorder_maintenance_records_for_insert(contract, max(submitted_volumes, default=1), setting)
+        for index, record_date in enumerate(dates):
+            month = months[index] if index < len(months) else ""
+            date_number = date_numbers[index] if index < len(date_numbers) else ""
+            storage_location = storage_locations[index] if index < len(storage_locations) else ""
+            remark = remarks[index] if index < len(remarks) else ""
+            parsed_record_date = parse_form_date(record_date)
+            if not parsed_record_date:
+                continue
+            if not month and "-" in record_date:
+                month = record_date[:7]
+            if "-" in month:
+                year_text, month_text = month.split("-", 1)
+                month = f"{year_text}年{int(month_text):02d}月"
+            real_sequence = record_real_sequence_number(contract, storage_location, setting)
+            uploaded_file = request.FILES.get(f"file_{index}")
+            record = MaintenanceRecord.objects.create(
+                contract=contract,
+                record_date=parsed_record_date,
+                month=month,
+                date_number=normalize_record_date_number(date_number, parsed_record_date),
+                record_position_number=record_position_number_from_sequence(real_sequence, setting),
+                storage_location_number=normalize_record_volume_number(storage_location),
+                real_sequence_number=real_sequence,
+                remark=remark,
+            )
+            attach_record_file_version(record, uploaded_file)
+            log_operation(request, "新增", contract, object_type="项目记录", object_name=str(record), object_id=str(record.pk), version_obj=record)
+            saved_count += 1
     return saved_count
 
 
@@ -3586,7 +3712,7 @@ def contract_records_export(request, pk: int):
         [
             contract_key,
             record.record_date.strftime("%Y-%m-%d") if record.record_date else "",
-            record.record_position_number or "000",
+            normalize_record_position_number(record.record_position_number),
             record.storage_location_number or "00",
             record.remark or "",
         ]
@@ -4459,11 +4585,21 @@ def parse_maintenance_import_xlsx(uploaded_file):
 
         record_key = normalize_import_cell(value_for("contract_key"))
         compact_record_key = re.sub(r"[-\s]", "", record_key)
-        if len(compact_record_key) >= 19 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
+        if len(compact_record_key) >= 20 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
+            contract_key = compact_record_key[:8]
+            date_number = value_for("date_number") or compact_record_key[8:14]
+            record_position = value_for("record_position_number") or compact_record_key[14:18]
+            storage_location = value_for("storage_location_number") or compact_record_key[18:20]
+        elif len(compact_record_key) >= 19 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
             contract_key = compact_record_key[:8]
             date_number = value_for("date_number") or compact_record_key[8:14]
             record_position = value_for("record_position_number") or compact_record_key[14:17]
             storage_location = value_for("storage_location_number") or compact_record_key[17:19]
+        elif len(compact_record_key) >= 18 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
+            contract_key = compact_record_key[:8]
+            date_number = value_for("date_number") or compact_record_key[8:12]
+            record_position = value_for("record_position_number") or compact_record_key[12:16]
+            storage_location = value_for("storage_location_number") or compact_record_key[16:18]
         elif len(compact_record_key) >= 17 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
             contract_key = compact_record_key[:8]
             date_number = value_for("date_number") or compact_record_key[8:12]
@@ -4729,7 +4865,7 @@ def record_import_template(request):
     comments = {
         "业务编号": "填写已有业务编号或合同名称，用于匹配合同。",
         "日期": "必填。日期格式：YYYY-MM-DD。",
-        "位置编号": "填写 3 位记录位置编号，前一位为柜号，后两位为栏目，例如 101。",
+        "位置编号": "填写 4 位记录位置编号，前两位为柜号，后两位为栏目，例如 0101。",
         "分册编号": "填写 2 位分册编号，例如 00。",
         "备注": "可选。填写项目记录备注。",
     }
@@ -4839,11 +4975,13 @@ def contract_import(request):
                             else None
                         )
                         if record:
+                            real_sequence = record_real_sequence_number(contract, data.get("storage_location_number"), app_setting)
                             record.record_date = record_date
                             record.month = month
                             record.date_number = date_number
-                            record.record_position_number = normalize_record_position_number(data.get("record_position_number"))
                             record.storage_location_number = normalize_record_volume_number(data.get("storage_location_number"))
+                            record.real_sequence_number = real_sequence
+                            record.record_position_number = normalize_record_position_number(data.get("record_position_number") or record_position_number_from_sequence(real_sequence, app_setting))
                             record.remark = data.get("remark", "")
                             record.save(
                                 update_fields=[
@@ -4852,19 +4990,22 @@ def contract_import(request):
                                     "date_number",
                                     "record_position_number",
                                     "storage_location_number",
+                                    "real_sequence_number",
                                     "remark",
                                     "updated_at",
                                 ]
                             )
                             log_action = "修改"
                         else:
+                            real_sequence = record_real_sequence_number(contract, data.get("storage_location_number"), app_setting)
                             record = MaintenanceRecord.objects.create(
                                 contract=contract,
                                 record_date=record_date,
                                 month=month,
                                 date_number=date_number,
-                                record_position_number=normalize_record_position_number(data.get("record_position_number")),
                                 storage_location_number=normalize_record_volume_number(data.get("storage_location_number")),
+                                real_sequence_number=real_sequence,
+                                record_position_number=normalize_record_position_number(data.get("record_position_number") or record_position_number_from_sequence(real_sequence, app_setting)),
                                 remark=data.get("remark", ""),
                             )
                             log_action = "新增"
@@ -5655,6 +5796,7 @@ def maintenance_record_create(request, pk: int):
             return redirect(return_state["return_url"])
     project_labels = project_record_labels(contract.contract_type)
     project_years = f"{contract.project_years:02d}" if contract.project_years else "00"
+    setting = AppSetting.current()
     return render(
         request,
         "contracts/record_form.html",
@@ -5669,6 +5811,19 @@ def maintenance_record_create(request, pk: int):
                 "current_month": timezone.localdate().strftime("%Y-%m"),
                 "current_date_number": timezone.localdate().strftime("%y%m"),
                 "business_record_number": contract.display_contract_number,
+                "record_file_number": normalize_contract_number_part(contract.original_contract_inner_number, 5),
+                "record_max_file_number": max_contract_file_number(),
+                "record_max_sequence_number": max_record_real_sequence_number(),
+                "record_base_sequence_number": record_real_sequence_number(contract, "01", setting),
+                "record_position_settings": {
+                    "cabinet": setting.record_position_cabinet_number,
+                    "columnCount": setting.record_position_column_count,
+                    "capacity": setting.record_position_column_capacity,
+                    "startFile": setting.record_position_start_file_number,
+                    "startColumn": setting.record_position_start_column,
+                    "direction": setting.record_position_direction,
+                    "insertSort": setting.record_position_enable_insert_sort,
+                },
                 "project_years": project_years,
                 "file_label": project_labels["file"],
                 **return_state,
@@ -5878,14 +6033,21 @@ def settings_view(request):
     host_ip = local_ip_address()
     can_edit_image_root_path = is_super_admin_mode(request)
     if request.method == "POST":
+        old_start_file = int(setting.record_position_start_file_number or 1)
         form = AppSettingForm(
             request.POST,
             instance=setting,
             allow_image_root_path_edit=can_edit_image_root_path,
         )
         if form.is_valid():
-            form.save()
-            log_operation(request, "修改", setting, detail="updated system settings")
+            with transaction.atomic():
+                saved_setting = form.save()
+                new_start_file = int(saved_setting.record_position_start_file_number or 1)
+                shifted_count = shift_record_sequences_for_start_file_change(old_start_file, new_start_file, saved_setting)
+            detail = "updated system settings"
+            if shifted_count:
+                detail += f"; shifted record real sequences: {shifted_count}"
+            log_operation(request, "修改", setting, detail=detail)
             return redirect("contracts:settings")
     else:
         form = AppSettingForm(instance=setting, allow_image_root_path_edit=can_edit_image_root_path)

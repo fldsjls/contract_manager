@@ -27,8 +27,8 @@
               <th>{{ labels.date }}</th>
               {% if month_field %}
                 <th>记录编号 <small class="subtle-heading-note">业务编号-年月编号-位置编号-分册编号</small></th>
-                <th>位置编号 <small class="subtle-heading-note">柜号1位-栏目2位</small></th>
                 <th>分册编号 <small class="subtle-heading-note">项目年限 {{ project_years }}</small></th>
+                <th>位置编号 <small class="subtle-heading-note">柜号2位-栏目2位</small></th>
               {% endif %}
               {% if record_type_options %}<th>类型</th>{% endif %}
               {% if not month_field %}<th>{{ amount_label|default:labels.contract_amount }}</th>{% endif %}
@@ -46,8 +46,8 @@
               </td>
               {% if month_field %}
                 <td><output class="record-number-output"></output></td>
-                <td><input class="record-position-number-input" name="record_position_number" type="text" value="000" maxlength="3" inputmode="numeric" pattern="\d{0,3}"></td>
                 <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="01" maxlength="2" inputmode="numeric" pattern="\d{0,2}"></td>
+                <td><input class="record-position-number-input" name="record_position_number" type="text" value="0000" maxlength="4" inputmode="numeric" pattern="\d{0,4}" readonly aria-readonly="true"></td>
               {% endif %}
               {% if record_type_options %}
                 <td>
@@ -80,20 +80,36 @@
 
       <div class="toolbar" style="margin-top: 18px;">
         <button class="button" type="button" id="addRecordRow">新增一行</button>
+        <button class="button muted" type="button" id="removeRecordRow" disabled>减少一行</button>
         <button class="button primary" type="submit">保存</button>
         <a class="button" href="{{ return_url }}">取消</a>
       </div>
     </form>
   </section>
 
+  {{ record_position_settings|json_script:"recordPositionSettingsData" }}
+  {{ month_field|yesno:"true,false"|json_script:"isMaintenanceFormData" }}
   <!-- 新增行的前端交互逻辑。 -->
   <script>
     const recordTableBody = document.querySelector("#recordTable tbody");
     const addRecordRowButton = document.querySelector("#addRecordRow");
-    const isMaintenanceForm = {{ month_field|yesno:"true,false" }};
+    const removeRecordRowButton = document.querySelector("#removeRecordRow");
+    const isMaintenanceForm = JSON.parse(document.querySelector("#isMaintenanceFormData")?.textContent || "false") === "true";
     const businessRecordNumber = "{{ business_record_number|default:''|escapejs }}";
+    const recordFileNumber = Number.parseInt("{{ record_file_number|default:'0'|escapejs }}", 10) || 0;
+    const recordMaxFileNumber = Number.parseInt("{{ record_max_file_number|default:'0'|escapejs }}", 10) || recordFileNumber;
+    const recordMaxSequenceNumber = Number.parseInt("{{ record_max_sequence_number|default:'0'|escapejs }}", 10) || 0;
+    const recordBaseSequenceNumber = Number.parseInt("{{ record_base_sequence_number|default:'0'|escapejs }}", 10) || 0;
+    const recordPositionSettings = JSON.parse(document.querySelector("#recordPositionSettingsData")?.textContent || "{}");
     const recordNumberMemoryKey = `contract_record_number_memory_${businessRecordNumber || "default"}`;
     let nextRecordIndex = 1;
+
+    function updateRemoveRecordRowButton() {
+      const canRemove = recordTableBody.querySelectorAll("tr").length > 1;
+      removeRecordRowButton.disabled = !canRemove;
+      removeRecordRowButton.classList.toggle("muted", !canRemove);
+      removeRecordRowButton.setAttribute("aria-disabled", String(!canRemove));
+    }
 
     function monthFromDateValue(dateValue) {
       return dateValue && dateValue.length >= 7 ? dateValue.slice(0, 7) : "";
@@ -114,19 +130,56 @@
     }
 
     function normalizeRecordPosition(value) {
-      const digits = (value || "").replace(/\D/g, "").slice(0, 3);
-      return (digits || "000").padStart(3, "0");
+      const digits = (value || "").replace(/\D/g, "").slice(0, 4);
+      return (digits || "0000").padStart(4, "0");
+    }
+
+    function autoRecordPosition(storageLocationValue) {
+      const volume = Number.parseInt(normalizeStorageLocation(storageLocationValue), 10) || 1;
+      const startFile = Math.max(Number.parseInt(recordPositionSettings.startFile, 10) || 1, 1);
+      const capacity = Math.max(Number.parseInt(recordPositionSettings.capacity, 10) || 1, 1);
+      const columnCount = Math.max(Number.parseInt(recordPositionSettings.columnCount, 10) || 1, 1);
+      const startColumn = Math.min(Math.max(Number.parseInt(recordPositionSettings.startColumn, 10) || 1, 1), columnCount);
+      let cabinet = Math.max(Number.parseInt(recordPositionSettings.cabinet, 10) || 1, 1);
+      const appendMode = volume > 1 && !recordPositionSettings.insertSort;
+      const offset = appendMode ? Math.max(recordMaxSequenceNumber, recordBaseSequenceNumber) + volume - 1 : recordBaseSequenceNumber + volume - 1;
+      let columnSteps;
+      let forwardDirection;
+      let cabinetStep;
+      if (offset > 0) {
+        columnSteps = Math.floor((offset - 1) / capacity);
+        forwardDirection = recordPositionSettings.direction;
+        cabinetStep = 1;
+      } else {
+        columnSteps = Math.floor((-offset) / capacity) + 1;
+        forwardDirection = recordPositionSettings.direction === "increment" ? "decrement" : "increment";
+        cabinetStep = -1;
+      }
+      let column;
+      if (forwardDirection === "increment") {
+        const columnIndex = startColumn - 1 + columnSteps;
+        cabinet += cabinetStep * Math.floor(columnIndex / columnCount);
+        column = (columnIndex % columnCount) + 1;
+      } else {
+        const columnIndex = startColumn - 1 - columnSteps;
+        const wraps = columnIndex < 0 ? Math.floor((-columnIndex - 1) / columnCount) + 1 : 0;
+        cabinet += cabinetStep * wraps;
+        column = ((columnIndex % columnCount) + columnCount) % columnCount + 1;
+      }
+      if (offset <= 0) {
+        column = columnCount - column + 1;
+      }
+      return `${String(Math.max(cabinet, 1)).padStart(2, "0")}${String(column).padStart(2, "0")}`;
     }
 
     function rememberedRecordNumbers() {
       try {
         const data = JSON.parse(localStorage.getItem(recordNumberMemoryKey) || "{}");
         return {
-          recordPosition: normalizeRecordPosition(data.recordPosition),
           storageLocation: normalizeStorageLocation(data.storageLocation),
         };
       } catch (error) {
-        return { recordPosition: "000", storageLocation: "01" };
+        return { storageLocation: "01" };
       }
     }
 
@@ -134,10 +187,8 @@
       if (!isMaintenanceForm || !row) {
         return;
       }
-      const recordPositionInput = row.querySelector(".record-position-number-input");
       const storageLocationInput = row.querySelector(".storage-location-number-input");
       const data = {
-        recordPosition: normalizeRecordPosition(recordPositionInput?.value || ""),
         storageLocation: normalizeStorageLocation(storageLocationInput?.value || ""),
       };
       localStorage.setItem(recordNumberMemoryKey, JSON.stringify(data));
@@ -148,11 +199,7 @@
         return;
       }
       const values = rememberedRecordNumbers();
-      const recordPositionInput = row.querySelector(".record-position-number-input");
       const storageLocationInput = row.querySelector(".storage-location-number-input");
-      if (recordPositionInput) {
-        recordPositionInput.value = values.recordPosition;
-      }
       if (storageLocationInput) {
         storageLocationInput.value = values.storageLocation;
       }
@@ -167,6 +214,11 @@
 
     function formatDisplayCode(value) {
       const text = String(value || "");
+      if (/^[A-Za-z]\d{17,}$/.test(text)) {
+        return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 16), text.slice(16, 18), text.slice(18)]
+          .filter(Boolean)
+          .join("-");
+      }
       if (/^[A-Za-z]\d{16,}$/.test(text)) {
         return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 15), text.slice(15, 17), text.slice(17)]
           .filter(Boolean)
@@ -202,38 +254,37 @@
       if (dateNumberInput) {
         dateNumberInput.value = dateNumberFromDateValue(dateValue);
       }
-      if (recordPositionInput) {
-        recordPositionInput.value = recordPositionInput.value.replace(/\D/g, "").slice(0, 3);
-      }
       if (storageLocationInput) {
         storageLocationInput.value = storageLocationInput.value.replace(/\D/g, "").slice(0, 2);
+      }
+      const generatedPosition = autoRecordPosition(storageLocationInput?.value || "01");
+      let recordPosition = generatedPosition;
+      if (recordPositionInput) {
+        recordPositionInput.value = generatedPosition;
+        recordPosition = normalizeRecordPosition(recordPositionInput.value);
       }
       if (monthInput) {
         monthInput.value = monthFromDateValue(dateValue);
       }
       if (numberOutput) {
-        const recordNumber = recordNumberFromValues(dateNumberInput?.value || "", recordPositionInput?.value || "000", storageLocationInput?.value || "01", dateValue);
+        const recordNumber = recordNumberFromValues(dateNumberInput?.value || "", recordPosition, storageLocationInput?.value || "01", dateValue);
         numberOutput.value = recordNumber;
         numberOutput.textContent = recordNumber;
       }
     }
 
     recordTableBody.addEventListener("input", (event) => {
-      if (event.target.matches(".record-date-input") || event.target.matches(".record-date-number-input") || event.target.matches(".record-position-number-input") || event.target.matches(".storage-location-number-input")) {
+      if (event.target.matches(".record-date-input") || event.target.matches(".record-date-number-input") || event.target.matches(".storage-location-number-input")) {
         syncMaintenanceRow(event.target.closest("tr"), event.target);
       }
     });
 
     recordTableBody.addEventListener("blur", (event) => {
-      if (!event.target.matches(".record-position-number-input") && !event.target.matches(".storage-location-number-input")) {
+      if (!event.target.matches(".storage-location-number-input")) {
         return;
       }
       const row = event.target.closest("tr");
-      if (event.target.matches(".record-position-number-input")) {
-        event.target.value = normalizeRecordPosition(event.target.value);
-      } else {
-        event.target.value = normalizeStorageLocation(event.target.value);
-      }
+      event.target.value = normalizeStorageLocation(event.target.value);
       syncMaintenanceRow(row);
       rememberRecordNumbers(row);
     }, true);
@@ -258,8 +309,8 @@
         </td>
         {% if month_field %}
           <td><output class="record-number-output"></output></td>
-          <td><input class="record-position-number-input" name="record_position_number" type="text" value="000" maxlength="3" inputmode="numeric" pattern="\\d{0,3}"></td>
           <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="01" maxlength="2" inputmode="numeric" pattern="\\d{0,2}"></td>
+          <td><input class="record-position-number-input" name="record_position_number" type="text" value="0000" maxlength="4" inputmode="numeric" pattern="\\d{0,4}" readonly aria-readonly="true"></td>
         {% endif %}
         {% if record_type_options %}
           <td>
@@ -289,6 +340,17 @@
       recordTableBody.appendChild(row);
       applyRememberedRecordNumbers(row);
       syncMaintenanceRow(row);
+      updateRemoveRecordRowButton();
+    });
+
+    removeRecordRowButton.addEventListener("click", () => {
+      const rows = recordTableBody.querySelectorAll("tr");
+      if (rows.length <= 1) {
+        updateRemoveRecordRowButton();
+        return;
+      }
+      rows[rows.length - 1].remove();
+      updateRemoveRecordRowButton();
     });
 
     function baseFileName(value) {

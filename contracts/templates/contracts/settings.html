@@ -31,6 +31,57 @@
         </p>
       </section>
 
+      <section class="panel">
+        <div style="max-width: 950px;">
+          <div class="settings-title-row">
+            <h2 class="settings-compact-title">记录位置编号生成</h2>
+            <label class="settings-title-switch">
+              <span class="switch-control">
+              {{ form.record_position_enable_insert_sort }}
+                <span class="switch-track"></span>
+              </span>
+              <span>插入重排序</span>
+            </label>
+          </div>
+          <div class="form-grid" style="max-width: 950px; grid-template-columns: repeat(3, minmax(0, 1fr));">
+            <div class="form-row">
+              <label class="field-label" for="{{ form.record_position_cabinet_number.id_for_label }}">柜号</label>
+              {{ form.record_position_cabinet_number }}
+              {{ form.record_position_cabinet_number.errors }}
+            </div>
+            <div class="form-row">
+              <label class="field-label" for="{{ form.record_position_column_count.id_for_label }}">栏目量</label>
+              {{ form.record_position_column_count }}
+              {{ form.record_position_column_count.errors }}
+            </div>
+            <div class="form-row">
+              <label class="field-label" for="{{ form.record_position_column_capacity.id_for_label }}">栏目存放数</label>
+              {{ form.record_position_column_capacity }}
+              {{ form.record_position_column_capacity.errors }}
+            </div>
+            <div class="form-row">
+              <label class="field-label" for="{{ form.record_position_start_file_number.id_for_label }}">起始界限点</label>
+              {{ form.record_position_start_file_number }}
+              {{ form.record_position_start_file_number.errors }}
+            </div>
+            <div class="form-row">
+              <label class="field-label" for="{{ form.record_position_start_column.id_for_label }}">存放栏目</label>
+              {{ form.record_position_start_column }}
+              {{ form.record_position_start_column.errors }}
+            </div>
+            <div class="form-row">
+              <label class="field-label" for="{{ form.record_position_direction.id_for_label }}">存放逻辑</label>
+              {{ form.record_position_direction }}
+              {{ form.record_position_direction.errors }}
+            </div>
+          </div>
+          <p style="color: #667085; line-height: 1.8;">
+            说明：新增项目记录时，系统会保存不可见的实序编号，并根据实序编号自动计算位置编号。
+            启用插入重排序后，新增多册记录会插入到该文件第 1 册后方，并把后续记录的实序编号和位置编号整体后移重算。
+          </p>
+        </div>
+      </section>
+
       <!-- 图片保存位置独立成块，文件上传始终保存到项目 media 目录。 -->
       <section class="panel">
         <div style="max-width: 950px;">

@@ -147,6 +147,31 @@
       font-weight: 600;
       line-height: 1.4;
     }
+    .settings-page .settings-title-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 18px;
+      margin: 0 0 12px;
+      line-height: 1;
+    }
+    .settings-page .settings-title-row .settings-compact-title {
+      margin: 0;
+      line-height: 26px;
+    }
+    .settings-page .settings-title-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 26px;
+      color: #344054;
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 26px;
+    }
+    .settings-page .settings-title-switch .switch-control {
+      width: 48px;
+      height: 26px;
+    }
     .page-title { margin: 0 0 16px; font-size: 24px; }
     .contract-list-title-row {
       display: flex;
@@ -1618,6 +1643,12 @@
       max-width: 64px;
       margin: 0 auto;
       text-align: center;
+    }
+    .maintenance-record-table .record-position-number-input[readonly] {
+      color: #667085;
+      border-color: #d0d5dd;
+      background: #f2f4f7;
+      cursor: default;
     }
     .subtle-heading-note {
       display: block;

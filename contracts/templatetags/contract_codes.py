@@ -10,7 +10,13 @@ def display_code(value) -> str:
     text = str(value or "").strip()
     if len(text) >= 8 and text[0].isalpha() and text[1:].isdigit():
         parts = [text[:1], text[1:3], text[3:8]]
-        if len(text) >= 17:
+        if len(text) >= 18:
+            parts.append(text[8:12])
+            parts.append(text[12:16])
+            parts.append(text[16:18])
+            if len(text) > 18:
+                parts.append(text[18:])
+        elif len(text) >= 17:
             parts.append(text[8:12])
             parts.append(text[12:15])
             parts.append(text[15:17])

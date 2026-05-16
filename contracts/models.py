@@ -29,9 +29,9 @@ def normalize_storage_location_number(value) -> str:
     return normalize_contract_number_part(value, 2) or "00"
 
 
-# 规范项目记录位置编号，空值回退为 000。
+# 规范项目记录位置编号，空值回退为 0000。
 def normalize_record_position_number(value) -> str:
-    return normalize_contract_number_part(value, 3) or "000"
+    return normalize_contract_number_part(value, 4) or "0000"
 
 
 # 规范项目记录年月编号，空值按记录日期回退为 YYMM。
@@ -410,8 +410,9 @@ class MaintenanceRecord(models.Model):
     record_date = models.DateField("日期")
     month = models.CharField("月份", max_length=30)
     date_number = models.CharField("年月编号", max_length=4, default="0000", blank=True)
-    record_position_number = models.CharField("位置编号", max_length=100, default="000", blank=True)
+    record_position_number = models.CharField("位置编号", max_length=100, default="0000", blank=True)
     storage_location_number = models.CharField("分册编号", max_length=100, default="01", blank=True)
+    real_sequence_number = models.IntegerField("实序编号", default=0)
     file = models.FileField("附件", upload_to=project_file_upload_path, null=True, blank=True)
     remark = models.CharField("备注", max_length=255, blank=True)
     created_at = models.DateTimeField("创建时间", default=timezone.now)
@@ -483,6 +484,18 @@ class MaintenanceRecordFileVersion(models.Model):
 class AppSetting(models.Model):
     allow_partial_import_with_errors = models.BooleanField("Excel 导入存在错误时仍导入通过行", default=False)
     allow_force_contract_import_update = models.BooleanField("合同导入允许强行修改匹配行", default=False)
+    record_position_cabinet_number = models.PositiveSmallIntegerField("记录位置柜号", default=1)
+    record_position_column_count = models.PositiveSmallIntegerField("记录位置栏目量", default=12)
+    record_position_column_capacity = models.PositiveSmallIntegerField("记录位置栏目存放数", default=10)
+    record_position_start_file_number = models.PositiveIntegerField("记录位置起始界限点", default=3441)
+    record_position_start_column = models.PositiveSmallIntegerField("记录位置存放栏目", default=5)
+    record_position_enable_insert_sort = models.BooleanField("记录位置启用插入重排序", default=False)
+    record_position_direction = models.CharField(
+        "记录位置存放逻辑",
+        max_length=20,
+        choices=[("increment", "递增1"), ("decrement", "递减1")],
+        default="decrement",
+    )
     image_root_path = models.CharField(
         "图片保存位置",
         max_length=500,

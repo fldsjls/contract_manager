@@ -266,6 +266,7 @@
 
   {{ project_lookup_items|json_script:"projectLookupData" }}
   {{ import_alert|json_script:"contractImportAlertMessage" }}
+  {{ completed|yesno:"true,false"|json_script:"contractImportCompletedData" }}
 
   <script>
     const importUploadForm = document.querySelector("#contractImportUploadForm");
@@ -277,6 +278,7 @@
     const projectLookupPanel = document.querySelector(".project-code-panel");
     const projectLookupData = JSON.parse(document.querySelector("#projectLookupData").textContent || "[]");
     const contractImportAlertMessage = JSON.parse(document.querySelector("#contractImportAlertMessage").textContent || '""');
+    const contractImportCompleted = JSON.parse(document.querySelector("#contractImportCompletedData").textContent || '"false"') === "true";
     let projectLookupComposing = false;
     let importFileDialogOpening = false;
 
@@ -284,14 +286,14 @@
       window.alert(contractImportAlertMessage);
     }
 
-    {% if completed %}
+    if (contractImportCompleted) {
       window.requestAnimationFrame(() => {
         document.querySelector("#contractImportCompletedActions")?.scrollIntoView({
           block: "center",
           behavior: "auto",
         });
       });
-    {% endif %}
+    }
 
     if (importUploadForm && importFileInput && importKindInput) {
       importFileButtons.forEach((button) => {
@@ -322,6 +324,11 @@
 
     function formatDisplayCode(value) {
       const text = String(value || "");
+      if (/^[A-Za-z]\d{17,}$/.test(text)) {
+        return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 16), text.slice(16, 18), text.slice(18)]
+          .filter(Boolean)
+          .join("-");
+      }
       if (/^[A-Za-z]\d{16,}$/.test(text)) {
         return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 15), text.slice(15, 17), text.slice(17)]
           .filter(Boolean)

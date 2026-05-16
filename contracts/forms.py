@@ -246,13 +246,48 @@ class LoginForm(forms.Form):
 # 系统设置表单。
 # 表单类：配置表单字段、校验和控件表现。
 class AppSettingForm(forms.ModelForm):
+    record_position_cabinet_number = forms.CharField(
+        label="记录位置柜号",
+        max_length=2,
+        min_length=2,
+        widget=forms.TextInput(
+            attrs={
+                "maxlength": "2",
+                "inputmode": "numeric",
+                "pattern": r"\d{2}",
+            }
+        ),
+    )
+
     # 根据当前权限控制图片保存目录是否允许编辑。
     def __init__(self, *args, allow_image_root_path_edit: bool = True, **kwargs):
         super().__init__(*args, **kwargs)
         image_field = self.fields["image_root_path"]
+        numeric_fields = [
+            "record_position_column_count",
+            "record_position_column_capacity",
+            "record_position_start_file_number",
+            "record_position_start_column",
+        ]
+        for field_name in numeric_fields:
+            self.fields[field_name].widget.attrs.update({"min": "1", "step": "1", "inputmode": "numeric"})
+        cabinet_value = self.initial.get("record_position_cabinet_number")
+        if cabinet_value is None:
+            cabinet_value = getattr(self.instance, "record_position_cabinet_number", 1)
+        self.initial["record_position_cabinet_number"] = f"{int(cabinet_value or 1):02d}"
         if not allow_image_root_path_edit:
             image_field.disabled = True
             image_field.widget.attrs["readonly"] = "readonly"
+
+    # 柜号在界面中统一显示为两位，保存时仍转为数字字段。
+    def clean_record_position_cabinet_number(self):
+        value = str(self.cleaned_data["record_position_cabinet_number"] or "").strip()
+        if not value.isdigit() or len(value) != 2:
+            raise forms.ValidationError("柜号必须填写两位数字。")
+        number = int(value)
+        if number < 1:
+            raise forms.ValidationError("柜号必须大于 00。")
+        return number
 
     # 禁用时忽略提交值，始终保留数据库中的原目录。
     def clean_image_root_path(self):
@@ -263,4 +298,15 @@ class AppSettingForm(forms.ModelForm):
     # 元数据类：配置字段、排序或显示名称。
     class Meta:
         model = AppSetting
-        fields = ["allow_partial_import_with_errors", "allow_force_contract_import_update", "image_root_path"]
+        fields = [
+            "allow_partial_import_with_errors",
+            "allow_force_contract_import_update",
+            "record_position_cabinet_number",
+            "record_position_column_count",
+            "record_position_column_capacity",
+            "record_position_start_file_number",
+            "record_position_start_column",
+            "record_position_enable_insert_sort",
+            "record_position_direction",
+            "image_root_path",
+        ]

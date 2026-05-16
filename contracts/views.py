@@ -1577,7 +1577,12 @@ def sequence_number_from_reserved_position(position_text: str, setting: AppSetti
     if setting.record_position_direction == "increment":
         column_steps = cabinet_steps * column_count + (column - start_column)
     else:
-        column_steps = cabinet_steps * column_count + ((start_column - column) % column_count)
+        if cabinet_steps == 0:
+            if column > start_column:
+                return None
+            column_steps = start_column - column
+        else:
+            column_steps = start_column + (cabinet_steps - 1) * column_count + (column_count - column)
     if column_steps < 0:
         return None
     offset = column_steps * capacity + rank

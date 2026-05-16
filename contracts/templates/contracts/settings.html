@@ -13,7 +13,11 @@
         <h2 class="settings-compact-title">上传设置</h2>
         <label style="display: flex; gap: 10px; align-items: center;">
           {{ form.allow_partial_import_with_errors }}
-          <span>Excel 导入存在错误时仍导入通过行</span>
+          <span>导入存在错误时仍导入通过行</span>
+        </label>
+        <label style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
+          {{ form.allow_force_contract_import_update }}
+          <span>合同导入允许强行修改匹配行</span>
         </label>
         {% if is_admin_mode or is_super_admin_mode %}
           <div class="toolbar" style="margin-top: 12px; margin-bottom: 0;">
@@ -22,6 +26,8 @@
         {% endif %}
         <p style="color: #667085;">
           说明：导入开关开启后，Excel 预览存在错误行时会跳过错误行，仅导入通过行。
+          强行修改开启后，默认匹配或业务匹配中已找到合同的修改行可以继续确认；确认保存后会再次检测业务编号，若重复则退回本次导入并弹窗提示。
+          未开启强行修改时，预览存在错误的修改行不会被确认导入。
         </p>
       </section>
 

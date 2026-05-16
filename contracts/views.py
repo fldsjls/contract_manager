@@ -3254,6 +3254,9 @@ def build_commented_import_template_xlsx(sheets: list[dict]) -> bytes:
             if comment_text:
                 cell.comment = Comment(comment_text, "合同管理系统")
             worksheet.column_dimensions[cell.column_letter].width = widths[column_index - 1]
+            if "编号" in str(header):
+                for row_index in range(2, 302):
+                    worksheet.cell(row=row_index, column=column_index).number_format = "@"
         worksheet.freeze_panes = "A2"
     output = io.BytesIO()
     workbook.save(output)
@@ -4091,6 +4094,23 @@ def contract_import_result_preview_cells(item, import_mode, preview_contract, er
     ]
 
 
+def contract_import_duplicate_business_number_messages(changed_contract_ids: set[int]) -> list[str]:
+    groups = {}
+    for contract in Contract.objects.filter(is_deleted=False):
+        key = contract.display_contract_number
+        if key:
+            groups.setdefault(key, []).append(contract)
+    messages = []
+    for number, contracts in groups.items():
+        if len(contracts) < 2:
+            continue
+        if not changed_contract_ids or not any(contract.pk in changed_contract_ids for contract in contracts):
+            continue
+        names = "、".join(f"{contract.contract_name}（默认编号 {contract.contract_number}）" for contract in contracts[:5])
+        messages.append(f"业务编号 {display_code_for_ui(number)} 重复：{names}")
+    return messages
+
+
 def validate_contract_import_rows(parsed_rows, contract_numbers=None):
     create_count = sum(1 for item in parsed_rows if item.get("import_mode", "create") == "create")
     contract_numbers = contract_numbers or default_contract_numbers(max(create_count, 1))
@@ -4150,6 +4170,7 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
                     "import_mode": import_mode,
                     "data": form_data,
                     "existing_contract_id": None,
+                    "force_importable": False,
                     "preview_cells": contract_import_result_preview_cells(preview_item, import_mode, preview_contract, errors),
                     "errors": errors,
                     "ok": False,
@@ -4157,7 +4178,16 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
             )
             continue
 
-        form = ContractForm(data=form_data, instance=existing_contract) if existing_contract else ContractForm(data=form_data)
+        force_update = bool(
+            AppSetting.current().allow_force_contract_import_update
+            and import_mode in {"default_match", "business_match"}
+            and existing_contract
+        )
+        form = (
+            ContractForm(data=form_data, instance=existing_contract, skip_display_number_unique=force_update)
+            if existing_contract
+            else ContractForm(data=form_data)
+        )
         is_valid = form.is_valid()
         if not is_valid:
             for field_errors in form.errors.values():
@@ -4197,6 +4227,7 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
                 "import_mode": import_mode,
                 "data": form_data,
                 "existing_contract_id": existing_contract.pk if existing_contract else None,
+                "force_importable": force_update,
                 "preview_cells": contract_import_result_preview_cells(
                     {**item, "preview_index": len(results) + 1},
                     import_mode,
@@ -4536,12 +4567,22 @@ def contract_import_preview_context(
     completed=False,
     import_kind="contract",
     selected_contract=None,
+    import_alert="",
 ):
     results = results or []
     valid_count = sum(1 for row in results if row["ok"])
     error_count = len(results) - valid_count
-    allow_partial_import_with_errors = AppSetting.current().allow_partial_import_with_errors
+    app_setting = AppSetting.current()
+    allow_partial_import_with_errors = app_setting.allow_partial_import_with_errors
+    allow_force_contract_import_update = app_setting.allow_force_contract_import_update
+    force_count = sum(
+        1
+        for row in results
+        if not row["ok"] and row.get("force_importable") and import_kind == "contract"
+    )
     can_confirm_import = valid_count > 0 and (not error_count or allow_partial_import_with_errors)
+    if allow_force_contract_import_update and force_count:
+        can_confirm_import = True
     preview_columns = {
         "contract": CONTRACT_IMPORT_PREVIEW_COLUMNS,
         "invoice": INVOICE_IMPORT_PREVIEW_COLUMNS,
@@ -4559,8 +4600,10 @@ def contract_import_preview_context(
             "valid_count": valid_count,
             "error_count": error_count,
             "allow_partial_import_with_errors": allow_partial_import_with_errors,
+            "allow_force_contract_import_update": allow_force_contract_import_update,
             "can_confirm_import": can_confirm_import,
             "confirm_error": confirm_error,
+            "import_alert": import_alert,
             "completed": completed,
             "import_kind": import_kind,
             "selected_contract": selected_contract,
@@ -4732,103 +4775,137 @@ def contract_import(request):
             )
             return render(request, "contracts/contract_import.html", context)
         invalid_rows = [row for row in results if not row["ok"]]
-        allow_partial = AppSetting.current().allow_partial_import_with_errors
-        if invalid_rows and not allow_partial:
+        app_setting = AppSetting.current()
+        allow_partial = app_setting.allow_partial_import_with_errors
+        allow_force_update = app_setting.allow_force_contract_import_update
+        has_forceable_rows = any(row.get("force_importable") for row in invalid_rows)
+        if invalid_rows and not allow_partial and not (allow_force_update and has_forceable_rows):
             payload = signing.dumps(parsed_rows)
             context = contract_import_preview_context(
                 request,
                 ContractImportUploadForm(),
                 results=results,
                 payload=payload,
-                confirm_error="存在错误行，请在系统设置中开启“Excel 导入存在错误时仍导入通过行”，或返回修改 Excel。",
+                confirm_error="存在错误行：未开启“Excel 导入存在错误时仍导入通过行”时会阻止确认；如需强行修改已匹配合同，请在系统设置中开启“合同导入允许强行修改匹配行”。",
                 import_kind=import_kind,
                 selected_contract=selected_contract,
             )
             return render(request, "contracts/contract_import.html", context)
 
         created_count = 0
-        with transaction.atomic():
-            for index, row in enumerate(results):
-                if not row["ok"]:
-                    continue
-                if import_kind == "invoice":
-                    data = row["data"].copy()
-                    contract = Contract.objects.get(pk=row["contract_id"])
-                    record_model = INVOICE_IMPORT_TYPES[data["record_type"]]
-                    record = record_model.objects.create(
-                        contract=contract,
-                        record_date=date_from_import(data["record_date"]),
-                        record_type=data["record_type"],
-                        amount=decimal_from_import(data["amount"]),
-                        actual_amount=decimal_from_import_or_zero(data.get("actual_amount")),
-                        remark=data.get("remark", ""),
+        changed_contract_ids = set()
+        try:
+            with transaction.atomic():
+                for index, row in enumerate(results):
+                    force_this_row = bool(
+                        allow_force_update
+                        and import_kind == "contract"
+                        and row.get("force_importable")
                     )
-                    log_operation(request, "新增", contract, object_type="票据记录", object_name=str(record), object_id=str(record.pk), detail=f"Excel import row: {row['row_number']}", version_obj=record)
-                elif import_kind == "maintenance":
-                    data = row["data"].copy()
-                    contract = Contract.objects.get(pk=row["contract_id"])
-                    record_date = date_from_import(data["record_date"])
-                    month = normalize_maintenance_month(data.get("month"), record_date)
-                    date_number = normalize_record_date_number(data.get("date_number"), record_date)
-                    existing_record_id = row.get("existing_record_id")
-                    record = (
-                        MaintenanceRecord.objects.filter(pk=existing_record_id, contract=contract).first()
-                        if existing_record_id
-                        else None
-                    )
-                    if record:
-                        record.record_date = record_date
-                        record.month = month
-                        record.date_number = date_number
-                        record.record_position_number = normalize_record_position_number(data.get("record_position_number"))
-                        record.storage_location_number = normalize_record_volume_number(data.get("storage_location_number"))
-                        record.remark = data.get("remark", "")
-                        record.save(
-                            update_fields=[
-                                "record_date",
-                                "month",
-                                "date_number",
-                                "record_position_number",
-                                "storage_location_number",
-                                "remark",
-                                "updated_at",
-                            ]
-                        )
-                        log_action = "修改"
-                    else:
-                        record = MaintenanceRecord.objects.create(
+                    if not row["ok"] and not force_this_row:
+                        continue
+                    if import_kind == "invoice":
+                        data = row["data"].copy()
+                        contract = Contract.objects.get(pk=row["contract_id"])
+                        record_model = INVOICE_IMPORT_TYPES[data["record_type"]]
+                        record = record_model.objects.create(
                             contract=contract,
-                            record_date=record_date,
-                            month=month,
-                            date_number=date_number,
-                            record_position_number=normalize_record_position_number(data.get("record_position_number")),
-                            storage_location_number=normalize_record_volume_number(data.get("storage_location_number")),
+                            record_date=date_from_import(data["record_date"]),
+                            record_type=data["record_type"],
+                            amount=decimal_from_import(data["amount"]),
+                            actual_amount=decimal_from_import_or_zero(data.get("actual_amount")),
                             remark=data.get("remark", ""),
                         )
-                        log_action = "新增"
-                    log_operation(request, log_action, contract, object_type="项目记录", object_name=str(record), object_id=str(record.pk), detail=f"Excel import row: {row['row_number']}", version_obj=record)
-                else:
-                    data = row["data"].copy()
-                    existing_contract_id = row.get("existing_contract_id")
-                    existing_contract = (
-                        Contract.objects.get(pk=existing_contract_id, is_deleted=False)
-                        if existing_contract_id
-                        else None
-                    )
-                    if existing_contract:
-                        data["contract_number"] = existing_contract.contract_number
-                    form = (
-                        ContractForm(data=data, instance=existing_contract)
-                        if existing_contract
-                        else ContractForm(data=data)
-                    )
-                    if not form.is_valid():
-                        raise RuntimeError("确认导入时数据校验失败，请重新上传 Excel。")
-                    contract = form.save()
-                    ensure_contract_image_folder(contract)
-                    log_action = "修改" if existing_contract else "新增"
-                    log_operation(request, log_action, contract, detail=f"Excel import row: {row['row_number']}")
-                created_count += 1
+                        log_operation(request, "新增", contract, object_type="票据记录", object_name=str(record), object_id=str(record.pk), detail=f"Excel import row: {row['row_number']}", version_obj=record)
+                    elif import_kind == "maintenance":
+                        data = row["data"].copy()
+                        contract = Contract.objects.get(pk=row["contract_id"])
+                        record_date = date_from_import(data["record_date"])
+                        month = normalize_maintenance_month(data.get("month"), record_date)
+                        date_number = normalize_record_date_number(data.get("date_number"), record_date)
+                        existing_record_id = row.get("existing_record_id")
+                        record = (
+                            MaintenanceRecord.objects.filter(pk=existing_record_id, contract=contract).first()
+                            if existing_record_id
+                            else None
+                        )
+                        if record:
+                            record.record_date = record_date
+                            record.month = month
+                            record.date_number = date_number
+                            record.record_position_number = normalize_record_position_number(data.get("record_position_number"))
+                            record.storage_location_number = normalize_record_volume_number(data.get("storage_location_number"))
+                            record.remark = data.get("remark", "")
+                            record.save(
+                                update_fields=[
+                                    "record_date",
+                                    "month",
+                                    "date_number",
+                                    "record_position_number",
+                                    "storage_location_number",
+                                    "remark",
+                                    "updated_at",
+                                ]
+                            )
+                            log_action = "修改"
+                        else:
+                            record = MaintenanceRecord.objects.create(
+                                contract=contract,
+                                record_date=record_date,
+                                month=month,
+                                date_number=date_number,
+                                record_position_number=normalize_record_position_number(data.get("record_position_number")),
+                                storage_location_number=normalize_record_volume_number(data.get("storage_location_number")),
+                                remark=data.get("remark", ""),
+                            )
+                            log_action = "新增"
+                        log_operation(request, log_action, contract, object_type="项目记录", object_name=str(record), object_id=str(record.pk), detail=f"Excel import row: {row['row_number']}", version_obj=record)
+                    else:
+                        data = row["data"].copy()
+                        existing_contract_id = row.get("existing_contract_id")
+                        existing_contract = (
+                            Contract.objects.get(pk=existing_contract_id, is_deleted=False)
+                            if existing_contract_id
+                            else None
+                        )
+                        if existing_contract:
+                            data["contract_number"] = existing_contract.contract_number
+                        form = (
+                            ContractForm(
+                                data=data,
+                                instance=existing_contract,
+                                skip_display_number_unique=force_this_row and bool(existing_contract),
+                            )
+                            if existing_contract
+                            else ContractForm(data=data)
+                        )
+                        if not form.is_valid():
+                            raise RuntimeError("确认导入时数据校验失败，请重新上传 Excel。")
+                        contract = form.save()
+                        changed_contract_ids.add(contract.pk)
+                        ensure_contract_image_folder(contract)
+                        log_action = "修改" if existing_contract else "新增"
+                        log_operation(request, log_action, contract, detail=f"Excel import row: {row['row_number']}")
+                    created_count += 1
+                duplicate_messages = (
+                    contract_import_duplicate_business_number_messages(changed_contract_ids)
+                    if import_kind == "contract" and changed_contract_ids
+                    else []
+                )
+                if duplicate_messages:
+                    raise RuntimeError("业务编号重复，本次导入已退回：" + "；".join(duplicate_messages))
+        except RuntimeError as exc:
+            context = contract_import_preview_context(
+                request,
+                ContractImportUploadForm(),
+                results=results,
+                payload=signing.dumps(parsed_rows),
+                parse_errors=[str(exc)],
+                import_kind=import_kind,
+                selected_contract=selected_contract,
+                import_alert=str(exc),
+            )
+            return render(request, "contracts/contract_import.html", context)
         import_name = {"contract": "合同", "invoice": "票据记录", "maintenance": "项目记录"}.get(import_kind, "数据")
         return render(
             request,

@@ -482,6 +482,7 @@ class MaintenanceRecordFileVersion(models.Model):
 # 模型类：定义数据库字段和业务属性。
 class AppSetting(models.Model):
     allow_partial_import_with_errors = models.BooleanField("Excel 导入存在错误时仍导入通过行", default=False)
+    allow_force_contract_import_update = models.BooleanField("合同导入允许强行修改匹配行", default=False)
     image_root_path = models.CharField(
         "图片保存位置",
         max_length=500,

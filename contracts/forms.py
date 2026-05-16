@@ -45,7 +45,8 @@ class ContractForm(forms.ModelForm):
         }
 
     # 方法说明：初始化对象字段、默认值或控件样式。
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, skip_display_number_unique: bool = False, **kwargs):
+        self.skip_display_number_unique = skip_display_number_unique
         # 初始化日期格式和通用控件样式。
         super().__init__(*args, **kwargs)
         for name in ("sign_date", "start_date", "end_date"):
@@ -133,7 +134,7 @@ class ContractForm(forms.ModelForm):
             self.add_error("end_date", "必须填写截止日期。")
 
         file_number = normalize_contract_number_part(cleaned_data.get("original_contract_inner_number"), 5)
-        if file_number:
+        if file_number and not self.skip_display_number_unique:
             base_date = cleaned_data.get("sign_date") or cleaned_data.get("start_date") or timezone.localdate()
             display_contract_number = (
                 f"{file_number}"
@@ -262,4 +263,4 @@ class AppSettingForm(forms.ModelForm):
     # 元数据类：配置字段、排序或显示名称。
     class Meta:
         model = AppSetting
-        fields = ["allow_partial_import_with_errors", "image_root_path"]
+        fields = ["allow_partial_import_with_errors", "allow_force_contract_import_update", "image_root_path"]

@@ -54,6 +54,7 @@ from .models import (
     PaymentRecordFileVersion,
     SettlementFile,
     normalize_contract_number_part,
+    normalize_record_date_number,
     normalize_record_position_number,
     normalize_record_volume_number,
     normalize_storage_location_number,
@@ -457,7 +458,7 @@ def usage_docs_for_request(request) -> list[dict]:
                 "默认编号是系统自动生成的 12 位合同基础编号，用于保证每份合同在数据库和文件目录中有稳定标识；新增和编辑合同页面中不可手动修改。",
                 "业务编号是面向日常业务使用的合同编号，由合同类型代码、年份后两位和 5 位文件编号组成，例如维保合同会显示为 W-26-00001；如果文件编号缺失，页面会临时回退显示默认编号。",
                 "存档编号用于纸质或归档文件定位，合同文件存档编号由 3 位文件夹编号和 2 位位置编号组成，页面显示为“文件夹编号-位置编号”，例如 011-00。",
-                "项目记录文件编号在业务编号后继续拼接 3 位位置编号和 2 位分册编号，形成“业务编号-位置编号-分册编号”的记录编号，用于区分同一合同下的不同记录文件。",
+                "项目记录文件编号在业务编号后继续拼接 4 位年月编号（年份后两位 + 月份两位）、3 位位置编号和 2 位分册编号，形成“业务编号-年月编号-位置编号-分册编号”的记录编号，用于区分同一合同下的不同记录文件。",
                 "查询和导入时，合同编号、业务编号、带横线业务编号、存档编号和合同名称都可以作为定位合同的线索；系统会先去掉横线和空格，再按内部编号匹配。",
                 "代码中的 contract_number 表示默认编号，display_contract_number 表示业务编号，archive_number_display 表示存档编号；模板显示时分别通过 display_code 和 archive_code 转成带横线的可读格式。",
             ],
@@ -1361,12 +1362,14 @@ def project_mode_chart_rows(rows: list[dict], records) -> list[dict]:
 def save_maintenance_records_from_request(request, contract: Contract) -> int:
     dates = request.POST.getlist("record_date")
     months = request.POST.getlist("month")
+    date_numbers = request.POST.getlist("date_number")
     record_positions = request.POST.getlist("record_position_number")
     storage_locations = request.POST.getlist("storage_location_number")
     remarks = request.POST.getlist("remark")
     saved_count = 0
     for index, record_date in enumerate(dates):
         month = months[index] if index < len(months) else ""
+        date_number = date_numbers[index] if index < len(date_numbers) else ""
         record_position = record_positions[index] if index < len(record_positions) else ""
         storage_location = storage_locations[index] if index < len(storage_locations) else ""
         remark = remarks[index] if index < len(remarks) else ""
@@ -1383,6 +1386,7 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
             contract=contract,
             record_date=parsed_record_date,
             month=month,
+            date_number=normalize_record_date_number(date_number, parsed_record_date),
             record_position_number=normalize_record_position_number(record_position),
             storage_location_number=normalize_record_volume_number(storage_location),
             remark=remark,
@@ -1393,17 +1397,30 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
     return saved_count
 
 
-# 按业务编号、记录位置和分册编号生成项目记录编号。
+# 按业务编号、年月编号、记录位置和分册编号生成项目记录编号。
 def maintenance_record_number(
     contract: Contract,
     record_date,
     storage_location_number: str = "",
     record_position_number: str = "",
+    date_number: str = "",
 ) -> str:
     business_number = contract.display_contract_number
+    normalized_date_number = normalize_record_date_number(date_number, record_date)
     position_number = normalize_record_position_number(record_position_number)
     volume_number = normalize_record_volume_number(storage_location_number)
-    return f"{business_number}{position_number}{volume_number}"
+    return f"{business_number}{normalized_date_number}{position_number}{volume_number}"
+
+
+def normalize_maintenance_month(value, record_date=None) -> str:
+    month = normalize_import_cell(value)
+    if not month and record_date:
+        return record_date.strftime("%Y年%m月")
+    if "-" in month:
+        year_text, month_text = month.split("-", 1)
+        if year_text.isdigit() and month_text[:2].isdigit():
+            return f"{year_text}年{int(month_text[:2]):02d}月"
+    return month
 
 
 # 查询 30 天内即将到期的合同。
@@ -2313,6 +2330,7 @@ def maintenance_record_data(request, pk: int):
                     record.record_date,
                     record.storage_location_number,
                     record.record_position_number,
+                    record.date_number,
                 ),
                 "month": record.month,
                 "remark": record.remark,
@@ -2808,6 +2826,7 @@ def contract_archive_lookup_items(contract: Contract) -> list[dict]:
             record.record_date,
             record.storage_location_number,
             record.record_position_number,
+            record.date_number,
         )
         items.append(
             {
@@ -3459,7 +3478,8 @@ def contract_list_export(request):
         "序号",
         UI_LABELS["contract_name"],
         "默认编号",
-        UI_LABELS["contract_number"],
+        "业务编号",
+        "存档编号",
         UI_LABELS["contract_type"],
         UI_LABELS["party_name"],
         UI_LABELS["contract_amount"],
@@ -3477,7 +3497,8 @@ def contract_list_export(request):
                 index,
                 contract.contract_name,
                 contract.contract_number,
-                f"{contract.display_contract_number}{contract.archive_number_display}",
+                contract.display_contract_number,
+                contract.archive_number_display,
                 contract.contract_type,
                 contract.party_name,
                 float(contract.amount or 0),
@@ -3491,7 +3512,7 @@ def contract_list_export(request):
         )
 
     response = HttpResponse(
-        build_contract_list_xlsx(headers, rows, numeric_columns={7}),
+        build_contract_list_xlsx(headers, rows, numeric_columns={8}),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     response["Content-Disposition"] = 'attachment; filename="contract_list.xlsx"'
@@ -3519,16 +3540,11 @@ def contract_records_export(request, pk: int):
             queryset = queryset.filter(record_date__lte=end_date)
         return queryset
 
-    record_headers = ["记录编号", "日期", "位置编号", "分册编号", "备注"]
+    record_headers = ["业务编号", "日期", "位置编号", "分册编号", "备注"]
     maintenance_records = filter_record_dates(contract.maintenancerecord_set.all()).order_by("record_date", "id")
     record_rows = [
         [
-            maintenance_record_number(
-                contract,
-                record.record_date,
-                record.storage_location_number,
-                record.record_position_number,
-            ),
+            contract_key,
             record.record_date.strftime("%Y-%m-%d") if record.record_date else "",
             record.record_position_number or "000",
             record.storage_location_number or "00",
@@ -3628,9 +3644,8 @@ INVOICE_IMPORT_PREVIEW_COLUMNS = [
 MAINTENANCE_IMPORT_PREVIEW_COLUMNS = [
     "序号",
     UI_LABELS["contract_name"],
-    UI_LABELS["contract_number"],
+    "业务编号",
     UI_LABELS["date"],
-    "记录编号",
     "位置编号",
     "分册编号",
     UI_LABELS["remark"],
@@ -3712,6 +3727,9 @@ def normalize_import_value(field_name: str, value):
 
     if field_name == "storage_location_number":
         return normalize_storage_location_number(text)
+
+    if field_name == "date_number":
+        return normalize_record_date_number(text)
 
     if field_name == "archive_years":
         if re.fullmatch(r"\d+\.0+", text):
@@ -4142,12 +4160,16 @@ def validate_invoice_import_rows(parsed_rows):
 def parse_maintenance_import_xlsx(uploaded_file):
     rows = next(iter(parse_xlsx_sheets(uploaded_file).values()), [])
     field_map = {
-        "记录编号": "contract_key",
         "业务编号": "contract_key",
+        "记录编号": "contract_key",
         "合同编号": "contract_key",
         "合同名称": "contract_key",
         "日期": "record_date",
         "记录日期": "record_date",
+        "年月编号": "date_number",
+        "日期编号": "date_number",
+        "月份编号": "date_number",
+        "月份": "month",
         "位置编号": "record_position_number",
         "分册编号": "storage_location_number",
         "存储编号": "storage_location_number",
@@ -4161,12 +4183,29 @@ def parse_maintenance_import_xlsx(uploaded_file):
 
         record_key = normalize_import_cell(value_for("contract_key"))
         compact_record_key = re.sub(r"[-\s]", "", record_key)
-        if len(compact_record_key) >= 13 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
+        if len(compact_record_key) >= 19 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
             contract_key = compact_record_key[:8]
+            date_number = value_for("date_number") or compact_record_key[8:14]
+            record_position = value_for("record_position_number") or compact_record_key[14:17]
+            storage_location = value_for("storage_location_number") or compact_record_key[17:19]
+        elif len(compact_record_key) >= 17 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
+            contract_key = compact_record_key[:8]
+            date_number = value_for("date_number") or compact_record_key[8:12]
+            record_position = value_for("record_position_number") or compact_record_key[12:15]
+            storage_location = value_for("storage_location_number") or compact_record_key[15:17]
+        elif len(compact_record_key) >= 15 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
+            contract_key = compact_record_key[:8]
+            date_number = value_for("date_number")
+            record_position = value_for("record_position_number") or compact_record_key[10:13]
+            storage_location = value_for("storage_location_number") or compact_record_key[13:15]
+        elif len(compact_record_key) >= 13 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
+            contract_key = compact_record_key[:8]
+            date_number = value_for("date_number")
             record_position = value_for("record_position_number") or compact_record_key[8:11]
             storage_location = value_for("storage_location_number") or compact_record_key[11:13]
         else:
             contract_key = compact_record_key if len(compact_record_key) == 8 and compact_record_key[:1].isalpha() else record_key
+            date_number = value_for("date_number")
             record_position = value_for("record_position_number")
             storage_location = value_for("storage_location_number")
 
@@ -4175,6 +4214,8 @@ def parse_maintenance_import_xlsx(uploaded_file):
             "data": {
                 "contract_key": contract_key,
                 "record_date": normalize_import_value("record_date", value_for("record_date")),
+                "date_number": normalize_record_date_number(date_number) if normalize_import_cell(date_number) else "",
+                "month": normalize_import_cell(value_for("month")),
                 "record_position_number": normalize_record_position_number(record_position),
                 "storage_location_number": normalize_import_value("storage_location_number", storage_location),
                 "remark": normalize_import_cell(value_for("remark")),
@@ -4191,25 +4232,43 @@ def parse_maintenance_import_xlsx(uploaded_file):
 def validate_maintenance_import_rows(parsed_rows):
     contract_lookup = import_contract_lookup()
     results = []
+    import_keys = {}
     for item in parsed_rows:
         data = item["data"].copy()
         errors = []
         contract = contract_lookup.get(data.get("contract_key", ""))
         record_date = date_from_import(data.get("record_date"))
+        date_number = normalize_record_date_number(data.get("date_number"), record_date)
         record_position = normalize_record_position_number(data.get("record_position_number"))
         storage_location = normalize_record_volume_number(data.get("storage_location_number"))
+        existing_record = None
         if contract is None:
             errors.append("未找到对应合同。")
         elif not str(contract.original_contract_inner_number or "").strip():
             errors.append("合同缺少文件编号，不能生成记录编号。")
+        elif record_date is not None:
+            import_key = (contract.pk, date_number)
+            if import_key in import_keys:
+                errors.append(f"业务编号和年月编号与第 {import_keys[import_key]} 行重复。")
+            else:
+                import_keys[import_key] = item["row_number"]
+            existing_record = (
+                MaintenanceRecord.objects.filter(contract=contract, date_number=date_number)
+                .order_by("id")
+                .first()
+            )
         if record_date is None:
             errors.append("日期格式不正确。")
-        record_number = maintenance_record_number(contract, record_date, storage_location, record_position) if contract and record_date else ""
+        data["month"] = normalize_maintenance_month(data.get("month"), record_date)
+        data["date_number"] = date_number
+        data["record_position_number"] = record_position
+        data["storage_location_number"] = storage_location
         results.append(
             {
                 "row_number": item["row_number"],
                 "data": data,
                 "contract_id": contract.pk if contract else None,
+                "existing_record_id": existing_record.pk if existing_record else None,
                 "preview_cells": [
                     {"value": len(results) + 1},
                     {"value": contract.contract_name if contract else data.get("contract_key", ""), "css_class": "truncate-cell", "title": contract.contract_name if contract else data.get("contract_key", "")},
@@ -4218,7 +4277,6 @@ def validate_maintenance_import_rows(parsed_rows):
                         "css_class": "default-contract-number" if contract and contract.uses_default_display_contract_number else "",
                     },
                     {"value": record_date.strftime("%Y-%m-%d") if record_date else data.get("record_date", "")},
-                    {"value": display_code_for_ui(record_number)},
                     {"value": record_position},
                     {"value": storage_location},
                     {"value": data.get("remark", ""), "css_class": "truncate-cell", "title": data.get("remark", "")},
@@ -4339,9 +4397,9 @@ def invoice_import_template(request):
 # 视图函数：下载项目记录导入 Excel 模板。
 @true_admin_required
 def record_import_template(request):
-    headers = ["记录编号", "日期", "位置编号", "分册编号", "备注"]
+    headers = ["业务编号", "日期", "位置编号", "分册编号", "备注"]
     comments = {
-        "记录编号": "填写完整记录编号；也可填写业务编号并继续填写位置编号、分册编号。",
+        "业务编号": "填写已有业务编号或合同名称，用于匹配合同。",
         "日期": "必填。日期格式：YYYY-MM-DD。",
         "位置编号": "填写 3 位记录位置编号，前一位为柜号，后两位为栏目，例如 101。",
         "分册编号": "填写 2 位分册编号，例如 00。",
@@ -4434,16 +4492,45 @@ def contract_import(request):
                     data = row["data"].copy()
                     contract = Contract.objects.get(pk=row["contract_id"])
                     record_date = date_from_import(data["record_date"])
-                    month = record_date.strftime("%Y年%m月")
-                    record = MaintenanceRecord.objects.create(
-                        contract=contract,
-                        record_date=record_date,
-                        month=month,
-                        record_position_number=normalize_record_position_number(data.get("record_position_number")),
-                        storage_location_number=normalize_record_volume_number(data.get("storage_location_number")),
-                        remark=data.get("remark", ""),
+                    month = normalize_maintenance_month(data.get("month"), record_date)
+                    date_number = normalize_record_date_number(data.get("date_number"), record_date)
+                    existing_record_id = row.get("existing_record_id")
+                    record = (
+                        MaintenanceRecord.objects.filter(pk=existing_record_id, contract=contract).first()
+                        if existing_record_id
+                        else None
                     )
-                    log_operation(request, "新增", contract, object_type="项目记录", object_name=str(record), object_id=str(record.pk), detail=f"Excel import row: {row['row_number']}", version_obj=record)
+                    if record:
+                        record.record_date = record_date
+                        record.month = month
+                        record.date_number = date_number
+                        record.record_position_number = normalize_record_position_number(data.get("record_position_number"))
+                        record.storage_location_number = normalize_record_volume_number(data.get("storage_location_number"))
+                        record.remark = data.get("remark", "")
+                        record.save(
+                            update_fields=[
+                                "record_date",
+                                "month",
+                                "date_number",
+                                "record_position_number",
+                                "storage_location_number",
+                                "remark",
+                                "updated_at",
+                            ]
+                        )
+                        log_action = "修改"
+                    else:
+                        record = MaintenanceRecord.objects.create(
+                            contract=contract,
+                            record_date=record_date,
+                            month=month,
+                            date_number=date_number,
+                            record_position_number=normalize_record_position_number(data.get("record_position_number")),
+                            storage_location_number=normalize_record_volume_number(data.get("storage_location_number")),
+                            remark=data.get("remark", ""),
+                        )
+                        log_action = "新增"
+                    log_operation(request, log_action, contract, object_type="项目记录", object_name=str(record), object_id=str(record.pk), detail=f"Excel import row: {row['row_number']}", version_obj=record)
                 else:
                     data = row["data"].copy()
                     existing_contract_id = row.get("existing_contract_id")
@@ -4758,6 +4845,7 @@ def maintenance_record_list(request, pk: int):
             record.record_date,
             record.storage_location_number,
             record.record_position_number,
+            record.date_number,
         )
     context = context_with_auth(
         request,
@@ -5205,6 +5293,7 @@ def maintenance_record_create(request, pk: int):
                 "month_field": True,
                 "form_kind": "maintenance",
                 "current_month": timezone.localdate().strftime("%Y-%m"),
+                "current_date_number": timezone.localdate().strftime("%y%m"),
                 "business_record_number": contract.display_contract_number,
                 "project_years": project_years,
                 "file_label": project_labels["file"],

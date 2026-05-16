@@ -26,7 +26,7 @@
             <tr>
               <th>{{ labels.date }}</th>
               {% if month_field %}
-                <th>记录编号 <small class="subtle-heading-note">业务编号-位置编号-分册编号</small></th>
+                <th>记录编号 <small class="subtle-heading-note">业务编号-年月编号-位置编号-分册编号</small></th>
                 <th>位置编号 <small class="subtle-heading-note">柜号1位-栏目2位</small></th>
                 <th>分册编号 <small class="subtle-heading-note">项目年限 {{ project_years }}</small></th>
               {% endif %}
@@ -42,6 +42,7 @@
               <td>
                 <input class="record-date-input" name="record_date" type="date" value="{{ today|date:'Y-m-d' }}" required>
                 {% if month_field %}<input class="record-month-input" name="month" type="hidden" value="{{ current_month }}">{% endif %}
+                {% if month_field %}<input class="record-date-number-input" name="date_number" type="hidden" value="{{ current_date_number }}">{% endif %}
               </td>
               {% if month_field %}
                 <td><output class="record-number-output"></output></td>
@@ -98,6 +99,15 @@
       return dateValue && dateValue.length >= 7 ? dateValue.slice(0, 7) : "";
     }
 
+    function dateNumberFromDateValue(dateValue) {
+      return dateValue && dateValue.length >= 7 ? `${dateValue.slice(2, 4)}${dateValue.slice(5, 7)}` : "{{ current_date_number|default:'0000'|escapejs }}";
+    }
+
+    function normalizeDateNumber(value, fallbackDateValue) {
+      const digits = (value || "").replace(/\D/g, "").slice(0, 4);
+      return (digits || dateNumberFromDateValue(fallbackDateValue)).padStart(4, "0");
+    }
+
     function normalizeStorageLocation(value) {
       const digits = (value || "").replace(/\D/g, "").slice(0, 2);
       return (digits || "01").padStart(2, "0");
@@ -148,15 +158,25 @@
       }
     }
 
-    function recordNumberFromValues(recordPositionValue, storageLocationValue) {
+    function recordNumberFromValues(dateNumberValue, recordPositionValue, storageLocationValue, dateValue) {
       if (!businessRecordNumber) {
         return "";
       }
-      return formatDisplayCode(`${businessRecordNumber}${normalizeRecordPosition(recordPositionValue)}${normalizeStorageLocation(storageLocationValue)}`);
+      return formatDisplayCode(`${businessRecordNumber}${normalizeDateNumber(dateNumberValue, dateValue)}${normalizeRecordPosition(recordPositionValue)}${normalizeStorageLocation(storageLocationValue)}`);
     }
 
     function formatDisplayCode(value) {
       const text = String(value || "");
+      if (/^[A-Za-z]\d{16,}$/.test(text)) {
+        return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 15), text.slice(15, 17), text.slice(17)]
+          .filter(Boolean)
+          .join("-");
+      }
+      if (/^[A-Za-z]\d{14,}$/.test(text)) {
+        return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 10), text.slice(10, 13), text.slice(13, 15), text.slice(15)]
+          .filter(Boolean)
+          .join("-");
+      }
       if (/^[A-Za-z]\d{12,}$/.test(text)) {
         return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 11), text.slice(11, 13), text.slice(13)]
           .filter(Boolean)
@@ -168,16 +188,20 @@
       return text;
     }
 
-    function syncMaintenanceRow(row) {
+    function syncMaintenanceRow(row, sourceTarget = null) {
       if (!isMaintenanceForm || !row) {
         return;
       }
       const dateInput = row.querySelector(".record-date-input");
       const monthInput = row.querySelector(".record-month-input");
+      const dateNumberInput = row.querySelector(".record-date-number-input");
       const numberOutput = row.querySelector(".record-number-output");
       const recordPositionInput = row.querySelector(".record-position-number-input");
       const storageLocationInput = row.querySelector(".storage-location-number-input");
       const dateValue = dateInput?.value || "";
+      if (dateNumberInput) {
+        dateNumberInput.value = dateNumberFromDateValue(dateValue);
+      }
       if (recordPositionInput) {
         recordPositionInput.value = recordPositionInput.value.replace(/\D/g, "").slice(0, 3);
       }
@@ -188,15 +212,15 @@
         monthInput.value = monthFromDateValue(dateValue);
       }
       if (numberOutput) {
-        const recordNumber = recordNumberFromValues(recordPositionInput?.value || "000", storageLocationInput?.value || "01");
+        const recordNumber = recordNumberFromValues(dateNumberInput?.value || "", recordPositionInput?.value || "000", storageLocationInput?.value || "01", dateValue);
         numberOutput.value = recordNumber;
         numberOutput.textContent = recordNumber;
       }
     }
 
     recordTableBody.addEventListener("input", (event) => {
-      if (event.target.matches(".record-date-input") || event.target.matches(".record-position-number-input") || event.target.matches(".storage-location-number-input")) {
-        syncMaintenanceRow(event.target.closest("tr"));
+      if (event.target.matches(".record-date-input") || event.target.matches(".record-date-number-input") || event.target.matches(".record-position-number-input") || event.target.matches(".storage-location-number-input")) {
+        syncMaintenanceRow(event.target.closest("tr"), event.target);
       }
     });
 
@@ -204,10 +228,12 @@
       if (!event.target.matches(".record-position-number-input") && !event.target.matches(".storage-location-number-input")) {
         return;
       }
-      event.target.value = event.target.matches(".record-position-number-input")
-        ? normalizeRecordPosition(event.target.value)
-        : normalizeStorageLocation(event.target.value);
       const row = event.target.closest("tr");
+      if (event.target.matches(".record-position-number-input")) {
+        event.target.value = normalizeRecordPosition(event.target.value);
+      } else {
+        event.target.value = normalizeStorageLocation(event.target.value);
+      }
       syncMaintenanceRow(row);
       rememberRecordNumbers(row);
     }, true);
@@ -228,6 +254,7 @@
         <td>
           <input class="record-date-input" name="record_date" type="date" value="{{ today|date:'Y-m-d' }}" required>
           {% if month_field %}<input class="record-month-input" name="month" type="hidden" value="{{ current_month }}">{% endif %}
+          {% if month_field %}<input class="record-date-number-input" name="date_number" type="hidden" value="{{ current_date_number }}">{% endif %}
         </td>
         {% if month_field %}
           <td><output class="record-number-output"></output></td>

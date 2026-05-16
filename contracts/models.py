@@ -34,6 +34,16 @@ def normalize_record_position_number(value) -> str:
     return normalize_contract_number_part(value, 3) or "000"
 
 
+# 规范项目记录年月编号，空值按记录日期回退为 YYMM。
+def normalize_record_date_number(value, record_date=None) -> str:
+    date_number = normalize_contract_number_part(value, 4)
+    if date_number:
+        return date_number
+    if record_date:
+        return f"{str(record_date.year)[-2:]}{record_date.month:02d}"
+    return "0000"
+
+
 # 规范项目记录分册编号，空值回退为 01。
 def normalize_record_volume_number(value) -> str:
     return normalize_contract_number_part(value, 2) or "01"
@@ -399,6 +409,7 @@ class MaintenanceRecord(models.Model):
     contract = models.ForeignKey(Contract, on_delete=models.CASCADE, verbose_name="所属合同")
     record_date = models.DateField("日期")
     month = models.CharField("月份", max_length=30)
+    date_number = models.CharField("年月编号", max_length=4, default="0000", blank=True)
     record_position_number = models.CharField("位置编号", max_length=100, default="000", blank=True)
     storage_location_number = models.CharField("分册编号", max_length=100, default="01", blank=True)
     file = models.FileField("附件", upload_to=project_file_upload_path, null=True, blank=True)

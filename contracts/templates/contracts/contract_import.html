@@ -234,7 +234,7 @@
           {% if completed %}
             <div class="toolbar" style="margin-top: 16px;">
               <a class="button primary" href="{% url 'contracts:contract_list' %}">返回列表</a>
-              <a class="button" href="{% url 'contracts:contract_import' %}">继续导入</a>
+              <button class="button import-preview-button" type="button" data-import-kind="{{ import_kind }}">继续导入</button>
             </div>
           {% else %}
             <form method="post" style="margin-top: 16px;">
@@ -278,6 +278,7 @@
     const projectLookupData = JSON.parse(document.querySelector("#projectLookupData").textContent || "[]");
     const contractImportAlertMessage = JSON.parse(document.querySelector("#contractImportAlertMessage").textContent || '""');
     let projectLookupComposing = false;
+    let importFileDialogOpening = false;
 
     if (contractImportAlertMessage) {
       window.alert(contractImportAlertMessage);
@@ -286,12 +287,20 @@
     if (importUploadForm && importFileInput && importKindInput) {
       importFileButtons.forEach((button) => {
         button.addEventListener("click", () => {
+          if (importFileDialogOpening) {
+            return;
+          }
+          importFileDialogOpening = true;
           importKindInput.value = button.dataset.importKind || "contract";
           importFileInput.value = "";
           importFileInput.click();
+          window.setTimeout(() => {
+            importFileDialogOpening = false;
+          }, 800);
         });
       });
       importFileInput.addEventListener("change", () => {
+        importFileDialogOpening = false;
         if (importFileInput.files.length) {
           importUploadForm.submit();
         }

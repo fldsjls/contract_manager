@@ -1,4 +1,5 @@
 import calendar
+from collections.abc import Iterable
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from functools import wraps
@@ -1744,10 +1745,11 @@ def reconnect_empty_record_volume_sequence(
     if empty_sequence is None:
         return None
     empty_sequence.contract = contract
+    empty_sequence.released_contract = None
     empty_sequence.storage_location_number = volume
     empty_sequence.shelf_position_number = shelf_position_number_from_sequence(empty_sequence.real_sequence_number, setting)
     empty_sequence.is_reserved = False
-    empty_sequence.save(update_fields=["contract", "storage_location_number", "shelf_position_number", "is_reserved", "updated_at"])
+    empty_sequence.save(update_fields=["contract", "released_contract", "storage_location_number", "shelf_position_number", "is_reserved", "updated_at"])
     return empty_sequence
 
 
@@ -1814,16 +1816,115 @@ def ensure_record_volume_sequence(
     )
 
 
-def release_record_volume_sequences_for_contract(contract: Contract, setting: AppSetting) -> int:
+def release_record_volume_sequences_for_contract(
+    contract: Contract,
+    setting: AppSetting,
+    volume_numbers: Iterable[str] | None = None,
+) -> int:
     released_count = 0
-    for sequence in MaintenanceRecordVolumeSequence.objects.filter(contract=contract).order_by("real_sequence_number", "id"):
+    queryset = MaintenanceRecordVolumeSequence.objects.filter(contract=contract)
+    if volume_numbers is not None:
+        normalized_volumes = [normalize_record_volume_number(value) for value in volume_numbers if normalize_record_volume_number(value)]
+        queryset = queryset.filter(storage_location_number__in=normalized_volumes)
+    for sequence in queryset.order_by("real_sequence_number", "id"):
+        volume = normalize_record_volume_number(sequence.storage_location_number)
         sequence.contract = None
-        sequence.storage_location_number = ""
+        sequence.released_contract = contract
+        sequence.storage_location_number = volume
         sequence.shelf_position_number = shelf_position_number_from_sequence(sequence.real_sequence_number, setting)
         sequence.is_reserved = False
-        sequence.save(update_fields=["contract", "storage_location_number", "shelf_position_number", "is_reserved", "updated_at"])
+        sequence.save(update_fields=["contract", "released_contract", "storage_location_number", "shelf_position_number", "is_reserved", "updated_at"])
         released_count += 1
     return released_count
+
+
+def volume_restore_position_for_records(records: list[MaintenanceRecord]) -> str:
+    for record in records:
+        position_number = normalize_record_position_number(record.record_position_number)
+        if position_number != "000000":
+            return position_number
+    return "000000"
+
+
+def released_record_volume_sequence_for_volume(contract: Contract, volume_number: str) -> MaintenanceRecordVolumeSequence | None:
+    volume = normalize_record_volume_number(volume_number)
+    return (
+        MaintenanceRecordVolumeSequence.objects.filter(
+            contract__isnull=True,
+            released_contract=contract,
+            storage_location_number=volume,
+            is_reserved=False,
+        )
+        .exclude(real_sequence_number=0)
+        .order_by("real_sequence_number", "id")
+        .first()
+    )
+
+
+def restore_record_volume_sequence_for_position(
+    contract: Contract,
+    volume_number: str,
+    position_number: str,
+    setting: AppSetting,
+    rebuild_mode: str = "",
+) -> dict:
+    volume = normalize_record_volume_number(volume_number)
+    position = normalize_record_position_number(position_number)
+    existing = MaintenanceRecordVolumeSequence.objects.filter(
+        contract=contract,
+        storage_location_number=volume,
+    ).first()
+    if existing:
+        return {"ok": True, "sequence": existing, "mode": "existing"}
+    released_sequence = released_record_volume_sequence_for_volume(contract, volume)
+    if released_sequence:
+        released_sequence.contract = contract
+        released_sequence.released_contract = None
+        released_sequence.storage_location_number = volume
+        released_sequence.shelf_position_number = shelf_position_number_from_sequence(released_sequence.real_sequence_number, setting)
+        released_sequence.is_reserved = False
+        released_sequence.save(update_fields=["contract", "released_contract", "storage_location_number", "shelf_position_number", "is_reserved", "updated_at"])
+        update_records_for_volume_sequence(released_sequence, setting)
+        return {"ok": True, "sequence": released_sequence, "mode": "restored"}
+    if rebuild_mode != "new":
+        return {
+            "ok": False,
+            "conflict": True,
+            "position_number": position,
+            "volume_number": volume,
+            "message": f"{volume}册原释放空排位未找到，是否重建新的分册关系？",
+        }
+    sequence = ensure_record_volume_sequence(contract, volume, setting)
+    if sequence:
+        update_records_for_volume_sequence(sequence, setting)
+        return {"ok": True, "sequence": sequence, "mode": "new"}
+    return {"ok": True, "sequence": None, "mode": "none"}
+
+
+def restore_record_volume_sequences_for_contract(
+    contract: Contract,
+    setting: AppSetting,
+    rebuild_mode: str = "",
+) -> dict:
+    conflicts = []
+    restored_count = 0
+    records_by_volume: dict[str, list[MaintenanceRecord]] = {}
+    for record in MaintenanceRecord.objects.filter(contract=contract).order_by("storage_location_number", "record_date", "id"):
+        volume = normalize_record_volume_number(record.storage_location_number)
+        records_by_volume.setdefault(volume, []).append(record)
+    for volume, records in records_by_volume.items():
+        result = restore_record_volume_sequence_for_position(
+            contract,
+            volume,
+            volume_restore_position_for_records(records),
+            setting,
+            rebuild_mode,
+        )
+        if result.get("conflict"):
+            conflicts.append(result)
+        elif result.get("sequence"):
+            restored_count += 1
+    return {"ok": not conflicts, "conflicts": conflicts, "restored_count": restored_count}
 
 
 # 起始界限点变化时，只刷新已有记录的位置编号，实序编号本身保持合同分册映射。
@@ -2015,7 +2116,6 @@ def archive_modal_items(contracts: list[Contract]) -> list[dict]:
                     "volume_number": volume_number,
                     "label": f"{record.record_date.strftime('%Y-%m-%d') if record.record_date else date_number} {volume_number}册",
                     "remark": record.remark or "",
-                    "update_url": reverse("contracts:record_archive_position_update", args=[record.pk]),
                 }
             )
         first_record = record_items[0] if record_items else None
@@ -2040,6 +2140,7 @@ def archive_modal_items(contracts: list[Contract]) -> list[dict]:
                 "is_archived": contract.is_archived,
                 "record_position_number": record_position_number,
                 "record_archive_number": record_archive_number,
+                "volume_update_url": reverse("contracts:record_volume_archive_position_update", args=[contract.pk]),
                 "records": record_items,
             }
         )
@@ -6555,6 +6656,22 @@ def contract_archive(request, pk: int):
     folder_number = normalize_contract_number_part(request.POST.get("original_contract_folder"), 3)
     storage_location = normalize_storage_location_number(request.POST.get("storage_location_number"))
     archive_position_ready = bool(folder_number and folder_number != "000" and storage_location != "000")
+    rebuild_mode = request.POST.get("rebuild_mode", "")
+    if contract.is_archived and not archive_position_ready and not is_super_admin_mode(request):
+        if is_ajax:
+            return JsonResponse({"error": "只有超级管理员可以将合同位置改回 000 并退回待归档。"}, status=403)
+        return redirect("contracts:archive_list")
+    if contract.is_archived and not archive_position_ready:
+        restore_result = restore_record_volume_sequences_for_contract(contract, AppSetting.current(), rebuild_mode)
+        if not restore_result["ok"]:
+            return JsonResponse(
+                {
+                    "needs_rebuild_choice": True,
+                    "message": "原有空排位已被使用，是否重建新的分册关系？",
+                    "conflicts": restore_result["conflicts"],
+                },
+                status=409,
+            )
     changed_fields = []
     if folder_number != normalize_contract_number_part(contract.original_contract_folder, 3):
         contract.original_contract_folder = folder_number
@@ -6580,7 +6697,17 @@ def contract_archive(request, pk: int):
                 return JsonResponse({"error": "归档合同需要有效的文件夹编号和位置编号。"}, status=400)
             return redirect("contracts:archive_list")
         contract.archive()
-        released_sequences = release_record_volume_sequences_for_contract(contract, AppSetting.current())
+        archived_volume_numbers = (
+            MaintenanceRecord.objects.filter(contract=contract, is_archived=True)
+            .exclude(record_position_number__in=["", "000000"])
+            .values_list("storage_location_number", flat=True)
+            .distinct()
+        )
+        released_sequences = release_record_volume_sequences_for_contract(
+            contract,
+            AppSetting.current(),
+            archived_volume_numbers,
+        )
         archive_path = archive_contract_snapshot_to_file(contract, "contract archived")
         deleted_versions = clear_contract_snapshot_versions(contract)
         log_operation(
@@ -6614,53 +6741,79 @@ def contract_archive(request, pk: int):
 
 
 @admin_required
-# 保存单条项目记录的独立归档位置并更新记录级归档状态。
+# 阻止旧的单条记录归档接口继续写入，统一改为分册归档。
 def record_archive_position_update(request, pk: int):
-    record = get_object_or_404(MaintenanceRecord.objects.select_related("contract"), pk=pk, contract__is_deleted=False)
+    get_object_or_404(MaintenanceRecord.objects.select_related("contract"), pk=pk, contract__is_deleted=False)
+    return JsonResponse({"error": "不再支持单条记录归档，请使用分册归档。"}, status=400)
+
+
+@admin_required
+# 按分册保存项目记录归档位置，并在合同已归档时释放对应分册空排位。
+def record_volume_archive_position_update(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     if request.method != "POST":
-        return JsonResponse({"error": "只允许保存记录归档位置。"}, status=405)
-    if not record.contract.is_archived or not contract_has_archive_position(record.contract):
-        return JsonResponse({"error": "合同归档后才可以归档记录。"}, status=400)
+        return JsonResponse({"error": "只允许保存分册归档位置。"}, status=405)
+    if not contract.is_archived or not contract_has_archive_position(contract):
+        return JsonResponse({"error": "合同归档后才可以归档分册。"}, status=400)
+    raw_volume_number = str(request.POST.get("volume_number") or "").strip()
+    if not raw_volume_number:
+        return JsonResponse({"error": "请选择需要归档的分册。"}, status=400)
+    volume_number = normalize_record_volume_number(raw_volume_number)
     position_number = normalize_record_position_number(request.POST.get("record_position_number"))
-    old_number = display_code_for_ui(
-        maintenance_record_number(
-            record.contract,
-            record.record_date,
-            normalize_record_volume_number(record.storage_location_number),
-            record.record_position_number,
-            record.date_number,
-        )
+    reset_to_pending = position_number == "000000"
+    rebuild_mode = request.POST.get("rebuild_mode", "")
+    if reset_to_pending and not is_super_admin_mode(request):
+        return JsonResponse({"error": "只有超级管理员可以将分册位置改回 000000 并退回待归档。"}, status=403)
+    records = list(
+        MaintenanceRecord.objects.filter(
+            contract=contract,
+            storage_location_number=volume_number,
+        ).order_by("record_date", "id")
     )
-    record.record_position_number = position_number
-    record.is_archived = position_number != "000000"
-    record.save(update_fields=["record_position_number", "is_archived", "updated_at"])
-    new_number = display_code_for_ui(
-        maintenance_record_number(
-            record.contract,
-            record.record_date,
-            normalize_record_volume_number(record.storage_location_number),
-            record.record_position_number,
-            record.date_number,
+    if not records:
+        return JsonResponse({"error": "未找到该分册的项目记录。"}, status=404)
+    if reset_to_pending:
+        restore_position = volume_restore_position_for_records(records)
+        restore_result = restore_record_volume_sequence_for_position(
+            contract,
+            volume_number,
+            restore_position,
+            AppSetting.current(),
+            rebuild_mode,
         )
+        if restore_result.get("conflict"):
+            return JsonResponse(
+                {
+                    "needs_rebuild_choice": True,
+                    "message": "原有空排位已被使用，是否重建新的分册关系？",
+                    "conflicts": [restore_result],
+                },
+                status=409,
+            )
+    MaintenanceRecord.objects.filter(pk__in=[record.pk for record in records]).update(
+        record_position_number=position_number,
+        is_archived=not reset_to_pending,
+        updated_at=timezone.now(),
     )
+    released_sequences = 0
+    if not reset_to_pending:
+        released_sequences = release_record_volume_sequences_for_contract(contract, AppSetting.current(), [volume_number])
     log_operation(
         request,
         "修改",
-        record.contract,
-        object_type="记录归档编号",
-        object_name=str(record),
-        object_id=str(record.pk),
-        detail=f"record archive number: {old_number} -> {new_number}",
-        version_obj=record,
+        contract,
+        object_type="项目记录分册",
+        object_name=f"{contract.contract_name} {volume_number}册",
+        detail=f"volume archive position: {position_number}; records: {len(records)}; released sequences: {released_sequences}",
     )
-    archive_status = record_archive_status_for_record(record)
     return JsonResponse(
         {
             "ok": True,
-            "record_id": record.pk,
+            "volume_number": volume_number,
             "position_number": position_number,
-            "record_number": new_number,
-            "archive_status": archive_status,
+            "updated_count": len(records),
+            "released_sequences": released_sequences,
+            "item": archive_modal_items([contract])[0],
         }
     )
 
@@ -6675,6 +6828,24 @@ def contract_storage_number_update(request, pk: int):
     old_archive_number = contract.archive_number_display
     folder_number = normalize_contract_number_part(request.POST.get("original_contract_folder"), 3)
     storage_location = normalize_storage_location_number(request.POST.get("storage_location_number"))
+    rebuild_mode = request.POST.get("rebuild_mode", "")
+    will_reset_to_pending = bool(
+        contract.is_archived
+        and (not folder_number or folder_number == "000" or storage_location == "000")
+    )
+    if will_reset_to_pending and not is_super_admin_mode(request):
+        return JsonResponse({"error": "只有超级管理员可以将合同位置改回 000 并退回待归档。"}, status=403)
+    if will_reset_to_pending:
+        restore_result = restore_record_volume_sequences_for_contract(contract, AppSetting.current(), rebuild_mode)
+        if not restore_result["ok"]:
+            return JsonResponse(
+                {
+                    "needs_rebuild_choice": True,
+                    "message": "原有空排位已被使用，是否重建新的分册关系？",
+                    "conflicts": restore_result["conflicts"],
+                },
+                status=409,
+            )
     contract.original_contract_folder = folder_number
     contract.storage_location_number = storage_location
     update_fields = ["original_contract_folder", "storage_location_number", "updated_at"]

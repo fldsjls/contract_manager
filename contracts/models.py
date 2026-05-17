@@ -441,6 +441,14 @@ class MaintenanceRecordVolumeSequence(models.Model):
         blank=True,
         verbose_name="所属合同",
     )
+    released_contract = models.ForeignKey(
+        Contract,
+        related_name="released_record_volume_sequences",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="释放来源合同",
+    )
     storage_location_number = models.CharField("分册编号", max_length=100, default="01", blank=True)
     real_sequence_number = models.IntegerField("实序编号", default=0)
     shelf_position_number = models.CharField("排位", max_length=100, default="000000", blank=True)

@@ -27,6 +27,7 @@ urlpatterns = [
     path("archive/", views.archive_list, name="archive_list"),
     path("archive/<int:pk>/archive/", views.contract_archive, name="contract_archive"),
     path("archive/<int:pk>/storage-number/", views.contract_storage_number_update, name="contract_storage_number_update"),
+    path("archive/<int:pk>/records/volume/", views.record_volume_archive_position_update, name="record_volume_archive_position_update"),
     path("archive/records/<int:pk>/position/", views.record_archive_position_update, name="record_archive_position_update"),
     # 合同列表、导入导出和基础增删改查。
     path("contracts/", views.contract_list, name="contract_list"),

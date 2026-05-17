@@ -11,6 +11,12 @@
       <span>共 {{ contracts|length }} 个归档项目</span>
     </div>
 
+    <form class="search-toolbar operation-log-toolbar" method="get" autocomplete="off">
+      <input class="search-input" name="q" value="{{ keyword }}" placeholder="搜索合同名称、业务编号、甲方、归档编号、记录编号">
+      <button type="submit">搜索</button>
+      <a class="button" href="{% url 'contracts:archive_list' %}">重置</a>
+    </form>
+
     <div class="table-wrap fill">
       <table class="archive-table" id="archiveProjectTable">
         <thead>

@@ -2029,9 +2029,11 @@ def archive_pending_contracts() -> list[Contract]:
 
 # 查询归档页合同：默认按截止日期升序，可按页面表头切换排序。
 # 获取归档页面展示的合同列表。
-def archive_contracts_for_page(sort: str = "end_date", direction: str = "asc") -> list[Contract]:
+def archive_contracts_for_page(sort: str = "end_date", direction: str = "asc", keyword: str = "") -> list[Contract]:
     contracts = Contract.objects.filter(is_deleted=False, end_date__isnull=False).order_by("end_date", "id")
     items = [contract for contract in contracts if contract.status in {"待归档", "已归档"}]
+    if keyword:
+        items = [contract for contract in items if archive_lookup_matches(contract, keyword)]
     for contract in items:
         contract.archive_status_info = record_archive_status_for_contract(contract)
     sort_getters = {
@@ -6601,6 +6603,7 @@ def trash_list(request):
 @admin_required
 def archive_list(request):
     explicit_sort = "sort" in request.GET
+    keyword = request.GET.get("q", "").strip()
     sort = request.GET.get("sort", "end_date").strip()
     direction = request.GET.get("direction", "asc").strip()
     if direction not in ("asc", "desc"):
@@ -6617,7 +6620,7 @@ def archive_list(request):
     }
     if sort not in valid_sorts:
         sort = "end_date"
-    contracts = archive_contracts_for_page(sort, direction)
+    contracts = archive_contracts_for_page(sort, direction, keyword)
     query_params = request.GET.copy()
     query_params.pop("sort", None)
     query_params.pop("direction", None)
@@ -6629,6 +6632,7 @@ def archive_list(request):
             {
                 "contracts": contracts,
                 "archive_modal_items": archive_modal_items(contracts),
+                "keyword": keyword,
                 "sort": sort,
                 "direction": direction,
                 "show_sort_indicator": explicit_sort,

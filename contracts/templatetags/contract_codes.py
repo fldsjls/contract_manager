@@ -10,7 +10,13 @@ def display_code(value) -> str:
     text = str(value or "").strip()
     if len(text) >= 8 and text[0].isalpha() and text[1:].isdigit():
         parts = [text[:1], text[1:3], text[3:8]]
-        if len(text) >= 18:
+        if len(text) >= 20:
+            parts.append(text[8:12])
+            parts.append(text[12:18])
+            parts.append(text[18:20])
+            if len(text) > 20:
+                parts.append(text[20:])
+        elif len(text) >= 18:
             parts.append(text[8:12])
             parts.append(text[12:16])
             parts.append(text[16:18])
@@ -42,6 +48,8 @@ def display_code(value) -> str:
 @register.filter
 def archive_code(value) -> str:
     text = str(value or "").strip()
-    if len(text) == 5 and text.isdigit():
+    if len(text) == 6 and text.isdigit():
         return f"{text[:3]}-{text[3:]}"
+    if len(text) == 5 and text.isdigit():
+        return f"{text[:3]}-{text[3:].zfill(3)}"
     return text

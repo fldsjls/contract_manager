@@ -170,7 +170,7 @@
       <form class="panel contract-import-upload-panel" id="contractImportUploadForm" method="post" enctype="multipart/form-data">
         {% csrf_token %}
         <input type="hidden" name="action" value="preview">
-        <input type="hidden" name="import_kind" id="contractImportKind" value="contract">
+        <input type="hidden" name="import_kind" id="contractImportKind" value="{{ import_kind|default:'contract' }}">
         <input type="hidden" name="contract_id" value="{{ selected_contract_id }}">
         {% if selected_contract %}
           <div class="summary" style="margin-bottom: 12px;">
@@ -324,6 +324,11 @@
 
     function formatDisplayCode(value) {
       const text = String(value || "");
+      if (/^[A-Za-z]\d{19,}$/.test(text)) {
+        return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 18), text.slice(18, 20), text.slice(20)]
+          .filter(Boolean)
+          .join("-");
+      }
       if (/^[A-Za-z]\d{17,}$/.test(text)) {
         return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 16), text.slice(16, 18), text.slice(18)]
           .filter(Boolean)

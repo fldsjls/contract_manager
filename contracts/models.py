@@ -24,14 +24,14 @@ def normalize_contract_number_part(value, width: int) -> str:
     return digits[-width:].zfill(width)
 
 
-# 规范合同位置编号，空值回退为 00。
+# 规范合同位置编号，空值回退为 000。
 def normalize_storage_location_number(value) -> str:
-    return normalize_contract_number_part(value, 2) or "00"
+    return normalize_contract_number_part(value, 3) or "000"
 
 
-# 规范项目记录位置编号，空值回退为 0000。
+# 规范项目记录位置编号，空值回退为 000000。
 def normalize_record_position_number(value) -> str:
-    return normalize_contract_number_part(value, 4) or "0000"
+    return normalize_contract_number_part(value, 6) or "000000"
 
 
 # 规范项目记录年月编号，空值按记录日期回退为 YYMM。
@@ -144,7 +144,7 @@ class Contract(models.Model):
     contract_number = models.CharField("合同编号", max_length=50, unique=True)
     original_contract_folder = models.CharField("原合同文件夹", max_length=100, blank=True)
     original_contract_inner_number = models.CharField("文件编号", max_length=100, blank=True)
-    storage_location_number = models.CharField("位置编号", max_length=100, default="00", blank=True)
+    storage_location_number = models.CharField("位置编号", max_length=100, default="000", blank=True)
     contract_type = models.CharField("合同类型", max_length=20, choices=CONTRACT_TYPES, default="维保")
     party_name = models.CharField("甲方名称", max_length=200)
     amount = models.DecimalField("金额", max_digits=14, decimal_places=2, default=0)
@@ -215,7 +215,7 @@ class Contract(models.Model):
 
     @property
     def archive_number(self) -> str:
-        # 存档编号由文件夹编号 3 位和位置编号 2 位组成。
+        # 存档编号由文件夹编号 3 位和位置编号 3 位组成。
         folder_number = normalize_contract_number_part(self.original_contract_folder, 3)
         if not folder_number:
             return ""
@@ -410,8 +410,9 @@ class MaintenanceRecord(models.Model):
     record_date = models.DateField("日期")
     month = models.CharField("月份", max_length=30)
     date_number = models.CharField("年月编号", max_length=4, default="0000", blank=True)
-    record_position_number = models.CharField("位置编号", max_length=100, default="0000", blank=True)
+    record_position_number = models.CharField("位置编号", max_length=100, default="000000", blank=True)
     storage_location_number = models.CharField("分册编号", max_length=100, default="01", blank=True)
+    is_archived = models.BooleanField("是否归档", default=False)
     file = models.FileField("附件", upload_to=project_file_upload_path, null=True, blank=True)
     remark = models.CharField("备注", max_length=255, blank=True)
     created_at = models.DateTimeField("创建时间", default=timezone.now)
@@ -442,7 +443,7 @@ class MaintenanceRecordVolumeSequence(models.Model):
     )
     storage_location_number = models.CharField("分册编号", max_length=100, default="01", blank=True)
     real_sequence_number = models.IntegerField("实序编号", default=0)
-    shelf_position_number = models.CharField("排位", max_length=100, default="0000", blank=True)
+    shelf_position_number = models.CharField("排位", max_length=100, default="000000", blank=True)
     is_reserved = models.BooleanField("是否预留", default=False)
     created_at = models.DateTimeField("创建时间", default=timezone.now)
     updated_at = models.DateTimeField("更新时间", auto_now=True)

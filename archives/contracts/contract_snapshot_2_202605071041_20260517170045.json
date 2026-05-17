@@ -1,0 +1,615 @@
+{
+  "exported_at": "2026-05-17T17:00:45.710971+08:00",
+  "policy": {
+    "operation_logs_online_retention": "2 years",
+    "snapshots_online_retention": "12 months",
+    "single_contract_export_affects_global_archive": false
+  },
+  "contract": {
+    "model": "contracts.Contract",
+    "pk": 2,
+    "fields": {
+      "id": 2,
+      "contract_name": "北川羌族自治县中羌医医院消防维护保养",
+      "contract_number": "202605071041",
+      "original_contract_folder": "012",
+      "original_contract_inner_number": "3213",
+      "storage_location_number": "111",
+      "contract_type": "改造",
+      "party_name": "北川羌族自治县中羌医医院士大夫石帆胜丰但是",
+      "amount": "3000.00",
+      "invoice_status": "待开票",
+      "sign_date": "2021-12-28",
+      "start_date": "2026-05-07",
+      "end_date": "2022-06-07",
+      "responsible_person": "",
+      "archive_years": 3,
+      "file": "",
+      "remark": "",
+      "is_archived": true,
+      "archived_at": "2026-05-17T09:00:45.704969+00:00",
+      "is_deleted": false,
+      "deleted_at": null,
+      "created_at": "2026-05-07T02:43:03.992773+00:00",
+      "updated_at": "2026-05-17T09:00:45.704969+00:00"
+    },
+    "versions": [
+      {
+        "version_id": 98,
+        "revision_id": 93,
+        "date_created": "2026-05-17T16:58:38.911560+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（G2103213） | archive number: 012012 -> 012000; archive status: archived -> pending | IP: 172.19.32.1",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（G2103213）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 2, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605071041\", \"original_contract_folder\": \"012\", \"original_contract_inner_number\": \"3213\", \"storage_location_number\": \"000\", \"contract_type\": \"改造\", \"party_name\": \"北川羌族自治县中羌医医院士大夫石帆胜丰但是\", \"amount\": \"3000.00\", \"invoice_status\": \"待开票\", \"sign_date\": \"2021-12-28\", \"start_date\": \"2026-05-07\", \"end_date\": \"2022-06-07\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": false, \"archived_at\": null, \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-07T02:43:03.992Z\", \"updated_at\": \"2026-05-17T08:58:38.969Z\"}}]\n"
+      },
+      {
+        "version_id": 95,
+        "revision_id": 90,
+        "date_created": "2026-05-17T16:52:07.184120+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（G2103213） | archive number: 012001 -> 012012 | IP: 172.19.32.1",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（G2103213）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 2, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605071041\", \"original_contract_folder\": \"012\", \"original_contract_inner_number\": \"3213\", \"storage_location_number\": \"012\", \"contract_type\": \"改造\", \"party_name\": \"北川羌族自治县中羌医医院士大夫石帆胜丰但是\", \"amount\": \"3000.00\", \"invoice_status\": \"待开票\", \"sign_date\": \"2021-12-28\", \"start_date\": \"2026-05-07\", \"end_date\": \"2022-06-07\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": true, \"archived_at\": \"2026-05-12T14:47:04.601Z\", \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-07T02:43:03.992Z\", \"updated_at\": \"2026-05-17T08:52:07.192Z\"}}]\n"
+      },
+      {
+        "version_id": 94,
+        "revision_id": 89,
+        "date_created": "2026-05-17T16:51:55.504213+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（G2103213） | archive number: 012000 -> 012001 | IP: 172.19.32.1",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（G2103213）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 2, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605071041\", \"original_contract_folder\": \"012\", \"original_contract_inner_number\": \"3213\", \"storage_location_number\": \"001\", \"contract_type\": \"改造\", \"party_name\": \"北川羌族自治县中羌医医院士大夫石帆胜丰但是\", \"amount\": \"3000.00\", \"invoice_status\": \"待开票\", \"sign_date\": \"2021-12-28\", \"start_date\": \"2026-05-07\", \"end_date\": \"2022-06-07\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": true, \"archived_at\": \"2026-05-12T14:47:04.601Z\", \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-07T02:43:03.992Z\", \"updated_at\": \"2026-05-17T08:51:55.507Z\"}}]\n"
+      },
+      {
+        "version_id": 93,
+        "revision_id": 88,
+        "date_created": "2026-05-17T16:46:13.878077+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（G2103213） | archive number: 012123 -> 012000 | IP: 172.19.32.1",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（G2103213）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 2, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605071041\", \"original_contract_folder\": \"012\", \"original_contract_inner_number\": \"3213\", \"storage_location_number\": \"000\", \"contract_type\": \"改造\", \"party_name\": \"北川羌族自治县中羌医医院士大夫石帆胜丰但是\", \"amount\": \"3000.00\", \"invoice_status\": \"待开票\", \"sign_date\": \"2021-12-28\", \"start_date\": \"2026-05-07\", \"end_date\": \"2022-06-07\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": true, \"archived_at\": \"2026-05-12T14:47:04.601Z\", \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-07T02:43:03.992Z\", \"updated_at\": \"2026-05-17T08:46:13.882Z\"}}]\n"
+      },
+      {
+        "version_id": 92,
+        "revision_id": 87,
+        "date_created": "2026-05-17T16:46:04.768318+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（G2103213） | archive number: 012000 -> 012123 | IP: 172.19.32.1",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（G2103213）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 2, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605071041\", \"original_contract_folder\": \"012\", \"original_contract_inner_number\": \"3213\", \"storage_location_number\": \"123\", \"contract_type\": \"改造\", \"party_name\": \"北川羌族自治县中羌医医院士大夫石帆胜丰但是\", \"amount\": \"3000.00\", \"invoice_status\": \"待开票\", \"sign_date\": \"2021-12-28\", \"start_date\": \"2026-05-07\", \"end_date\": \"2022-06-07\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": true, \"archived_at\": \"2026-05-12T14:47:04.601Z\", \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-07T02:43:03.992Z\", \"updated_at\": \"2026-05-17T08:46:04.771Z\"}}]\n"
+      },
+      {
+        "version_id": 57,
+        "revision_id": 53,
+        "date_created": "2026-05-15T22:29:17.536611+08:00",
+        "user": "admin",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（G2103213） | responsible person: 内联负责人测试 | IP: 127.0.0.1",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（G2103213）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 2, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605071041\", \"original_contract_folder\": \"12\", \"original_contract_inner_number\": \"3213\", \"storage_location_number\": \"00\", \"contract_type\": \"改造\", \"party_name\": \"北川羌族自治县中羌医医院士大夫石帆胜丰但是\", \"amount\": \"3000.00\", \"invoice_status\": \"待开票\", \"sign_date\": \"2021-12-28\", \"start_date\": \"2026-05-07\", \"end_date\": \"2022-06-07\", \"responsible_person\": \"内联负责人测试\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": true, \"archived_at\": \"2026-05-12T14:47:04.601Z\", \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-07T02:43:03.992Z\", \"updated_at\": \"2026-05-15T14:29:17.593Z\"}}]\n"
+      },
+      {
+        "version_id": 43,
+        "revision_id": 40,
+        "date_created": "2026-05-14T14:57:29.765534+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（211232130400） | storage number: 211232130400 -> 211232130400 | IP: 192.168.1.63",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（211232130400）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 2, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605071041\", \"original_contract_folder\": \"12\", \"original_contract_inner_number\": \"3213\", \"storage_location_number\": \"00\", \"contract_type\": \"改造\", \"party_name\": \"北川羌族自治县中羌医医院士大夫石帆胜丰但是\", \"amount\": \"3000.00\", \"invoice_status\": \"待开票\", \"sign_date\": \"2021-12-28\", \"start_date\": \"2026-05-07\", \"end_date\": \"2022-06-07\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": true, \"archived_at\": \"2026-05-12T14:47:04.601Z\", \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-07T02:43:03.992Z\", \"updated_at\": \"2026-05-14T06:57:29.770Z\"}}]\n"
+      },
+      {
+        "version_id": 41,
+        "revision_id": 38,
+        "date_created": "2026-05-14T09:41:54.704483+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（211232130400） | storage number: 211232130400 -> 211232130400 | IP: 192.168.1.63",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（211232130400）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 2, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605071041\", \"original_contract_folder\": \"12\", \"original_contract_inner_number\": \"3213\", \"storage_location_number\": \"00\", \"contract_type\": \"改造\", \"party_name\": \"北川羌族自治县中羌医医院士大夫石帆胜丰但是\", \"amount\": \"3000.00\", \"invoice_status\": \"待开票\", \"sign_date\": \"2021-12-28\", \"start_date\": \"2026-05-07\", \"end_date\": \"2022-06-07\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": true, \"archived_at\": \"2026-05-12T14:47:04.601Z\", \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-07T02:43:03.992Z\", \"updated_at\": \"2026-05-14T01:41:54.707Z\"}}]\n"
+      },
+      {
+        "version_id": 28,
+        "revision_id": 26,
+        "date_created": "2026-05-13T13:55:47.319658+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（202112321304） | invoice status: 待开票 | IP: 127.0.0.1",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（202112321304）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 2, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605071041\", \"original_contract_folder\": \"12\", \"original_contract_inner_number\": \"3213\", \"contract_type\": \"改造\", \"party_name\": \"北川羌族自治县中羌医医院士大夫石帆胜丰但是\", \"amount\": \"3000.00\", \"invoice_status\": \"待开票\", \"sign_date\": \"2021-12-28\", \"start_date\": \"2026-05-07\", \"end_date\": \"2022-06-07\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": true, \"archived_at\": \"2026-05-12T14:47:04.601Z\", \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-07T02:43:03.992Z\", \"updated_at\": \"2026-05-13T05:55:47.323Z\"}}]\n"
+      }
+    ]
+  },
+  "related": {
+    "contract_files": [
+      {
+        "model": "contracts.ContractFile",
+        "pk": 44,
+        "fields": {
+          "id": 44,
+          "contract": 2,
+          "file": "contracts/改造/北川羌族自治县中羌医医院消防维护保养/合同文件/成都所区报警设备统计表竣工编码图.xlsx",
+          "original_name": "成都所区报警设备统计表（竣工编码图）.xlsx",
+          "sort_order": 0,
+          "created_at": "2026-05-12T14:46:27.626797+00:00"
+        },
+        "versions": []
+      }
+    ],
+    "settlement_files": [],
+    "invoice_records": [
+      {
+        "model": "contracts.InvoiceRecord",
+        "pk": 1,
+        "fields": {
+          "id": 1,
+          "contract": 2,
+          "record_date": "2026-05-07",
+          "record_type": "",
+          "amount": "3000.00",
+          "actual_amount": null,
+          "file": "",
+          "remark": "",
+          "created_at": "2026-05-07T02:43:30.182142+00:00",
+          "updated_at": "2026-05-07T02:43:30.182142+00:00"
+        },
+        "versions": []
+      },
+      {
+        "model": "contracts.InvoiceRecord",
+        "pk": 4,
+        "fields": {
+          "id": 4,
+          "contract": 2,
+          "record_date": "2026-05-08",
+          "record_type": "开票",
+          "amount": "4000.00",
+          "actual_amount": "2000.00",
+          "file": "contracts/北川羌族自治县中羌医医院消防维护保养/发票文件/光学元件消防报警点位表编码表结合报警主机.xlsx",
+          "remark": "",
+          "created_at": "2026-05-08T13:47:16.407918+00:00",
+          "updated_at": "2026-05-08T13:47:16.412879+00:00"
+        },
+        "versions": []
+      }
+    ],
+    "payment_records": [
+      {
+        "model": "contracts.PaymentRecord",
+        "pk": 2,
+        "fields": {
+          "id": 2,
+          "contract": 2,
+          "record_date": "2026-05-07",
+          "record_type": "",
+          "amount": "3000.00",
+          "actual_amount": null,
+          "file": "",
+          "remark": "",
+          "created_at": "2026-05-07T02:43:37.941252+00:00",
+          "updated_at": "2026-05-10T04:17:32.597516+00:00"
+        },
+        "versions": []
+      }
+    ],
+    "maintenance_records": [
+      {
+        "model": "contracts.MaintenanceRecord",
+        "pk": 2,
+        "fields": {
+          "id": 2,
+          "contract": 2,
+          "record_date": "2026-05-08",
+          "month": "2026年5月",
+          "date_number": "2605",
+          "record_position_number": "010403",
+          "storage_location_number": "00",
+          "file": "",
+          "remark": "其他金奥嘎斯当机立断就爱上了飞洒",
+          "created_at": "2026-05-08T14:08:32.872765+00:00",
+          "updated_at": "2026-05-17T08:52:36.748014+00:00"
+        },
+        "versions": [
+          {
+            "version_id": 97,
+            "revision_id": 92,
+            "date_created": "2026-05-17T16:52:36.742943+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月 | record archive number: G-21-03213-2605-010403-00 -> G-21-03213-2605-010403-00 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 2, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-08\", \"month\": \"2026年5月\", \"date_number\": \"2605\", \"record_position_number\": \"010403\", \"storage_location_number\": \"00\", \"file\": \"\", \"remark\": \"其他金奥嘎斯当机立断就爱上了飞洒\", \"created_at\": \"2026-05-08T14:08:32.872Z\", \"updated_at\": \"2026-05-17T08:52:36.748Z\"}}]\n"
+          },
+          {
+            "version_id": 96,
+            "revision_id": 91,
+            "date_created": "2026-05-17T16:52:14.983297+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月 | record archive number: G-21-03213-2605-010403-00 -> G-21-03213-2605-010403-00 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 2, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-08\", \"month\": \"2026年5月\", \"date_number\": \"2605\", \"record_position_number\": \"010403\", \"storage_location_number\": \"00\", \"file\": \"\", \"remark\": \"其他金奥嘎斯当机立断就爱上了飞洒\", \"created_at\": \"2026-05-08T14:08:32.872Z\", \"updated_at\": \"2026-05-17T08:52:14.986Z\"}}]\n"
+          },
+          {
+            "version_id": 91,
+            "revision_id": 86,
+            "date_created": "2026-05-17T16:43:52.075480+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月 | record archive number: G-21-03213-2605-010403-00 -> G-21-03213-2605-010403-00 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 2, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-08\", \"month\": \"2026年5月\", \"date_number\": \"2605\", \"record_position_number\": \"010403\", \"storage_location_number\": \"00\", \"file\": \"\", \"remark\": \"其他金奥嘎斯当机立断就爱上了飞洒\", \"created_at\": \"2026-05-08T14:08:32.872Z\", \"updated_at\": \"2026-05-17T08:43:52.080Z\"}}]\n"
+          },
+          {
+            "version_id": 90,
+            "revision_id": 85,
+            "date_created": "2026-05-17T16:43:49.652108+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月 | record archive number: G-21-03213-2605-010403-00 -> G-21-03213-2605-010403-00 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 2, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-08\", \"month\": \"2026年5月\", \"date_number\": \"2605\", \"record_position_number\": \"010403\", \"storage_location_number\": \"00\", \"file\": \"\", \"remark\": \"其他金奥嘎斯当机立断就爱上了飞洒\", \"created_at\": \"2026-05-08T14:08:32.872Z\", \"updated_at\": \"2026-05-17T08:43:49.655Z\"}}]\n"
+          },
+          {
+            "version_id": 89,
+            "revision_id": 84,
+            "date_created": "2026-05-17T16:43:40.902293+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月 | record archive number: G-21-03213-2605-010403-00 -> G-21-03213-2605-010403-00 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 2, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-08\", \"month\": \"2026年5月\", \"date_number\": \"2605\", \"record_position_number\": \"010403\", \"storage_location_number\": \"00\", \"file\": \"\", \"remark\": \"其他金奥嘎斯当机立断就爱上了飞洒\", \"created_at\": \"2026-05-08T14:08:32.872Z\", \"updated_at\": \"2026-05-17T08:43:40.917Z\"}}]\n"
+          },
+          {
+            "version_id": 88,
+            "revision_id": 83,
+            "date_created": "2026-05-17T16:43:39.743150+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月 | record archive number: G-21-03213-2605-010403-00 -> G-21-03213-2605-010403-00 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 2, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-08\", \"month\": \"2026年5月\", \"date_number\": \"2605\", \"record_position_number\": \"010403\", \"storage_location_number\": \"00\", \"file\": \"\", \"remark\": \"其他金奥嘎斯当机立断就爱上了飞洒\", \"created_at\": \"2026-05-08T14:08:32.872Z\", \"updated_at\": \"2026-05-17T08:43:39.755Z\"}}]\n"
+          },
+          {
+            "version_id": 87,
+            "revision_id": 82,
+            "date_created": "2026-05-17T16:43:38.657957+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月 | record archive number: G-21-03213-2605-010403-00 -> G-21-03213-2605-010403-00 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 2, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-08\", \"month\": \"2026年5月\", \"date_number\": \"2605\", \"record_position_number\": \"010403\", \"storage_location_number\": \"00\", \"file\": \"\", \"remark\": \"其他金奥嘎斯当机立断就爱上了飞洒\", \"created_at\": \"2026-05-08T14:08:32.872Z\", \"updated_at\": \"2026-05-17T08:43:38.664Z\"}}]\n"
+          },
+          {
+            "version_id": 85,
+            "revision_id": 80,
+            "date_created": "2026-05-17T16:41:05.179308+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月 | record archive number: G-21-03213-2605-010403-00 -> G-21-03213-2605-010403-00 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 2, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-08\", \"month\": \"2026年5月\", \"date_number\": \"2605\", \"record_position_number\": \"010403\", \"storage_location_number\": \"00\", \"file\": \"\", \"remark\": \"其他金奥嘎斯当机立断就爱上了飞洒\", \"created_at\": \"2026-05-08T14:08:32.872Z\", \"updated_at\": \"2026-05-17T08:41:05.183Z\"}}]\n"
+          },
+          {
+            "version_id": 84,
+            "revision_id": 79,
+            "date_created": "2026-05-17T16:41:03.343109+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月 | record archive number: G-21-03213-2605-010403-00 -> G-21-03213-2605-010403-00 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 2, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-08\", \"month\": \"2026年5月\", \"date_number\": \"2605\", \"record_position_number\": \"010403\", \"storage_location_number\": \"00\", \"file\": \"\", \"remark\": \"其他金奥嘎斯当机立断就爱上了飞洒\", \"created_at\": \"2026-05-08T14:08:32.872Z\", \"updated_at\": \"2026-05-17T08:41:03.349Z\"}}]\n"
+          },
+          {
+            "version_id": 78,
+            "revision_id": 73,
+            "date_created": "2026-05-17T16:41:00.105534+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月 | record archive number: G-21-03213-2605-010403-00 -> G-21-03213-2605-010403-00 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 2, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-08\", \"month\": \"2026年5月\", \"date_number\": \"2605\", \"record_position_number\": \"010403\", \"storage_location_number\": \"00\", \"file\": \"\", \"remark\": \"其他金奥嘎斯当机立断就爱上了飞洒\", \"created_at\": \"2026-05-08T14:08:32.872Z\", \"updated_at\": \"2026-05-17T08:41:00.111Z\"}}]\n"
+          },
+          {
+            "version_id": 72,
+            "revision_id": 67,
+            "date_created": "2026-05-17T16:40:57.278404+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月 | record archive number: G-21-03213-2605-010403-00 -> G-21-03213-2605-010403-00 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 2, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-08\", \"month\": \"2026年5月\", \"date_number\": \"2605\", \"record_position_number\": \"010403\", \"storage_location_number\": \"00\", \"file\": \"\", \"remark\": \"其他金奥嘎斯当机立断就爱上了飞洒\", \"created_at\": \"2026-05-08T14:08:32.872Z\", \"updated_at\": \"2026-05-17T08:40:57.282Z\"}}]\n"
+          },
+          {
+            "version_id": 64,
+            "revision_id": 60,
+            "date_created": "2026-05-17T14:53:55.856836+08:00",
+            "user": "admin",
+            "comment": "修改 | 记录备注 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月 | IP: 127.0.0.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-08 - 2026年5月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 2, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-08\", \"month\": \"2026年5月\", \"date_number\": \"2605\", \"record_position_number\": \"010403\", \"storage_location_number\": \"00\", \"file\": \"\", \"remark\": \"其他金奥嘎斯当机立断就爱上了飞洒\", \"created_at\": \"2026-05-08T14:08:32.872Z\", \"updated_at\": \"2026-05-17T06:53:55.944Z\"}}]\n"
+          }
+        ]
+      },
+      {
+        "model": "contracts.MaintenanceRecord",
+        "pk": 7,
+        "fields": {
+          "id": 7,
+          "contract": 2,
+          "record_date": "2026-05-17",
+          "month": "2026年05月",
+          "date_number": "2605",
+          "record_position_number": "010404",
+          "storage_location_number": "01",
+          "file": "",
+          "remark": "",
+          "created_at": "2026-05-17T07:50:14.536492+00:00",
+          "updated_at": "2026-05-17T08:41:07.281049+00:00"
+        },
+        "versions": [
+          {
+            "version_id": 86,
+            "revision_id": 81,
+            "date_created": "2026-05-17T16:41:07.276050+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月 | record archive number: G-21-03213-2605-010404-01 -> G-21-03213-2605-010404-01 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 7, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:14.536Z\", \"updated_at\": \"2026-05-17T08:41:07.281Z\"}}]\n"
+          },
+          {
+            "version_id": 79,
+            "revision_id": 74,
+            "date_created": "2026-05-17T16:41:00.146079+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月 | record archive number: G-21-03213-2605-010404-01 -> G-21-03213-2605-010404-01 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 7, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:14.536Z\", \"updated_at\": \"2026-05-17T08:41:00.152Z\"}}]\n"
+          },
+          {
+            "version_id": 73,
+            "revision_id": 68,
+            "date_created": "2026-05-17T16:40:57.333431+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月 | record archive number: G-21-03213-2605-010404-01 -> G-21-03213-2605-010404-01 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 7, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:14.536Z\", \"updated_at\": \"2026-05-17T08:40:57.336Z\"}}]\n"
+          },
+          {
+            "version_id": 67,
+            "revision_id": 62,
+            "date_created": "2026-05-17T15:50:14.458344+08:00",
+            "user": "superuser",
+            "comment": "新增 | 项目记录 | 北川羌族自治县中羌医医院消防维护保养（G2103213） | saved records: 1 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 7, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:14.536Z\", \"updated_at\": \"2026-05-17T07:50:14.536Z\"}}]\n"
+          }
+        ]
+      },
+      {
+        "model": "contracts.MaintenanceRecord",
+        "pk": 8,
+        "fields": {
+          "id": 8,
+          "contract": 2,
+          "record_date": "2026-05-17",
+          "month": "2026年05月",
+          "date_number": "2605",
+          "record_position_number": "010404",
+          "storage_location_number": "01",
+          "file": "",
+          "remark": "",
+          "created_at": "2026-05-17T07:50:16.606993+00:00",
+          "updated_at": "2026-05-17T08:41:00.202074+00:00"
+        },
+        "versions": [
+          {
+            "version_id": 80,
+            "revision_id": 75,
+            "date_created": "2026-05-17T16:41:00.193078+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月 | record archive number: G-21-03213-2605-010404-01 -> G-21-03213-2605-010404-01 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 8, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:16.606Z\", \"updated_at\": \"2026-05-17T08:41:00.202Z\"}}]\n"
+          },
+          {
+            "version_id": 74,
+            "revision_id": 69,
+            "date_created": "2026-05-17T16:40:57.359397+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月 | record archive number: G-21-03213-2605-010404-01 -> G-21-03213-2605-010404-01 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 8, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:16.606Z\", \"updated_at\": \"2026-05-17T08:40:57.363Z\"}}]\n"
+          },
+          {
+            "version_id": 68,
+            "revision_id": 63,
+            "date_created": "2026-05-17T15:50:16.588990+08:00",
+            "user": "superuser",
+            "comment": "新增 | 项目记录 | 北川羌族自治县中羌医医院消防维护保养（G2103213） | saved records: 1 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 8, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:16.606Z\", \"updated_at\": \"2026-05-17T07:50:16.606Z\"}}]\n"
+          }
+        ]
+      },
+      {
+        "model": "contracts.MaintenanceRecord",
+        "pk": 9,
+        "fields": {
+          "id": 9,
+          "contract": 2,
+          "record_date": "2026-05-17",
+          "month": "2026年05月",
+          "date_number": "2605",
+          "record_position_number": "010404",
+          "storage_location_number": "01",
+          "file": "",
+          "remark": "",
+          "created_at": "2026-05-17T07:50:18.735557+00:00",
+          "updated_at": "2026-05-17T08:41:00.244080+00:00"
+        },
+        "versions": [
+          {
+            "version_id": 81,
+            "revision_id": 76,
+            "date_created": "2026-05-17T16:41:00.238078+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月 | record archive number: G-21-03213-2605-010404-01 -> G-21-03213-2605-010404-01 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 9, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:18.735Z\", \"updated_at\": \"2026-05-17T08:41:00.244Z\"}}]\n"
+          },
+          {
+            "version_id": 75,
+            "revision_id": 70,
+            "date_created": "2026-05-17T16:40:57.392047+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月 | record archive number: G-21-03213-2605-010404-01 -> G-21-03213-2605-010404-01 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 9, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:18.735Z\", \"updated_at\": \"2026-05-17T08:40:57.398Z\"}}]\n"
+          },
+          {
+            "version_id": 69,
+            "revision_id": 64,
+            "date_created": "2026-05-17T15:50:18.708536+08:00",
+            "user": "superuser",
+            "comment": "新增 | 项目记录 | 北川羌族自治县中羌医医院消防维护保养（G2103213） | saved records: 1 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 9, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:18.735Z\", \"updated_at\": \"2026-05-17T07:50:18.736Z\"}}]\n"
+          }
+        ]
+      },
+      {
+        "model": "contracts.MaintenanceRecord",
+        "pk": 10,
+        "fields": {
+          "id": 10,
+          "contract": 2,
+          "record_date": "2026-05-17",
+          "month": "2026年05月",
+          "date_number": "2605",
+          "record_position_number": "010404",
+          "storage_location_number": "01",
+          "file": "",
+          "remark": "",
+          "created_at": "2026-05-17T07:50:21.003935+00:00",
+          "updated_at": "2026-05-17T08:41:00.285847+00:00"
+        },
+        "versions": [
+          {
+            "version_id": 82,
+            "revision_id": 77,
+            "date_created": "2026-05-17T16:41:00.278655+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月 | record archive number: G-21-03213-2605-010404-01 -> G-21-03213-2605-010404-01 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 10, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:21.003Z\", \"updated_at\": \"2026-05-17T08:41:00.285Z\"}}]\n"
+          },
+          {
+            "version_id": 76,
+            "revision_id": 71,
+            "date_created": "2026-05-17T16:40:57.423038+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月 | record archive number: G-21-03213-2605-010404-01 -> G-21-03213-2605-010404-01 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 10, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:21.003Z\", \"updated_at\": \"2026-05-17T08:40:57.427Z\"}}]\n"
+          },
+          {
+            "version_id": 70,
+            "revision_id": 65,
+            "date_created": "2026-05-17T15:50:20.984946+08:00",
+            "user": "superuser",
+            "comment": "新增 | 项目记录 | 北川羌族自治县中羌医医院消防维护保养（G2103213） | saved records: 1 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 10, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:21.003Z\", \"updated_at\": \"2026-05-17T07:50:21.004Z\"}}]\n"
+          }
+        ]
+      },
+      {
+        "model": "contracts.MaintenanceRecord",
+        "pk": 11,
+        "fields": {
+          "id": 11,
+          "contract": 2,
+          "record_date": "2026-05-17",
+          "month": "2026年05月",
+          "date_number": "2605",
+          "record_position_number": "010404",
+          "storage_location_number": "01",
+          "file": "",
+          "remark": "",
+          "created_at": "2026-05-17T07:50:39.104487+00:00",
+          "updated_at": "2026-05-17T08:41:00.322848+00:00"
+        },
+        "versions": [
+          {
+            "version_id": 83,
+            "revision_id": 78,
+            "date_created": "2026-05-17T16:41:00.317853+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月 | record archive number: G-21-03213-2605-010404-01 -> G-21-03213-2605-010404-01 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 11, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:39.104Z\", \"updated_at\": \"2026-05-17T08:41:00.322Z\"}}]\n"
+          },
+          {
+            "version_id": 77,
+            "revision_id": 72,
+            "date_created": "2026-05-17T16:40:57.453043+08:00",
+            "user": "superuser",
+            "comment": "修改 | 记录归档编号 | 北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月 | record archive number: G-21-03213-2605-010404-01 -> G-21-03213-2605-010404-01 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 11, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:39.104Z\", \"updated_at\": \"2026-05-17T08:40:57.457Z\"}}]\n"
+          },
+          {
+            "version_id": 71,
+            "revision_id": 66,
+            "date_created": "2026-05-17T15:50:39.090373+08:00",
+            "user": "superuser",
+            "comment": "新增 | 项目记录 | 北川羌族自治县中羌医医院消防维护保养（G2103213） | saved records: 1 | IP: 172.19.32.1",
+            "object_repr": "北川羌族自治县中羌医医院消防维护保养 - 2026-05-17 - 2026年05月",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.maintenancerecord\", \"pk\": 11, \"fields\": {\"contract\": 2, \"record_date\": \"2026-05-17\", \"month\": \"2026年05月\", \"date_number\": \"2605\", \"record_position_number\": \"010404\", \"storage_location_number\": \"01\", \"file\": \"\", \"remark\": \"\", \"created_at\": \"2026-05-17T07:50:39.104Z\", \"updated_at\": \"2026-05-17T07:50:39.105Z\"}}]\n"
+          }
+        ]
+      }
+    ],
+    "invoice_record_file_versions": [
+      {
+        "model": "contracts.InvoiceRecordFileVersion",
+        "pk": 2,
+        "fields": {
+          "id": 2,
+          "record": 4,
+          "file": "contracts/北川羌族自治县中羌医医院消防维护保养/发票文件/光学元件消防报警点位表编码表结合报警主机.xlsx",
+          "original_name": "光学元件消防报警点位表编码表结合报警主机.xlsx",
+          "created_at": "2026-05-08T13:47:16.412879+00:00"
+        },
+        "versions": []
+      }
+    ],
+    "payment_record_file_versions": [],
+    "maintenance_record_file_versions": []
+  },
+  "archive_reason": "contract archived"
+}

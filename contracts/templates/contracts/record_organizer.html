@@ -1,0 +1,387 @@
+{% extends "contracts/base.html" %}
+
+{% load contract_codes %}
+
+{% block title %}记录整理{% endblock %}
+
+{% block content %}
+  <div class="page-content contract-list-page record-organizer-page">
+    <h1 class="page-title">记录整理</h1>
+
+    <form class="search-toolbar" method="get" autocomplete="off">
+      <div class="search-preview-wrap archive-search-wrap">
+        <input class="search-input" id="archiveLookupInput" name="archive_q" value="{{ archive_keyword }}" type="search" placeholder="业务编号查找存档编号">
+        <button class="archive-lookup-clear" id="archiveLookupClear" type="button" aria-label="清空业务编号查找" {% if not archive_keyword %}hidden{% endif %}>×</button>
+        <div class="search-preview archive-search-preview" id="archiveLookupPreview" hidden></div>
+      </div>
+      <input name="contract_type" type="hidden" value="{{ contract_type_filter }}">
+      <input name="archive_status" type="hidden" value="{{ archive_status_filter }}">
+      <input name="file_status" type="hidden" value="{{ file_status_filter }}">
+      <button type="submit">搜索</button>
+      <a class="button" href="{% url 'contracts:record_organizer' %}">重置</a>
+    </form>
+
+    <div class="action-toolbar" aria-label="记录整理操作">
+      <a class="button" href="{% url 'contracts:record_organizer_export' %}{% if export_query %}?{{ export_query }}{% endif %}">导出 Excel</a>
+      {% if can_add_money_records %}
+        <a class="button" href="{% url 'contracts:contract_import' %}?import_kind=maintenance">导入 Excel</a>
+      {% endif %}
+      <button class="button{% if has_filters %} primary{% endif %}" id="filterButton" type="button">筛选</button>
+      <a class="button" href="{% url 'contracts:record_organizer' %}{% if clear_filter_query %}?{{ clear_filter_query }}{% endif %}">清除筛选</a>
+    </div>
+
+    <div class="summary contract-list-summary">
+      <span>共 {{ rows|length }} 条记录</span>
+      {% if archive_keyword %}
+        <span>当前查找：{{ archive_keyword }}</span>
+      {% endif %}
+      {% if contract_type_filter %}
+        <span>合同类型：{{ contract_type_filter }}</span>
+      {% endif %}
+      {% if archive_status_filter %}
+        <span>状态：{{ archive_status_filter }}</span>
+      {% endif %}
+      {% if file_status_filter %}
+        <span>文件：{% if file_status_filter == "uploaded" %}已上传{% else %}未上传{% endif %}</span>
+      {% endif %}
+    </div>
+
+    {% if archive_pending_contracts %}
+      <div class="expiring-list">
+        <strong class="expiring-list-title">待归档提醒：</strong>
+        <div class="expiring-list-items">
+          {% for contract in archive_pending_contracts %}
+            <a class="expiring-item" href="{% url 'contracts:contract_detail' contract.id %}">
+              <span class="expiring-name">{{ contract.contract_name }}</span>
+              <span class="expiring-date">{{ contract.end_date|date:"Y-m-d" }}</span>
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if rows %}
+      <div class="table-wrap fill">
+        <table class="contract-table" id="recordOrganizerTable">
+          <thead>
+            <tr>
+              <th>序号</th>
+              <th><a class="sort-link {% if show_sort_indicator and sort == 'contract_name' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_name&direction={% if show_sort_indicator and sort == 'contract_name' and direction == 'desc' %}asc{% else %}desc{% endif %}">合同名称</a></th>
+              <th><a class="sort-link {% if show_sort_indicator and sort == 'created_at' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=created_at&direction={% if show_sort_indicator and sort == 'created_at' and direction == 'desc' %}asc{% else %}desc{% endif %}">添加时间</a></th>
+              <th><a class="sort-link {% if show_sort_indicator and sort == 'contract_number' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_number&direction={% if show_sort_indicator and sort == 'contract_number' and direction == 'desc' %}asc{% else %}desc{% endif %}">业务编号</a></th>
+              <th><a class="sort-link {% if show_sort_indicator and sort == 'real_sequence_number' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=real_sequence_number&direction={% if show_sort_indicator and sort == 'real_sequence_number' and direction == 'desc' %}asc{% else %}desc{% endif %}">实序编号</a></th>
+              <th><a class="sort-link {% if show_sort_indicator and sort == 'shelf_position_number' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=shelf_position_number&direction={% if show_sort_indicator and sort == 'shelf_position_number' and direction == 'desc' %}asc{% else %}desc{% endif %}">位置编号</a></th>
+              <th><a class="sort-link {% if show_sort_indicator and sort == 'volume_number' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=volume_number&direction={% if show_sort_indicator and sort == 'volume_number' and direction == 'desc' %}asc{% else %}desc{% endif %}">分册编号</a></th>
+              <th><a class="sort-link {% if show_sort_indicator and sort == 'file_time' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=file_time&direction={% if show_sort_indicator and sort == 'file_time' and direction == 'desc' %}asc{% else %}desc{% endif %}">文件时间</a></th>
+              <th><a class="sort-link {% if show_sort_indicator and sort == 'remark' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=remark&direction={% if show_sort_indicator and sort == 'remark' and direction == 'desc' %}asc{% else %}desc{% endif %}">备注</a></th>
+              <th><a class="sort-link {% if show_sort_indicator and sort == 'archive_status' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=archive_status&direction={% if show_sort_indicator and sort == 'archive_status' and direction == 'desc' %}asc{% else %}desc{% endif %}">状态</a></th>
+              <th><a class="sort-link {% if show_sort_indicator and sort == 'file' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=file&direction={% if show_sort_indicator and sort == 'file' and direction == 'desc' %}asc{% else %}desc{% endif %}">文件</a></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr
+                class="selectable-row"
+                data-record-id="{{ row.record.id }}"
+                data-record-number="{{ row.record_number }}"
+                data-contract-id="{{ row.contract.id }}"
+                data-detail-url="{% url 'contracts:maintenance_record_list' row.contract.id %}"
+              >
+                <td>{{ forloop.counter }}</td>
+                <td class="name" title="{{ row.contract.contract_name }}">{{ row.contract.contract_name }}</td>
+                <td>{{ row.record.created_at|date:"Y-m-d H:i" }}</td>
+                <td class="{% if row.contract.uses_default_display_contract_number %}default-contract-number{% endif %}" title="{{ row.contract.display_contract_number|display_code }}">{{ row.contract.display_contract_number|display_code }}</td>
+                <td>{{ row.real_sequence_number|default:"" }}</td>
+                <td class="position-number-cell">{{ row.shelf_position_number }}</td>
+                <td>{{ row.volume_number }}</td>
+                <td class="file-time-cell">{{ row.record.record_date|date:"Y-m-d" }}</td>
+                <td class="party" title="{{ row.record.remark }}">
+                  {% if can_manage %}
+                    <div class="inline-remark-editor record-organizer-remark-editor">
+                      <span class="inline-remark-display {% if not row.record.remark %}empty{% endif %}" title="{{ row.record.remark|default:'' }}">{{ row.record.remark|default:"点击添加备注" }}</span>
+                      <div class="inline-remark-form" data-action="{% url 'contracts:record_remark_update' 'maintenance' row.record.id %}" data-field="remark" data-empty-label="点击添加备注" hidden>
+                        {% csrf_token %}
+                        <input name="remark" type="text" value="{{ row.record.remark|default:'' }}" autocomplete="off">
+                      </div>
+                    </div>
+                  {% else %}
+                    {{ row.record.remark|default:"点击添加备注" }}
+                  {% endif %}
+                </td>
+                <td><span class="status {{ row.archive_status.class }}">{{ row.archive_status.label }}</span></td>
+                <td>{% if row.file_is_uploaded %}已上传{% else %}<span class="file-missing">未上传</span>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty">暂无记录数据</div>
+    {% endif %}
+  </div>
+
+  <div class="modal-backdrop" id="filterModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="filterModalTitle">
+      <div class="modal-header" id="filterModalTitle">筛选记录</div>
+      <form method="get">
+        <input name="archive_q" type="hidden" value="{{ archive_keyword }}">
+        <input name="sort" type="hidden" value="{{ sort }}">
+        <input name="direction" type="hidden" value="{{ direction }}">
+        <div class="modal-body" style="white-space: normal;">
+          <div class="form-grid" style="grid-template-columns: 1fr; gap: 14px;">
+            <div>
+              <label for="filterContractType">合同类型</label>
+              <select id="filterContractType" name="contract_type">
+                <option value="">全部类型</option>
+                {% for value, label in contract_type_choices %}
+                  <option value="{{ value }}" {% if contract_type_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="filterArchiveStatus">记录状态</label>
+              <select id="filterArchiveStatus" name="archive_status">
+                <option value="">全部状态</option>
+                {% for value in archive_status_choices %}
+                  <option value="{{ value }}" {% if archive_status_filter == value %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="filterFileStatus">文件状态</label>
+              <select id="filterFileStatus" name="file_status">
+                <option value="">全部文件</option>
+                {% for value, label in file_status_choices %}
+                  <option value="{{ value }}" {% if file_status_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="button" id="filterModalCancel" type="button">取消</button>
+          <button class="button primary" type="submit">应用</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {{ archive_lookup_items|json_script:"archiveLookupData" }}
+  <script>
+    const archiveLookupInput = document.querySelector("#archiveLookupInput");
+    const archiveLookupClear = document.querySelector("#archiveLookupClear");
+    const archiveLookupPreview = document.querySelector("#archiveLookupPreview");
+    const archiveLookupDataElement = document.querySelector("#archiveLookupData");
+    const archiveLookupData = archiveLookupDataElement ? JSON.parse(archiveLookupDataElement.textContent || "[]") : [];
+    const recordOrganizerTable = document.querySelector("#recordOrganizerTable");
+    const listScrollContainer = document.querySelector(".contract-list-page .table-wrap.fill");
+    const filterButton = document.querySelector("#filterButton");
+    const filterModal = document.querySelector("#filterModal");
+    const filterModalCancel = document.querySelector("#filterModalCancel");
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function formatDisplayCode(value) {
+      const text = String(value || "");
+      if (/^[A-Za-z]\d{19,}$/.test(text)) {
+        return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 18), text.slice(18, 20), text.slice(20)]
+          .filter(Boolean)
+          .join("-");
+      }
+      if (/^[A-Za-z]\d{17,}$/.test(text)) {
+        return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 16), text.slice(16, 18), text.slice(18)]
+          .filter(Boolean)
+          .join("-");
+      }
+      if (/^[A-Za-z]\d{7}$/.test(text)) {
+        return `${text.slice(0, 1)}-${text.slice(1, 3)}-${text.slice(3)}`;
+      }
+      return text;
+    }
+
+    function formatArchiveCode(value) {
+      const text = String(value || "");
+      if (/^\d{6}$/.test(text)) {
+        return `${text.slice(0, 3)}-${text.slice(3)}`;
+      }
+      if (/^\d{5}$/.test(text)) {
+        return `${text.slice(0, 3)}-${text.slice(3).padStart(3, "0")}`;
+      }
+      if (/^[A-Za-z]\d{7,}$/.test(text)) {
+        return formatDisplayCode(text);
+      }
+      return text;
+    }
+
+    function compactLookupCode(value) {
+      return String(value || "").replace(/[-\s]/g, "").toLowerCase();
+    }
+
+    function urlWithListState(rawUrl, id = "") {
+      const url = new URL(rawUrl, window.location.origin);
+      url.searchParams.set("next", window.location.pathname + window.location.search);
+      if (id) {
+        url.searchParams.set("return_id", id);
+      }
+      if (listScrollContainer) {
+        url.searchParams.set("scroll", String(Math.round(listScrollContainer.scrollTop)));
+      }
+      return url.pathname + url.search;
+    }
+
+    function hideArchiveLookupPreview() {
+      if (archiveLookupPreview) {
+        archiveLookupPreview.hidden = true;
+      }
+    }
+
+    function renderArchiveLookupPreview() {
+      if (!archiveLookupInput || !archiveLookupPreview) {
+        return;
+      }
+      const keyword = compactLookupCode(archiveLookupInput.value);
+      if (archiveLookupClear) {
+        archiveLookupClear.hidden = !archiveLookupInput.value;
+      }
+      archiveLookupPreview.innerHTML = "";
+      if (!keyword) {
+        hideArchiveLookupPreview();
+        return;
+      }
+      const matches = archiveLookupData
+        .filter((item) => [
+          item.code,
+          formatDisplayCode(item.code || ""),
+          item.archive_code,
+          formatArchiveCode(item.archive_code || ""),
+          item.name,
+          item.party,
+          item.type,
+        ].some((value) => compactLookupCode(value).includes(keyword)))
+        .slice(0, 8);
+      matches.forEach((item) => {
+        const button = document.createElement("button");
+        button.className = "search-preview-item";
+        button.type = "button";
+        button.innerHTML = `
+          <span class="search-preview-title"><span class="archive-lookup-kind">${escapeHtml(item.kind_label || "合同文件")}</span>${escapeHtml(formatDisplayCode(item.code || ""))}</span>
+          <span class="search-preview-meta">存档编号: ${escapeHtml(formatArchiveCode(item.archive_code) || "未填写")}　合同: ${escapeHtml(item.name || "未填写")}　${escapeHtml(item.party || "未填写")}</span>
+        `;
+        button.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+        });
+        button.addEventListener("click", () => {
+          archiveLookupInput.value = formatDisplayCode(item.code);
+          archiveLookupClear.hidden = false;
+          hideArchiveLookupPreview();
+        });
+        archiveLookupPreview.appendChild(button);
+      });
+      archiveLookupPreview.hidden = matches.length === 0;
+    }
+
+    if (archiveLookupInput) {
+      archiveLookupInput.addEventListener("input", renderArchiveLookupPreview);
+      archiveLookupInput.addEventListener("focus", renderArchiveLookupPreview);
+      archiveLookupClear?.addEventListener("click", () => {
+        archiveLookupInput.value = "";
+        archiveLookupClear.hidden = true;
+        hideArchiveLookupPreview();
+        archiveLookupInput.focus();
+      });
+      document.addEventListener("click", (event) => {
+        if (!event.target.closest(".archive-search-wrap")) {
+          hideArchiveLookupPreview();
+        }
+      });
+    }
+
+    function clearSelection() {
+      document.querySelectorAll(".selectable-row.selected").forEach((row) => {
+        row.classList.remove("selected");
+      });
+    }
+
+    function selectRecordRow(row) {
+      clearSelection();
+      row.classList.add("selected");
+    }
+
+    window.clearPageSelection = clearSelection;
+
+    if (recordOrganizerTable) {
+      recordOrganizerTable.querySelectorAll(".record-organizer-remark-editor input[name='remark']").forEach((input) => {
+        input.addEventListener("input", () => {
+          input.scrollLeft = input.scrollWidth;
+        });
+      });
+      recordOrganizerTable.addEventListener("click", (event) => {
+        const row = event.target.closest(".selectable-row");
+        if (!row) {
+          clearSelection();
+          return;
+        }
+        selectRecordRow(row);
+      });
+      recordOrganizerTable.addEventListener("dblclick", (event) => {
+        if (event.target.closest("select, button, a, input, label, .inline-remark-editor")) {
+          return;
+        }
+        const row = event.target.closest(".selectable-row");
+        if (!row || !row.dataset.detailUrl) {
+          return;
+        }
+        selectRecordRow(row);
+        window.location.href = urlWithListState(row.dataset.detailUrl, row.dataset.recordId);
+      });
+    }
+
+    if (filterButton && filterModal) {
+      filterButton.addEventListener("click", () => {
+        filterModal.hidden = false;
+        filterModal.querySelector("select")?.focus();
+      });
+      filterModalCancel?.addEventListener("click", () => {
+        filterModal.hidden = true;
+      });
+      filterModal.addEventListener("click", (event) => {
+        if (event.target === filterModal) {
+          filterModal.hidden = true;
+        }
+      });
+    }
+
+    function restoreListState() {
+      const params = new URLSearchParams(window.location.search);
+      const restoreScroll = params.get("restore_scroll");
+      const returnId = params.get("return_id");
+      if (listScrollContainer && restoreScroll !== null) {
+        listScrollContainer.scrollTop = Number.parseInt(restoreScroll, 10) || 0;
+      }
+      if (returnId) {
+        const row = document.querySelector(`.selectable-row[data-record-id="${returnId}"]`);
+        if (row) {
+          selectRecordRow(row);
+          if (restoreScroll === null) {
+            row.scrollIntoView({ block: "center" });
+          }
+        }
+      }
+      if (restoreScroll !== null || returnId) {
+        params.delete("restore_scroll");
+        params.delete("return_id");
+        const cleanQuery = params.toString();
+        const cleanUrl = `${window.location.pathname}${cleanQuery ? `?${cleanQuery}` : ""}${window.location.hash}`;
+        window.history.replaceState({}, "", cleanUrl);
+      }
+    }
+
+    requestAnimationFrame(restoreListState);
+  </script>
+{% endblock %}

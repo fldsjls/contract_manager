@@ -333,7 +333,7 @@
     }
     .search-toolbar {
       display: grid;
-      grid-template-columns: minmax(280px, 1fr) minmax(240px, 380px) auto auto;
+      grid-template-columns: minmax(280px, 1fr) 74px 74px;
       gap: 10px;
       align-items: center;
       margin-bottom: 14px;
@@ -351,6 +351,15 @@
       min-width: 0;
     }
     .search-input { width: 100%; }
+    .search-toolbar > button,
+    .search-toolbar > .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 9px 14px;
+      box-sizing: border-box;
+      white-space: nowrap;
+    }
     .archive-search-wrap .search-input {
       padding-right: 34px;
     }
@@ -1002,6 +1011,39 @@
     .contract-table td:nth-child(11) { width: 5.5%; }
     .contract-table th:nth-child(12),
     .contract-table td:nth-child(12) { width: 4.5%; }
+    .record-organizer-page .table-wrap.fill {
+      overflow-y: scroll;
+    }
+    .record-organizer-page .contract-table th:nth-child(1),
+    .record-organizer-page .contract-table td:nth-child(1) { width: 4%; }
+    .record-organizer-page .contract-table th:nth-child(2),
+    .record-organizer-page .contract-table td:nth-child(2) { width: 16%; }
+    .record-organizer-page .contract-table th:nth-child(3),
+    .record-organizer-page .contract-table td:nth-child(3) { width: 12%; }
+    .record-organizer-page .contract-table th:nth-child(4),
+    .record-organizer-page .contract-table td:nth-child(4) { width: 11%; }
+    .record-organizer-page .contract-table th:nth-child(5),
+    .record-organizer-page .contract-table td:nth-child(5) { width: 8%; }
+    .record-organizer-page .contract-table th:nth-child(6),
+    .record-organizer-page .contract-table td:nth-child(6) { width: 7%; }
+    .record-organizer-page .contract-table th:nth-child(7),
+    .record-organizer-page .contract-table td:nth-child(7) { width: 7%; }
+    .record-organizer-page .contract-table th:nth-child(8),
+    .record-organizer-page .contract-table td:nth-child(8) { width: 11%; }
+    .record-organizer-page .contract-table th:nth-child(9),
+    .record-organizer-page .contract-table td:nth-child(9) { width: 15%; }
+    .record-organizer-page .contract-table th:nth-child(10),
+    .record-organizer-page .contract-table td:nth-child(10) { width: 6%; }
+    .record-organizer-page .contract-table th:nth-child(11),
+    .record-organizer-page .contract-table td:nth-child(11) { width: 4%; }
+    .record-organizer-page .file-time-cell,
+    .record-organizer-page .position-number-cell {
+      font-variant-numeric: tabular-nums;
+    }
+    .record-organizer-page .record-organizer-remark-editor .inline-remark-form input[type="text"] {
+      text-align: left;
+      overflow: hidden;
+    }
     .archive-table th,
     .archive-table td {
       padding: 7px 6px;
@@ -1014,19 +1056,21 @@
     .archive-table th:nth-child(2),
     .archive-table td:nth-child(2) { width: 15%; }
     .archive-table th:nth-child(3),
-    .archive-table td:nth-child(3) { width: 12%; }
+    .archive-table td:nth-child(3) { width: 11%; }
     .archive-table th:nth-child(4),
     .archive-table td:nth-child(4) { width: 15%; }
     .archive-table th:nth-child(5),
-    .archive-table td:nth-child(5) { width: 11%; }
+    .archive-table td:nth-child(5) { width: 10%; }
     .archive-table th:nth-child(6),
-    .archive-table td:nth-child(6) { width: 11%; }
+    .archive-table td:nth-child(6) { width: 10%; }
     .archive-table th:nth-child(7),
-    .archive-table td:nth-child(7) { width: 14%; }
+    .archive-table td:nth-child(7) { width: 13%; }
     .archive-table th:nth-child(8),
-    .archive-table td:nth-child(8) { width: 7%; }
+    .archive-table td:nth-child(8) { width: 8%; }
     .archive-table th:nth-child(9),
-    .archive-table td:nth-child(9) { width: 11%; }
+    .archive-table td:nth-child(9) { width: 6%; }
+    .archive-table th:nth-child(10),
+    .archive-table td:nth-child(10) { width: 8%; }
     .archive-table td:nth-child(2),
     .archive-table td:nth-child(4) {
       cursor: help;
@@ -1045,26 +1089,63 @@
     }
     .archive-storage-modal-card .modal-body {
       display: grid;
-      gap: 8px;
-      justify-items: center;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 10px;
+      justify-items: stretch;
       white-space: normal;
     }
     .archive-storage-modal-card {
-      width: min(320px, calc(100vw - 48px));
+      width: 760px;
+      max-width: calc(100vw - 48px);
+      height: 520px;
+      max-height: calc(100vh - 48px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
     .archive-storage-modal-card .modal-body {
-      padding: 18px 16px 12px;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      padding: 16px 16px 12px;
     }
     .archive-storage-modal-card .field-label {
       margin-bottom: 0;
       text-align: center;
     }
-    .archive-storage-modal-card .modal-actions {
+    .archive-modal-top {
+      display: grid;
+      grid-template-rows: auto auto;
+      gap: 10px;
+      align-items: start;
+    }
+    .archive-modal-summary {
+      display: grid;
+      gap: 4px;
+      text-align: center;
+    }
+    .archive-modal-title {
+      font-size: 16px;
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .archive-modal-meta {
+      color: #475467;
+      font-size: 12px;
+    }
+    .archive-storage-row {
+      display: flex;
+      align-items: flex-end;
       justify-content: center;
-      padding: 0 16px 14px;
+      gap: 12px;
     }
     .archive-storage-input {
       width: 64px;
+      height: 36px;
+      padding: 6px 8px;
+      line-height: 1.2;
       text-align: center;
       font-variant-numeric: tabular-nums;
     }
@@ -1075,10 +1156,161 @@
       align-items: end;
       justify-content: center;
     }
+    .archive-storage-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .archive-storage-actions .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 36px;
+      padding: 8px 12px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .archive-storage-actions .button:disabled {
+      color: #98a2b3;
+      border-color: #d9dee7;
+      background: #f3f4f6;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
     .archive-storage-input-group {
       display: grid;
-      gap: 6px;
+      gap: 4px;
       justify-items: center;
+    }
+    .archive-storage-input-group .field-label {
+      font-size: 13px;
+    }
+    .archive-record-list-block {
+      --archive-position-width: 158px;
+      --archive-action-width: 116px;
+      --archive-control-height: 36px;
+      --archive-scrollbar-gutter: 0px;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 8px;
+      min-height: 0;
+      padding-top: 10px;
+      border-top: 1px solid #e5e7eb;
+    }
+    .archive-record-toolbar {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr) var(--archive-position-width) var(--archive-action-width);
+      gap: 10px;
+      align-items: center;
+      padding-right: var(--archive-scrollbar-gutter);
+    }
+    .archive-record-toolbar-main {
+      grid-column: 1 / 3;
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 12px;
+    }
+    .archive-record-toolbar .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: var(--archive-action-width);
+      height: var(--archive-control-height);
+      padding: 6px 10px;
+      line-height: 1;
+    }
+    .archive-record-toolbar .button:disabled,
+    .archive-record-save-button:disabled {
+      color: #98a2b3;
+      border-color: #d9dee7;
+      background: #f3f4f6;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+    .archive-volume-filter {
+      width: 94px;
+      height: var(--archive-control-height);
+      padding: 6px 4px;
+      line-height: 1.2;
+    }
+    .archive-record-list-title {
+      color: #475467;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .archive-record-select-all,
+    .archive-batch-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      font-size: 13px;
+      color: #172033;
+    }
+    .archive-batch-input {
+      width: var(--archive-position-width);
+      height: var(--archive-control-height);
+      justify-self: center;
+      padding: 6px 8px;
+      line-height: 1.2;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .archive-record-disabled-note {
+      color: #7c3aed;
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .archive-record-editor {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 140px 92px;
+      gap: 10px;
+      align-items: center;
+    }
+    .archive-record-list {
+      min-height: 0;
+      overflow-y: auto;
+      padding-right: 0;
+      scrollbar-gutter: stable;
+    }
+    .archive-record-row {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr) var(--archive-position-width) var(--archive-action-width);
+      gap: 10px;
+      align-items: center;
+      min-height: var(--archive-control-height);
+      padding: 3px 0;
+    }
+    .archive-record-checkbox {
+      justify-self: center;
+      margin: 0;
+    }
+    .archive-record-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      color: #172033;
+    }
+    .archive-record-position-input {
+      width: var(--archive-position-width);
+      height: var(--archive-control-height);
+      justify-self: center;
+      padding: 6px 8px;
+      line-height: 1.2;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .archive-record-save-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: var(--archive-action-width);
+      height: var(--archive-control-height);
+      padding: 6px 10px;
+      line-height: 1;
     }
     .inline-storage-editor {
       width: 160px;
@@ -1255,7 +1487,7 @@
     }
     .contract-number-row {
       display: grid;
-      grid-template-columns: minmax(154px, 1fr) 112px 88px 64px;
+      grid-template-columns: minmax(146px, 1fr) 112px 88px 64px;
       align-items: end;
       gap: 10px;
       width: 100%;
@@ -1703,6 +1935,9 @@
       max-width: 64px;
       margin: 0 auto;
       text-align: center;
+    }
+    .maintenance-record-table .record-position-number-input {
+      max-width: 86px;
     }
     .maintenance-record-table .record-position-number-input[readonly] {
       color: #667085;
@@ -2224,10 +2459,11 @@
     <aside class="sidebar">
       <div class="brand">金达铭公司</div>
       {% if is_super_admin_mode or is_admin_mode %}
-        <details class="nav-group" id="managementNavGroup" {% if active_nav == 'dashboard' or active_nav == 'contracts' or active_nav == 'archive' or active_nav == 'trash' %}open{% endif %}>
+        <details class="nav-group" id="managementNavGroup" {% if active_nav == 'dashboard' or active_nav == 'contracts' or active_nav == 'record_organizer' or active_nav == 'archive' or active_nav == 'trash' %}open{% endif %}>
           <summary>管理系统</summary>
-          <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'contracts:dashboard' %}">合同总览</a>
+          <a class="nav-link {% if active_nav == 'dashboard' %}active{% endif %}" href="{% url 'contracts:dashboard' %}">统计总览</a>
           <a class="nav-link {% if active_nav == 'contracts' %}active{% endif %}" href="{% url 'contracts:contract_list' %}">合同列表</a>
+          <a class="nav-link {% if active_nav == 'record_organizer' %}active{% endif %}" href="{% url 'contracts:record_organizer' %}">记录整理</a>
           <a class="nav-link {% if active_nav == 'archive' %}active{% endif %}" href="{% url 'contracts:archive_list' %}">归档项目</a>
           <a class="nav-link {% if active_nav == 'trash' %}active{% endif %}" href="{% url 'contracts:trash' %}">回收站</a>
         </details>

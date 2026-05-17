@@ -291,7 +291,7 @@
       };
       const rememberNumberFields = () => {
         const folderValue = normalizedDigits(contractFolderInput.value, 3);
-        const locationValue = normalizedDigits(storageLocationNumberInput.value, 2);
+        const locationValue = normalizedDigits(storageLocationNumberInput.value, 3);
         if (folderValue) {
           localStorage.setItem(contractFolderStorageKey, folderValue);
         }
@@ -303,7 +303,7 @@
         contractFolderInput.value = normalizedDigits(localStorage.getItem(contractFolderStorageKey), 3);
       }
       if (!isContractEditPage && !storageLocationNumberInput.value) {
-        storageLocationNumberInput.value = normalizedDigits(localStorage.getItem(storageLocationStorageKey), 2);
+        storageLocationNumberInput.value = normalizedDigits(localStorage.getItem(storageLocationStorageKey), 3);
       }
       contractInnerNumberInput.addEventListener("input", () => {
         keepDigits(contractInnerNumberInput, 5);
@@ -320,7 +320,7 @@
         }
       });
       storageLocationNumberInput.addEventListener("input", () => {
-        keepDigits(storageLocationNumberInput, 2);
+        keepDigits(storageLocationNumberInput, 3);
       });
       contractInnerNumberInput.addEventListener("blur", () => padDigits(contractInnerNumberInput, 5));
       contractFolderInput.addEventListener("blur", () => {
@@ -328,9 +328,9 @@
         rememberNumberFields();
       });
       storageLocationNumberInput.addEventListener("blur", () => {
-        keepDigits(storageLocationNumberInput, 2);
+        keepDigits(storageLocationNumberInput, 3);
         if (storageLocationNumberInput.value) {
-          storageLocationNumberInput.value = storageLocationNumberInput.value.padStart(2, "0");
+          storageLocationNumberInput.value = storageLocationNumberInput.value.padStart(3, "0");
         }
         rememberNumberFields();
       });
@@ -351,12 +351,12 @@
         });
       });
       storageLocationNumberInput.addEventListener("paste", () => {
-        requestAnimationFrame(() => keepDigits(storageLocationNumberInput, 2));
+        requestAnimationFrame(() => keepDigits(storageLocationNumberInput, 3));
       });
       padDigits(contractInnerNumberInput, 5);
       padDigits(contractFolderInput, 3);
       if (storageLocationNumberInput.value) {
-        storageLocationNumberInput.value = storageLocationNumberInput.value.replace(/\D/g, "").slice(0, 2).padStart(2, "0");
+        storageLocationNumberInput.value = storageLocationNumberInput.value.replace(/\D/g, "").slice(0, 3).padStart(3, "0");
       }
       contractFolderInput.closest("form")?.addEventListener("submit", rememberNumberFields);
     }

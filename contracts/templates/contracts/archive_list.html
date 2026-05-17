@@ -12,23 +12,24 @@
     </div>
 
     <div class="table-wrap fill">
-      <table class="archive-table">
+      <table class="archive-table" id="archiveProjectTable">
         <thead>
           <tr>
             <th>序号</th>
-            <th>合同名称</th>
-            <th>业务编号</th>
-            <th>甲方名称</th>
-            <th>合同金额</th>
-            <th>截止日期</th>
-            <th>归档时间</th>
-            <th>存档编号</th>
+            <th><a class="sort-link {% if show_sort_indicator and sort == 'contract_name' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_name&direction={% if show_sort_indicator and sort == 'contract_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同名称</a></th>
+            <th><a class="sort-link {% if show_sort_indicator and sort == 'contract_number' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=contract_number&direction={% if show_sort_indicator and sort == 'contract_number' and direction == 'asc' %}desc{% else %}asc{% endif %}">业务编号</a></th>
+            <th><a class="sort-link {% if show_sort_indicator and sort == 'party_name' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=party_name&direction={% if show_sort_indicator and sort == 'party_name' and direction == 'asc' %}desc{% else %}asc{% endif %}">甲方名称</a></th>
+            <th><a class="sort-link {% if show_sort_indicator and sort == 'amount' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=amount&direction={% if show_sort_indicator and sort == 'amount' and direction == 'asc' %}desc{% else %}asc{% endif %}">合同金额</a></th>
+            <th><a class="sort-link {% if show_sort_indicator and sort == 'end_date' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=end_date&direction={% if show_sort_indicator and sort == 'end_date' and direction == 'asc' %}desc{% else %}asc{% endif %}">截止日期</a></th>
+            <th><a class="sort-link {% if show_sort_indicator and sort == 'archived_at' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=archived_at&direction={% if show_sort_indicator and sort == 'archived_at' and direction == 'asc' %}desc{% else %}asc{% endif %}">归档时间</a></th>
+            <th><a class="sort-link {% if show_sort_indicator and sort == 'archive_number' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=archive_number&direction={% if show_sort_indicator and sort == 'archive_number' and direction == 'asc' %}desc{% else %}asc{% endif %}">归档编号</a></th>
+            <th><a class="sort-link {% if show_sort_indicator and sort == 'status' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=status&direction={% if show_sort_indicator and sort == 'status' and direction == 'asc' %}desc{% else %}asc{% endif %}">状态</a></th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
           {% for contract in contracts %}
-            <tr>
+            <tr class="selectable-row" data-contract-id="{{ contract.id }}" data-detail-url="{% url 'contracts:maintenance_record_list' contract.id %}">
               <td>{{ forloop.counter }}</td>
               <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
               <td class="archive-business-number{% if contract.uses_default_display_contract_number %} default-contract-number{% endif %}">{{ contract.display_contract_number|display_code }}</td>
@@ -42,36 +43,33 @@
                   <div class="inline-remark-form inline-storage-form" data-action="{% url 'contracts:contract_storage_number_update' contract.id %}" hidden>
                     {% csrf_token %}
                     <input class="inline-storage-input inline-storage-folder-input" name="original_contract_folder" type="text" value="{{ contract.original_contract_folder|default:'000' }}" maxlength="3" inputmode="numeric" pattern="\d{0,3}" aria-label="文件夹编号">
-                    <input class="inline-storage-input" name="storage_location_number" type="text" value="{{ contract.storage_location_number|default:'00' }}" maxlength="2" inputmode="numeric" pattern="\d{0,2}" aria-label="位置编号">
+                    <input class="inline-storage-input" name="storage_location_number" type="text" value="{{ contract.storage_location_number|default:'000' }}" maxlength="3" inputmode="numeric" pattern="\d{0,3}" aria-label="位置编号">
                   </div>
                 </div>
               </td>
+              <td><span class="status {{ contract.archive_status_info.class }}">{{ contract.archive_status_info.label }}</span></td>
               <td>
-                {% if contract.status == "待归档" and not contract.uses_default_display_contract_number %}
-                  <form
-                    class="archive-form"
-                    method="post"
-                    action="{% url 'contracts:contract_archive' contract.id %}"
-                    data-contract-name="{{ contract.contract_name }}"
-                    data-contract-number="{{ contract.display_contract_number }}"
-                    data-folder-number="{{ contract.original_contract_folder|default:'000' }}"
-                    data-storage-number="{{ contract.storage_location_number|default:'00' }}"
-                  >
-                    {% csrf_token %}
-                    <input type="hidden" name="original_contract_folder" value="{{ contract.original_contract_folder|default:'000' }}">
-                    <input type="hidden" name="storage_location_number" value="{{ contract.storage_location_number|default:'00' }}">
-                    <button class="button primary archive-open-button" type="button">归档</button>
-                  </form>
-                {% elif contract.status == "待归档" %}
-                  <span class="button muted">缺少文件编号</span>
-                {% else %}
-                  <span class="button muted">已归档</span>
-                {% endif %}
+                <form
+                  class="archive-form"
+                  method="post"
+                  action="{% url 'contracts:contract_archive' contract.id %}"
+                  data-contract-id="{{ contract.id }}"
+                  data-contract-name="{{ contract.contract_name }}"
+                  data-contract-number="{{ contract.display_contract_number }}"
+                  data-folder-number="{{ contract.original_contract_folder|default:'000' }}"
+                  data-storage-number="{{ contract.storage_location_number|default:'000' }}"
+                  data-archive-allowed="{% if not contract.uses_default_display_contract_number %}1{% else %}0{% endif %}"
+                >
+                  {% csrf_token %}
+                  <input type="hidden" name="original_contract_folder" value="{{ contract.original_contract_folder|default:'000' }}">
+                  <input type="hidden" name="storage_location_number" value="{{ contract.storage_location_number|default:'000' }}">
+                  <button class="button primary archive-open-button" type="button">归档</button>
+                </form>
               </td>
             </tr>
           {% empty %}
             <tr>
-              <td colspan="9" class="empty">暂无归档项目</td>
+              <td colspan="10" class="empty">暂无归档项目</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -80,38 +78,116 @@
   </div>
 
   <div class="modal-backdrop" id="archiveStorageModal" hidden>
-    <div class="modal-card archive-storage-modal-card" role="dialog" aria-modal="true" aria-label="确认归档">
+    <div class="modal-card archive-storage-modal-card" role="dialog" aria-modal="true" aria-label="归档合同">
       <div class="modal-body">
-        <label class="field-label">存档编号</label>
-        <div class="archive-storage-inputs">
-          <div class="archive-storage-input-group">
-            <label class="field-label" for="archiveFolderInput">文件夹编号</label>
-            <input class="form-control archive-storage-input" id="archiveFolderInput" type="text" maxlength="3" inputmode="numeric" pattern="\d{3}" value="000">
+        <div class="archive-modal-top">
+          <div class="archive-modal-summary">
+            <div class="archive-modal-title" id="archiveModalContractName"></div>
+            <div class="archive-modal-meta" id="archiveModalBusinessNumber"></div>
+            <div class="archive-modal-meta">合同归档编号：<span id="archiveModalContractArchive"></span></div>
+            <div class="archive-modal-meta">归档状态：<span class="status" id="archiveModalStatus"></span></div>
           </div>
-          <div class="archive-storage-input-group">
-            <label class="field-label" for="archiveStorageInput">位置编号</label>
-            <input class="form-control archive-storage-input" id="archiveStorageInput" type="text" maxlength="2" inputmode="numeric" pattern="\d{2}" value="00">
+          <div class="archive-storage-row">
+            <div class="archive-storage-inputs">
+              <div class="archive-storage-input-group">
+                <label class="field-label" for="archiveFolderInput">文件夹编号</label>
+                <input class="form-control archive-storage-input" id="archiveFolderInput" type="text" maxlength="3" inputmode="numeric" pattern="\d{3}" value="000">
+              </div>
+              <div class="archive-storage-input-group">
+                <label class="field-label" for="archiveStorageInput">位置编号</label>
+                <input class="form-control archive-storage-input" id="archiveStorageInput" type="text" maxlength="3" inputmode="numeric" pattern="\d{3}" value="000">
+              </div>
+            </div>
+            <div class="archive-storage-actions">
+              <button class="button" type="button" id="archiveStorageCancel">取消</button>
+              <button class="button primary" type="button" id="archiveStorageConfirm">归档合同</button>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="modal-actions">
-        <button class="button" type="button" id="archiveStorageCancel">取消</button>
-        <button class="button primary" type="button" id="archiveStorageConfirm">确认归档</button>
+        <div class="archive-record-list-block">
+          <div class="archive-record-toolbar">
+            <div class="archive-record-toolbar-main">
+              <label class="archive-record-select-all">
+                <input id="archiveRecordSelectAll" type="checkbox">
+                <span>全选</span>
+              </label>
+              <div class="archive-record-list-title">记录归档编号</div>
+              <select class="form-control archive-volume-filter" id="archiveVolumeFilter" aria-label="筛选分册">
+                <option value="">全部分册</option>
+              </select>
+              <label class="archive-batch-toggle">
+                <input id="archiveBatchToggle" type="checkbox">
+                <span>一键归档</span>
+              </label>
+            </div>
+            <input class="form-control archive-batch-input" id="archiveBatchPositionInput" type="text" maxlength="6" inputmode="numeric" pattern="\d{6}" value="000000" disabled aria-label="一键归档6位位置编号">
+            <button class="button success" id="archiveBatchSaveButton" type="button" disabled>归档记录</button>
+          </div>
+          <div class="archive-record-list" id="archiveRecordList"></div>
+        </div>
       </div>
     </div>
   </div>
 
+  {{ archive_modal_items|json_script:"archiveModalData" }}
   <script>
     const archiveModal = document.querySelector("#archiveStorageModal");
     const archiveFolderInput = document.querySelector("#archiveFolderInput");
     const archiveInput = document.querySelector("#archiveStorageInput");
     const archiveCancelButton = document.querySelector("#archiveStorageCancel");
     const archiveConfirmButton = document.querySelector("#archiveStorageConfirm");
+    const archiveModalDataElement = document.querySelector("#archiveModalData");
+    const archiveModalData = archiveModalDataElement ? JSON.parse(archiveModalDataElement.textContent || "[]") : [];
+    const archiveModalItemsById = new Map(archiveModalData.map((item) => [String(item.id), item]));
+    const archiveModalContractName = document.querySelector("#archiveModalContractName");
+    const archiveModalBusinessNumber = document.querySelector("#archiveModalBusinessNumber");
+    const archiveModalContractArchive = document.querySelector("#archiveModalContractArchive");
+    const archiveModalStatus = document.querySelector("#archiveModalStatus");
+    const archiveRecordList = document.querySelector("#archiveRecordList");
+    const archiveRecordListBlock = document.querySelector(".archive-record-list-block");
+    const archiveRecordSelectAll = document.querySelector("#archiveRecordSelectAll");
+    const archiveVolumeFilter = document.querySelector("#archiveVolumeFilter");
+    const archiveBatchToggle = document.querySelector("#archiveBatchToggle");
+    const archiveBatchPositionInput = document.querySelector("#archiveBatchPositionInput");
+    const archiveBatchSaveButton = document.querySelector("#archiveBatchSaveButton");
+    const archiveProjectTable = document.querySelector("#archiveProjectTable");
+    const listScrollContainer = document.querySelector(".contract-list-page .table-wrap.fill");
     let activeArchiveForm = null;
+    let activeRecordPositions = new Map();
+    let activeRecordMap = new Map();
+    let archiveRecordsEnabled = false;
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function syncArchiveRecordGridGutter() {
+      if (!archiveRecordList || !archiveRecordListBlock) {
+        return;
+      }
+      const gutterWidth = Math.max(0, archiveRecordList.offsetWidth - archiveRecordList.clientWidth);
+      archiveRecordListBlock.style.setProperty("--archive-scrollbar-gutter", `${gutterWidth}px`);
+    }
 
     function normalizeArchiveStorageNumber(value) {
-      const digits = (value || "").replace(/\D/g, "").slice(0, 2);
-      return (digits || "00").padStart(2, "0");
+      const digits = (value || "").replace(/\D/g, "").slice(0, 3);
+      return (digits || "000").padStart(3, "0");
+    }
+
+    function urlWithListState(rawUrl, id = "") {
+      const url = new URL(rawUrl, window.location.origin);
+      url.searchParams.set("next", window.location.pathname + window.location.search);
+      if (id) {
+        url.searchParams.set("return_id", id);
+      }
+      if (listScrollContainer) {
+        url.searchParams.set("scroll", String(Math.round(listScrollContainer.scrollTop)));
+      }
+      return url.pathname + url.search;
     }
 
     function normalizeArchiveFolderNumber(value) {
@@ -123,8 +199,335 @@
       return `${normalizeArchiveFolderNumber(folderNumber)}-${normalizeArchiveStorageNumber(storageNumber)}`;
     }
 
+    // 规范记录位置编号为 6 位数字，空值回退为 000000。
+    function normalizeRecordPositionNumber(value) {
+      const digits = (value || "").replace(/\D/g, "").slice(0, 6);
+      return (digits || "000000").padStart(6, "0");
+    }
+
+    // 判断记录是否填写了有效位置编号。
+    function hasRecordPosition(value) {
+      return normalizeRecordPositionNumber(value) !== "000000";
+    }
+
+    function recordArchiveNumber(record, positionNumber) {
+      if (!activeArchiveForm || !record) {
+        return "";
+      }
+      const item = archiveModalItemsById.get(String(activeArchiveForm.dataset.contractId)) || {};
+      const businessCode = item.raw_business_code || activeArchiveForm.dataset.contractNumber || "";
+      return formatDisplayCode(`${businessCode}${record.date_number || ""}${normalizeRecordPositionNumber(positionNumber)}${record.volume_number || ""}`);
+    }
+
+    function archiveRecordLabel(record, index) {
+      return `${index + 1}. ${record.label || "记录"} ${record.number || ""}`;
+    }
+
+    function visibleArchiveRecordRows() {
+      return Array.from(archiveRecordList?.querySelectorAll(".archive-record-row") || [])
+        .filter((row) => !row.hidden);
+    }
+
+    function checkedArchiveRecordRows() {
+      return Array.from(archiveRecordList?.querySelectorAll(".archive-record-checkbox:checked") || [])
+        .map((checkbox) => checkbox.closest(".archive-record-row"))
+        .filter((row) => row && !row.hidden)
+        .filter(Boolean);
+    }
+
+    function populateArchiveVolumeFilter(records) {
+      if (!archiveVolumeFilter) {
+        return;
+      }
+      const volumes = Array.from(new Set(records.map((record) => String(record.volume_number || "").trim()).filter(Boolean))).sort();
+      archiveVolumeFilter.innerHTML = "";
+      const allOption = document.createElement("option");
+      allOption.value = "";
+      allOption.textContent = "全部分册";
+      archiveVolumeFilter.appendChild(allOption);
+      volumes.forEach((volume) => {
+        const option = document.createElement("option");
+        option.value = volume;
+        option.textContent = `${volume}册`;
+        archiveVolumeFilter.appendChild(option);
+      });
+      archiveVolumeFilter.disabled = !archiveRecordsEnabled || volumes.length === 0;
+      archiveVolumeFilter.value = "";
+    }
+
+    function syncArchiveBatchControls() {
+      const rows = visibleArchiveRecordRows();
+      const checkedRows = checkedArchiveRecordRows();
+      const hasChecked = checkedRows.length > 0;
+      if (archiveRecordSelectAll) {
+        archiveRecordSelectAll.disabled = !archiveRecordsEnabled || !rows.length;
+        archiveRecordSelectAll.checked = rows.length > 0 && checkedRows.length === rows.length;
+        archiveRecordSelectAll.indeterminate = checkedRows.length > 0 && checkedRows.length < rows.length;
+      }
+      if (archiveBatchToggle) {
+        archiveBatchToggle.disabled = !archiveRecordsEnabled || !rows.length;
+      }
+      if (archiveBatchPositionInput) {
+        archiveBatchPositionInput.disabled = !archiveRecordsEnabled || !archiveBatchToggle?.checked || !hasChecked;
+      }
+      if (archiveBatchSaveButton) {
+        archiveBatchSaveButton.disabled = !archiveRecordsEnabled || !hasChecked;
+      }
+    }
+
+    function applyArchiveVolumeFilter() {
+      const volume = archiveVolumeFilter?.value || "";
+      archiveRecordList?.querySelectorAll(".archive-record-row").forEach((row) => {
+        const visible = !volume || row.dataset.volumeNumber === volume;
+        row.hidden = !visible;
+        const checkbox = row.querySelector(".archive-record-checkbox");
+        if (checkbox && !visible) {
+          checkbox.checked = false;
+        }
+      });
+      syncArchiveBatchControls();
+      requestAnimationFrame(syncArchiveRecordGridGutter);
+    }
+
+    function applyBatchPositionToCheckedRows() {
+      if (!archiveBatchToggle?.checked || !archiveBatchPositionInput) {
+        return;
+      }
+      const positionNumber = normalizeRecordPositionNumber(archiveBatchPositionInput.value);
+      archiveBatchPositionInput.value = positionNumber;
+      checkedArchiveRecordRows().forEach((row) => {
+        const input = row.querySelector(".archive-record-position-input");
+        const recordId = row.dataset.recordId;
+        if (input) {
+          input.value = positionNumber;
+        }
+        if (recordId) {
+          activeRecordPositions.set(String(recordId), positionNumber);
+        }
+      });
+    }
+
+    // 判断单条记录归档按钮是否允许保存当前行。
+    function canSaveArchiveRecordRow(row, input) {
+      return Boolean(
+        archiveRecordsEnabled &&
+        row &&
+        input &&
+        (row.dataset.recordArchived === "1" || hasRecordPosition(input.value))
+      );
+    }
+
+    // 同步单条记录输入框和归档按钮的可用状态。
+    function syncArchiveRecordRowControls(row) {
+      const input = row?.querySelector(".archive-record-position-input");
+      const button = row?.querySelector(".archive-record-save-button");
+      if (input) {
+        input.disabled = !archiveRecordsEnabled;
+      }
+      if (button) {
+        button.disabled = !canSaveArchiveRecordRow(row, input);
+      }
+    }
+
+    async function saveArchiveRecordPosition(record, input, label, index, button = null) {
+      if (!record || !activeArchiveForm) {
+        return false;
+      }
+      const row = button?.closest(".archive-record-row") || input.closest(".archive-record-row");
+      const positionNumber = normalizeRecordPositionNumber(input.value);
+      input.value = positionNumber;
+      if (!canSaveArchiveRecordRow(row, input)) {
+        return false;
+      }
+      const originalText = button?.textContent || "";
+      if (button) {
+        button.disabled = true;
+        button.textContent = "归档中";
+      }
+      const formData = new FormData();
+      formData.append("record_position_number", positionNumber);
+      const response = await fetch(record.update_url, {
+        method: "POST",
+        body: formData,
+        headers: {
+          "X-CSRFToken": activeArchiveForm.querySelector("input[name='csrfmiddlewaretoken']")?.value || "",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        record.position_number = data.position_number || positionNumber;
+        record.is_archived = Boolean(data.archive_status?.label === "已归档");
+        record.number = data.record_number || recordArchiveNumber(record, positionNumber);
+        activeRecordPositions.set(String(record.id), record.position_number);
+        if (row) {
+          row.dataset.recordArchived = record.is_archived ? "1" : "0";
+        }
+        label.textContent = archiveRecordLabel(record, index);
+        label.title = label.textContent;
+        if (button) {
+          button.textContent = "已保存";
+          window.setTimeout(() => {
+            button.textContent = originalText;
+            if (row) {
+              syncArchiveRecordRowControls(row);
+            }
+          }, 900);
+        }
+        return true;
+      } else {
+        if (button) {
+          button.textContent = "归档失败";
+          window.setTimeout(() => {
+            button.textContent = originalText;
+            if (row) {
+              syncArchiveRecordRowControls(row);
+            }
+          }, 1200);
+        }
+        return false;
+      }
+    }
+
+    function renderArchiveRecordRows(records) {
+      if (!archiveRecordList) {
+        return;
+      }
+      archiveRecordList.innerHTML = "";
+      activeRecordMap = new Map(records.map((record) => [String(record.id), record]));
+      populateArchiveVolumeFilter(records);
+      if (!records.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "暂无记录";
+        archiveRecordList.appendChild(empty);
+        syncArchiveBatchControls();
+        requestAnimationFrame(syncArchiveRecordGridGutter);
+        return;
+      }
+      records.forEach((record, index) => {
+        const row = document.createElement("div");
+        row.className = "archive-record-row";
+        row.dataset.recordId = String(record.id);
+        row.dataset.recordIndex = String(index);
+        row.dataset.volumeNumber = String(record.volume_number || "");
+        row.dataset.recordArchived = record.is_archived ? "1" : "0";
+
+        const checkbox = document.createElement("input");
+        checkbox.className = "archive-record-checkbox";
+        checkbox.type = "checkbox";
+        checkbox.disabled = !archiveRecordsEnabled;
+        checkbox.setAttribute("aria-label", "选择记录");
+        checkbox.addEventListener("change", () => {
+          syncArchiveBatchControls();
+        });
+
+        const label = document.createElement("div");
+        label.className = "archive-record-name";
+        label.textContent = archiveRecordLabel(record, index);
+        label.title = label.textContent;
+
+        const input = document.createElement("input");
+        input.className = "form-control archive-record-position-input";
+        input.type = "text";
+        input.maxLength = 6;
+        input.inputMode = "numeric";
+        input.pattern = "\\d{6}";
+        input.setAttribute("aria-label", "记录6位位置编号");
+        input.value = activeRecordPositions.get(String(record.id)) || normalizeRecordPositionNumber(record.position_number);
+        input.disabled = !archiveRecordsEnabled;
+        input.addEventListener("input", () => {
+          input.value = input.value.replace(/\D/g, "").slice(0, 6);
+          activeRecordPositions.set(String(record.id), normalizeRecordPositionNumber(input.value));
+          syncArchiveRecordRowControls(row);
+        });
+        input.addEventListener("blur", () => {
+          input.value = normalizeRecordPositionNumber(input.value);
+          activeRecordPositions.set(String(record.id), input.value);
+          syncArchiveRecordRowControls(row);
+        });
+
+        const button = document.createElement("button");
+        button.className = "button archive-record-save-button";
+        button.type = "button";
+        button.textContent = "归档记录";
+        button.addEventListener("click", () => saveArchiveRecordPosition(record, input, label, index, button));
+
+        row.append(checkbox, label, input, button);
+        syncArchiveRecordRowControls(row);
+        archiveRecordList.appendChild(row);
+      });
+      syncArchiveBatchControls();
+      requestAnimationFrame(syncArchiveRecordGridGutter);
+    }
+
+    // 判断合同归档位置是否已经填写到有效编号。
+    function hasArchivePosition(folderNumber, storageNumber) {
+      return normalizeArchiveFolderNumber(folderNumber) !== "000" && normalizeArchiveStorageNumber(storageNumber) !== "000";
+    }
+
+    // 判断归档合同或保存位置按钮是否允许提交。
+    function canSubmitContractArchive() {
+      const item = activeArchiveForm ? archiveModalItemsById.get(String(activeArchiveForm.dataset.contractId)) || {} : {};
+      return Boolean(
+        activeArchiveForm &&
+        activeArchiveForm.dataset.archiveAllowed === "1" &&
+        (item.is_archived || hasArchivePosition(archiveFolderInput.value, archiveInput.value))
+      );
+    }
+
+    // 根据当前合同编号输入同步归档合同按钮状态。
+    function syncArchiveConfirmButton() {
+      archiveConfirmButton.disabled = !canSubmitContractArchive();
+    }
+
+    function refreshArchiveModalPositionState() {
+      archiveModalContractArchive.textContent = archiveDisplayNumber(archiveFolderInput.value, archiveInput.value);
+      if (!activeArchiveForm) {
+        return;
+      }
+      syncArchiveConfirmButton();
+    }
+
+    function renderArchiveModalDetails(form) {
+      const item = archiveModalItemsById.get(String(form.dataset.contractId)) || {};
+      const folderNumber = normalizeArchiveFolderNumber(form.dataset.folderNumber);
+      const storageNumber = normalizeArchiveStorageNumber(form.dataset.storageNumber);
+      let statusLabel = item.status_label || "待归档";
+      let statusClass = item.status_class || "archiving";
+      if (form.dataset.archiveAllowed !== "1") {
+        statusLabel = "缺少文件编号";
+        statusClass = "expired";
+      }
+      archiveModalContractName.textContent = item.name || form.dataset.contractName || "";
+      archiveModalBusinessNumber.textContent = `业务编号：${item.business_code || formatDisplayCode(form.dataset.contractNumber || "")}`;
+      archiveModalContractArchive.textContent = archiveDisplayNumber(folderNumber, storageNumber);
+      archiveModalStatus.textContent = statusLabel;
+      archiveModalStatus.className = `status ${statusClass}`;
+      archiveConfirmButton.textContent = item.is_archived ? "保存位置" : "归档合同";
+      syncArchiveConfirmButton();
+      archiveRecordsEnabled = statusLabel === "已归档";
+      if (archiveBatchToggle) {
+        archiveBatchToggle.checked = false;
+      }
+      if (archiveBatchPositionInput) {
+        archiveBatchPositionInput.value = "000000";
+      }
+      if (archiveRecordSelectAll) {
+        archiveRecordSelectAll.checked = false;
+        archiveRecordSelectAll.indeterminate = false;
+      }
+      activeRecordPositions = new Map((item.records || []).map((record) => [String(record.id), normalizeRecordPositionNumber(record.position_number)]));
+      renderArchiveRecordRows(item.records || []);
+    }
+
     function formatDisplayCode(value) {
       const text = String(value || "");
+      if (/^[A-Za-z]\d{19,}$/.test(text)) {
+        return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 18), text.slice(18, 20), text.slice(20)]
+          .filter(Boolean)
+          .join("-");
+      }
       if (/^[A-Za-z]\d{17,}$/.test(text)) {
         return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 16), text.slice(16, 18), text.slice(18)]
           .filter(Boolean)
@@ -159,26 +562,90 @@
         }
         archiveFolderInput.value = normalizeArchiveFolderNumber(activeArchiveForm.dataset.folderNumber);
         archiveInput.value = normalizeArchiveStorageNumber(activeArchiveForm.dataset.storageNumber);
+        renderArchiveModalDetails(activeArchiveForm);
         archiveModal.hidden = false;
+        requestAnimationFrame(syncArchiveRecordGridGutter);
         archiveFolderInput.focus();
         archiveFolderInput.select();
       });
     });
 
+    window.addEventListener("resize", syncArchiveRecordGridGutter);
+
     archiveFolderInput.addEventListener("input", () => {
       archiveFolderInput.value = archiveFolderInput.value.replace(/\D/g, "").slice(0, 3);
+      refreshArchiveModalPositionState();
     });
 
     archiveFolderInput.addEventListener("blur", () => {
       archiveFolderInput.value = normalizeArchiveFolderNumber(archiveFolderInput.value);
+      refreshArchiveModalPositionState();
     });
 
     archiveInput.addEventListener("input", () => {
-      archiveInput.value = archiveInput.value.replace(/\D/g, "").slice(0, 2);
+      archiveInput.value = archiveInput.value.replace(/\D/g, "").slice(0, 3);
+      refreshArchiveModalPositionState();
     });
 
     archiveInput.addEventListener("blur", () => {
       archiveInput.value = normalizeArchiveStorageNumber(archiveInput.value);
+      refreshArchiveModalPositionState();
+    });
+
+    archiveRecordSelectAll?.addEventListener("change", () => {
+      visibleArchiveRecordRows().forEach((row) => {
+        const checkbox = row.querySelector(".archive-record-checkbox");
+        if (checkbox && !checkbox.disabled) {
+          checkbox.checked = archiveRecordSelectAll.checked;
+        }
+      });
+      syncArchiveBatchControls();
+    });
+
+    archiveVolumeFilter?.addEventListener("change", applyArchiveVolumeFilter);
+
+    archiveBatchToggle?.addEventListener("change", () => {
+      syncArchiveBatchControls();
+    });
+
+    archiveBatchPositionInput?.addEventListener("input", () => {
+      archiveBatchPositionInput.value = archiveBatchPositionInput.value.replace(/\D/g, "").slice(0, 6);
+    });
+
+    archiveBatchPositionInput?.addEventListener("blur", () => {
+      archiveBatchPositionInput.value = normalizeRecordPositionNumber(archiveBatchPositionInput.value);
+    });
+
+    archiveBatchSaveButton?.addEventListener("click", async () => {
+      if (!archiveRecordsEnabled) {
+        return;
+      }
+      applyBatchPositionToCheckedRows();
+      const rows = checkedArchiveRecordRows();
+      if (!rows.length) {
+        return;
+      }
+      const originalText = archiveBatchSaveButton.textContent;
+      archiveBatchSaveButton.disabled = true;
+      archiveBatchSaveButton.textContent = "归档中";
+      let failedCount = 0;
+      for (const row of rows) {
+        const record = activeRecordMap.get(String(row.dataset.recordId));
+        const input = row.querySelector(".archive-record-position-input");
+        const label = row.querySelector(".archive-record-name");
+        const index = Number.parseInt(row.dataset.recordIndex || "0", 10);
+        if (record && input && label) {
+          const saved = await saveArchiveRecordPosition(record, input, label, index);
+          if (!saved) {
+            failedCount += 1;
+          }
+        }
+      }
+      archiveBatchSaveButton.textContent = failedCount ? "归档失败" : "已保存";
+      window.setTimeout(() => {
+        archiveBatchSaveButton.textContent = originalText;
+        syncArchiveBatchControls();
+      }, 900);
     });
 
     archiveCancelButton.addEventListener("click", () => {
@@ -192,7 +659,7 @@
       }
     });
 
-    archiveConfirmButton.addEventListener("click", () => {
+    archiveConfirmButton.addEventListener("click", async () => {
       if (!activeArchiveForm) {
         return;
       }
@@ -200,10 +667,125 @@
       const storageNumber = normalizeArchiveStorageNumber(archiveInput.value);
       archiveFolderInput.value = folderNumber;
       archiveInput.value = storageNumber;
+      syncArchiveConfirmButton();
+      if (archiveConfirmButton.disabled) {
+        return;
+      }
       activeArchiveForm.querySelector('[name="original_contract_folder"]').value = folderNumber;
       activeArchiveForm.querySelector('[name="storage_location_number"]').value = storageNumber;
-      activeArchiveForm.submit();
+      const originalText = archiveConfirmButton.textContent;
+      archiveConfirmButton.disabled = true;
+      archiveConfirmButton.textContent = "保存中";
+      const formData = new FormData(activeArchiveForm);
+      try {
+        const response = await fetch(activeArchiveForm.action, {
+          method: "POST",
+          body: formData,
+          headers: {
+            "X-CSRFToken": activeArchiveForm.querySelector("input[name='csrfmiddlewaretoken']")?.value || "",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+        });
+        if (!response.ok) {
+          archiveModalStatus.textContent = "归档失败";
+          archiveModalStatus.className = "status expired";
+          return;
+        }
+        const data = await response.json();
+        const item = data.item || {};
+        if (item.id) {
+          archiveModalItemsById.set(String(item.id), item);
+        }
+        activeArchiveForm.dataset.folderNumber = data.original_contract_folder || folderNumber;
+        activeArchiveForm.dataset.storageNumber = data.storage_location_number || storageNumber;
+        activeArchiveForm.querySelector('[name="original_contract_folder"]').value = activeArchiveForm.dataset.folderNumber;
+        activeArchiveForm.querySelector('[name="storage_location_number"]').value = activeArchiveForm.dataset.storageNumber;
+        archiveFolderInput.value = normalizeArchiveFolderNumber(activeArchiveForm.dataset.folderNumber);
+        archiveInput.value = normalizeArchiveStorageNumber(activeArchiveForm.dataset.storageNumber);
+        const row = activeArchiveForm.closest("tr");
+        const archiveDisplay = row?.querySelector(".inline-storage-editor .inline-remark-display");
+        if (archiveDisplay && data.archive_number) {
+          const savedArchiveNumber = archiveDisplayNumber(data.archive_number.slice(0, 3), data.archive_number.slice(3, 6));
+          archiveDisplay.textContent = savedArchiveNumber;
+          archiveDisplay.title = savedArchiveNumber;
+        }
+        const statusElement = row?.querySelector(".status");
+        if (statusElement && item.status_label) {
+          statusElement.textContent = item.status_label;
+          statusElement.className = `status ${item.status_class || ""}`;
+        }
+        renderArchiveModalDetails(activeArchiveForm);
+      } catch (error) {
+        archiveModalStatus.textContent = "归档失败";
+        archiveModalStatus.className = "status expired";
+      } finally {
+        syncArchiveConfirmButton();
+        if (archiveConfirmButton.textContent === "保存中") {
+          archiveConfirmButton.textContent = originalText;
+        }
+      }
     });
+
+    function clearArchiveSelection() {
+      document.querySelectorAll("#archiveProjectTable .selectable-row.selected").forEach((row) => {
+        row.classList.remove("selected");
+      });
+    }
+
+    function selectArchiveRow(row) {
+      clearArchiveSelection();
+      row.classList.add("selected");
+    }
+
+    window.clearPageSelection = clearArchiveSelection;
+
+    archiveProjectTable?.addEventListener("click", (event) => {
+      const row = event.target.closest(".selectable-row");
+      if (!row) {
+        clearArchiveSelection();
+        return;
+      }
+      selectArchiveRow(row);
+    });
+
+    archiveProjectTable?.addEventListener("dblclick", (event) => {
+      if (event.target.closest("select, button, a, input, label, .inline-storage-editor")) {
+        return;
+      }
+      const row = event.target.closest(".selectable-row");
+      if (!row || !row.dataset.detailUrl) {
+        return;
+      }
+      selectArchiveRow(row);
+      window.location.href = urlWithListState(row.dataset.detailUrl, row.dataset.contractId);
+    });
+
+    function restoreListState() {
+      const params = new URLSearchParams(window.location.search);
+      const restoreScroll = params.get("restore_scroll");
+      const returnId = params.get("return_id");
+      if (listScrollContainer && restoreScroll !== null) {
+        listScrollContainer.scrollTop = Number.parseInt(restoreScroll, 10) || 0;
+      }
+      if (returnId) {
+        const row = document.querySelector(`#archiveProjectTable .selectable-row[data-contract-id="${returnId}"]`);
+        if (row) {
+          selectArchiveRow(row);
+          if (restoreScroll === null) {
+            row.scrollIntoView({ block: "center" });
+          }
+        }
+      }
+      if (restoreScroll !== null || returnId) {
+        params.delete("restore_scroll");
+        params.delete("return_id");
+        const cleanQuery = params.toString();
+        const cleanUrl = `${window.location.pathname}${cleanQuery ? `?${cleanQuery}` : ""}${window.location.hash}`;
+        window.history.replaceState({}, "", cleanUrl);
+      }
+    }
+
+    requestAnimationFrame(restoreListState);
 
     function closeStorageEditor(editor) {
       editor.classList.remove("editing");
@@ -275,7 +857,7 @@
       const savedFolderNumber = data.original_contract_folder || folderNumber;
       const savedNumber = data.storage_location_number || storageNumber;
       const savedArchiveNumber = data.archive_number
-        ? archiveDisplayNumber(data.archive_number.slice(0, 3), data.archive_number.slice(3, 5))
+        ? archiveDisplayNumber(data.archive_number.slice(0, 3), data.archive_number.slice(3, 6))
         : archiveDisplayNumber(savedFolderNumber, savedNumber);
       const row = editor.closest("tr");
       display.textContent = savedArchiveNumber;
@@ -283,6 +865,14 @@
       folderInput.value = savedFolderNumber;
       input.value = savedNumber;
       row?.querySelector(".archive-business-number")?.replaceChildren(document.createTextNode(formatDisplayCode(data.display_contract_number || "")));
+      const statusElement = row?.querySelector(".status");
+      if (statusElement && data.status_label) {
+        statusElement.textContent = data.status_label;
+        statusElement.className = `status ${data.status_class || ""}`;
+      }
+      if (data.item?.id) {
+        archiveModalItemsById.set(String(data.item.id), data.item);
+      }
       const archiveForm = row?.querySelector(".archive-form");
       if (archiveForm) {
         archiveForm.dataset.contractNumber = data.display_contract_number || archiveForm.dataset.contractNumber || "";
@@ -316,7 +906,7 @@
         folderInput.value = folderInput.value.replace(/\D/g, "").slice(0, 3);
       });
       input.addEventListener("input", () => {
-        input.value = input.value.replace(/\D/g, "").slice(0, 2);
+        input.value = input.value.replace(/\D/g, "").slice(0, 3);
       });
       [folderInput, input].forEach((item) => {
         item.addEventListener("keydown", (event) => {

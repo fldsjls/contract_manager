@@ -1,0 +1,165 @@
+{
+  "exported_at": "2026-05-17T15:20:02.191443+08:00",
+  "policy": {
+    "operation_logs_online_retention": "2 years",
+    "snapshots_online_retention": "12 months",
+    "single_contract_export_affects_global_archive": false
+  },
+  "contract": {
+    "model": "contracts.Contract",
+    "pk": 39,
+    "fields": {
+      "id": 39,
+      "contract_name": "北川羌族自治县中羌医医院消防维护保养",
+      "contract_number": "202605130926",
+      "original_contract_folder": "009",
+      "original_contract_inner_number": "03354",
+      "storage_location_number": "011",
+      "contract_type": "维保",
+      "party_name": "绵阳市第十一中学",
+      "amount": "0.00",
+      "invoice_status": "票已结",
+      "sign_date": "2026-05-13",
+      "start_date": "2026-05-13",
+      "end_date": "2023-02-06",
+      "responsible_person": "",
+      "archive_years": 3,
+      "file": "",
+      "remark": "",
+      "is_archived": true,
+      "archived_at": "2026-05-17T07:20:02.139919+00:00",
+      "is_deleted": false,
+      "deleted_at": null,
+      "created_at": "2026-05-13T01:26:50.312091+00:00",
+      "updated_at": "2026-05-17T07:20:02.139919+00:00"
+    },
+    "versions": [
+      {
+        "version_id": 60,
+        "revision_id": 56,
+        "date_created": "2026-05-16T14:36:35.135313+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（W2603354） | changed fields: 文件夹编号, 文件编号, 位置编号 | IP: 192.168.1.63",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（W2603354）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 39, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605130926\", \"original_contract_folder\": \"009\", \"original_contract_inner_number\": \"03354\", \"storage_location_number\": \"11\", \"contract_type\": \"维保\", \"party_name\": \"绵阳市第十一中学\", \"amount\": \"0.00\", \"invoice_status\": \"票已结\", \"sign_date\": \"2026-05-13\", \"start_date\": \"2026-05-13\", \"end_date\": \"2023-02-06\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": false, \"archived_at\": null, \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-13T01:26:50.312Z\", \"updated_at\": \"2026-05-16T06:36:35.146Z\"}}]\n"
+      },
+      {
+        "version_id": 42,
+        "revision_id": 39,
+        "date_created": "2026-05-14T09:43:16.063048+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（260933540100） | changed fields: 截止日期 | IP: 192.168.1.63",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（260933540100）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 39, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605130926\", \"original_contract_folder\": \"09\", \"original_contract_inner_number\": \"3354\", \"storage_location_number\": \"00\", \"contract_type\": \"维保\", \"party_name\": \"绵阳市第十一中学\", \"amount\": \"0.00\", \"invoice_status\": \"票已结\", \"sign_date\": \"2026-05-13\", \"start_date\": \"2026-05-13\", \"end_date\": \"2023-02-06\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": false, \"archived_at\": null, \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-13T01:26:50.312Z\", \"updated_at\": \"2026-05-14T01:43:16.076Z\"}}]\n"
+      },
+      {
+        "version_id": 19,
+        "revision_id": 17,
+        "date_created": "2026-05-13T13:50:34.349856+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（202609335401） | invoice status: 票已结 | IP: 192.168.1.63",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（202609335401）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 39, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605130926\", \"original_contract_folder\": \"09\", \"original_contract_inner_number\": \"3354\", \"contract_type\": \"维保\", \"party_name\": \"绵阳市第十一中学\", \"amount\": \"0.00\", \"invoice_status\": \"票已结\", \"sign_date\": \"2026-05-13\", \"start_date\": \"2026-05-13\", \"end_date\": \"2026-06-06\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": false, \"archived_at\": null, \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-13T01:26:50.312Z\", \"updated_at\": \"2026-05-13T05:50:34.355Z\"}}]\n"
+      },
+      {
+        "version_id": 11,
+        "revision_id": 10,
+        "date_created": "2026-05-13T10:01:36.633060+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（202609335401） | invoice status: 开收据 | IP: 192.168.1.63",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（202609335401）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 39, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605130926\", \"original_contract_folder\": \"09\", \"original_contract_inner_number\": \"3354\", \"contract_type\": \"维保\", \"party_name\": \"绵阳市第十一中学\", \"amount\": \"0.00\", \"invoice_status\": \"开收据\", \"sign_date\": \"2026-05-13\", \"start_date\": \"2026-05-13\", \"end_date\": \"2026-06-06\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": false, \"archived_at\": null, \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-13T01:26:50.312Z\", \"updated_at\": \"2026-05-13T02:01:36.642Z\"}}]\n"
+      },
+      {
+        "version_id": 10,
+        "revision_id": 9,
+        "date_created": "2026-05-13T10:01:35.363786+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（202609335401） | invoice status: 票已结 | IP: 192.168.1.63",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（202609335401）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 39, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605130926\", \"original_contract_folder\": \"09\", \"original_contract_inner_number\": \"3354\", \"contract_type\": \"维保\", \"party_name\": \"绵阳市第十一中学\", \"amount\": \"0.00\", \"invoice_status\": \"票已结\", \"sign_date\": \"2026-05-13\", \"start_date\": \"2026-05-13\", \"end_date\": \"2026-06-06\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": false, \"archived_at\": null, \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-13T01:26:50.312Z\", \"updated_at\": \"2026-05-13T02:01:35.368Z\"}}]\n"
+      },
+      {
+        "version_id": 9,
+        "revision_id": 8,
+        "date_created": "2026-05-13T10:01:32.783563+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（202609335401） | invoice status: 开收据 | IP: 192.168.1.63",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（202609335401）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 39, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605130926\", \"original_contract_folder\": \"09\", \"original_contract_inner_number\": \"3354\", \"contract_type\": \"维保\", \"party_name\": \"绵阳市第十一中学\", \"amount\": \"0.00\", \"invoice_status\": \"开收据\", \"sign_date\": \"2026-05-13\", \"start_date\": \"2026-05-13\", \"end_date\": \"2026-06-06\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": false, \"archived_at\": null, \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-13T01:26:50.312Z\", \"updated_at\": \"2026-05-13T02:01:32.789Z\"}}]\n"
+      },
+      {
+        "version_id": 8,
+        "revision_id": 7,
+        "date_created": "2026-05-13T10:01:19.719037+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（202609335401） | invoice status: 票已结 | IP: 192.168.1.63",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（202609335401）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 39, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605130926\", \"original_contract_folder\": \"09\", \"original_contract_inner_number\": \"3354\", \"contract_type\": \"维保\", \"party_name\": \"绵阳市第十一中学\", \"amount\": \"0.00\", \"invoice_status\": \"票已结\", \"sign_date\": \"2026-05-13\", \"start_date\": \"2026-05-13\", \"end_date\": \"2026-06-06\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": false, \"archived_at\": null, \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-13T01:26:50.312Z\", \"updated_at\": \"2026-05-13T02:01:19.725Z\"}}]\n"
+      },
+      {
+        "version_id": 7,
+        "revision_id": 6,
+        "date_created": "2026-05-13T09:27:23.691153+08:00",
+        "user": "superuser",
+        "comment": "修改 | 合同 | 北川羌族自治县中羌医医院消防维护保养（202609335401） | changed fields: 文件夹编号, 文件编号 | IP: 192.168.1.63",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（202609335401）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 39, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605130926\", \"original_contract_folder\": \"09\", \"original_contract_inner_number\": \"3354\", \"contract_type\": \"维保\", \"party_name\": \"绵阳市第十一中学\", \"amount\": \"0.00\", \"invoice_status\": \"开收据\", \"sign_date\": \"2026-05-13\", \"start_date\": \"2026-05-13\", \"end_date\": \"2026-06-06\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": false, \"archived_at\": null, \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-13T01:26:50.312Z\", \"updated_at\": \"2026-05-13T01:27:23.700Z\"}}]\n"
+      },
+      {
+        "version_id": 5,
+        "revision_id": 5,
+        "date_created": "2026-05-13T09:26:50.255094+08:00",
+        "user": "superuser",
+        "comment": "新增 | 合同 | 北川羌族自治县中羌医医院消防维护保养（202605130926） | uploaded contract files: 1 | IP: 192.168.1.63",
+        "object_repr": "北川羌族自治县中羌医医院消防维护保养（202605130926）",
+        "format": "json",
+        "serialized_data": "[{\"model\": \"contracts.contract\", \"pk\": 39, \"fields\": {\"contract_name\": \"北川羌族自治县中羌医医院消防维护保养\", \"contract_number\": \"202605130926\", \"original_contract_folder\": \"\", \"original_contract_inner_number\": \"\", \"contract_type\": \"维保\", \"party_name\": \"绵阳市第十一中学\", \"amount\": \"0\", \"invoice_status\": \"开收据\", \"sign_date\": \"2026-05-13\", \"start_date\": \"2026-05-13\", \"end_date\": \"2026-06-06\", \"responsible_person\": \"\", \"archive_years\": 3, \"file\": \"\", \"remark\": \"\", \"is_archived\": false, \"archived_at\": null, \"is_deleted\": false, \"deleted_at\": null, \"created_at\": \"2026-05-13T01:26:50.312Z\", \"updated_at\": \"2026-05-13T01:26:50.321Z\"}}]\n"
+      }
+    ]
+  },
+  "related": {
+    "contract_files": [
+      {
+        "model": "contracts.ContractFile",
+        "pk": 45,
+        "fields": {
+          "id": 45,
+          "contract": 39,
+          "file": "contracts/维保/北川羌族自治县中羌医医院消防维护保养/合同文件/现场排查情况统计表.xlsx",
+          "original_name": "现场排查情况统计表.xlsx",
+          "sort_order": 0,
+          "created_at": "2026-05-13T01:26:50.414093+00:00"
+        },
+        "versions": [
+          {
+            "version_id": 6,
+            "revision_id": 5,
+            "date_created": "2026-05-13T09:26:50.255094+08:00",
+            "user": "superuser",
+            "comment": "新增 | 合同 | 北川羌族自治县中羌医医院消防维护保养（202605130926） | uploaded contract files: 1 | IP: 192.168.1.63",
+            "object_repr": "现场排查情况统计表.xlsx",
+            "format": "json",
+            "serialized_data": "[{\"model\": \"contracts.contractfile\", \"pk\": 45, \"fields\": {\"contract\": 39, \"file\": \"contracts/维保/北川羌族自治县中羌医医院消防维护保养/合同文件/现场排查情况统计表.xlsx\", \"original_name\": \"现场排查情况统计表.xlsx\", \"sort_order\": 0, \"created_at\": \"2026-05-13T01:26:50.414Z\"}}]\n"
+          }
+        ]
+      }
+    ],
+    "settlement_files": [],
+    "invoice_records": [],
+    "payment_records": [],
+    "maintenance_records": [],
+    "invoice_record_file_versions": [],
+    "payment_record_file_versions": [],
+    "maintenance_record_file_versions": []
+  },
+  "archive_reason": "contract archived"
+}

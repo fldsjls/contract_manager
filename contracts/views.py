@@ -448,7 +448,7 @@ def role_label_for_request(request) -> str:
 # 按当前用户权限组装使用文档章节。
 def usage_docs_for_request(request) -> list[dict]:
     common_read = [
-        "在合同列表中搜索合同名称、业务编号、合同编号、甲方名称或负责人，也可以用业务编号查找合同文件或记录文件的存档编号。",
+        "在合同列表中搜索合同名称、业务编号、合同编号、甲方名称或负责人；记录整理仅对管理员/超级管理员显示，用于查找合同文件或记录文件的存档编号。",
         "单击表格行可选中项目，双击或点击查看详情进入合同详情。",
         "在详情页查看合同基础信息、合同文件和项目记录。",
     ]
@@ -458,8 +458,8 @@ def usage_docs_for_request(request) -> list[dict]:
             "items": [
                 "默认编号是系统自动生成的 12 位合同基础编号，用于保证每份合同在数据库和文件目录中有稳定标识；新增和编辑合同页面中不可手动修改。",
                 "业务编号是面向日常业务使用的合同编号，由合同类型代码、年份后两位和 5 位文件编号组成，例如维保合同会显示为 W-26-00001；如果文件编号缺失，页面会临时回退显示默认编号。",
-                "存档编号用于纸质或归档文件定位，合同文件存档编号由 3 位文件夹编号和 2 位位置编号组成，页面显示为“文件夹编号-位置编号”，例如 011-00。",
-                "项目记录文件编号在业务编号后继续拼接 4 位年月编号（年份后两位 + 月份两位）、4 位位置编号和 2 位分册编号，形成“业务编号-年月编号-位置编号-分册编号”的记录编号，用于区分同一合同下的不同记录文件。",
+                "存档编号用于纸质或归档文件定位，合同文件存档编号由 3 位文件夹编号和 3 位位置编号组成，页面显示为“文件夹编号-位置编号”，例如 011-011。",
+                "项目记录文件编号在业务编号后继续拼接 4 位年月编号（年份后两位 + 月份两位）、6 位位置编号（柜号 2 位 + 栏目 2 位 + 排位 2 位）和 2 位分册编号，形成“业务编号-年月编号-位置编号-分册编号”的记录编号，用于区分同一合同下的不同记录文件。",
                 "查询和导入时，合同编号、业务编号、带横线业务编号、存档编号和合同名称都可以作为定位合同的线索；系统会先去掉横线和空格，再按内部编号匹配。",
                 "代码中的 contract_number 表示默认编号，display_contract_number 表示业务编号，archive_number_display 表示存档编号；模板显示时分别通过 display_code 和 archive_code 转成带横线的可读格式。",
             ],
@@ -472,7 +472,7 @@ def usage_docs_for_request(request) -> list[dict]:
                 "未开启插入重排序时，新增 02 册及后续分册会追加到当前最大实序编号之后，适合把新记录放到现有档案末尾。",
                 "开启插入重排序时，新分册按“上一分册实序编号 + 1”插入，并把该位置之后的排位整体后移 1；因此 02 册不会跳过 01 册直接生成，03 册也会接在 02 册之后。",
                 "正常生成实序编号时，系统会把已生效的空排位视为档案柜中真实空出的位置：只有目标实序编号正好落到空排位上时，才会向后顺延到下一个可用排位；目标前方的空排位不会额外影响当前目标编号。",
-                "位置编号由实序编号和设置页的起始界限点、柜号范围、栏目量、栏目存放数、存放栏目、存放逻辑共同换算；记录表单中的位置编号是 4 位可见值，排位字段保存 6 位实际位置（柜号 2 位 + 栏目 2 位 + 排位 2 位）。",
+                "位置编号由实序编号和设置页的起始界限点、柜号范围、栏目量、栏目存放数、存放栏目、存放逻辑共同换算；记录表单中的位置编号是 6 位实际排位（柜号 2 位 + 栏目 2 位 + 排位 2 位）。",
                 "设置页的剩余排位数按当前柜号范围和存放逻辑计算容量，再扣除“最大实序编号 - 起始界限点 + 1”，最后加上可复用的空排位；剩余为 0 时，新增项目记录页面会把保存按钮置灰，避免继续写入超出范围的位置。",
                 "排位预留值按 6 位实际位置填写，多个值用英文分号分隔，例如 011205;020101；当该排位换算出的实序编号大于当前最大实序编号时，它只作为等待值保存在设置中，不进入空排位池。",
                 "当排位预留值换算出的实序编号不大于当前最大实序编号时，它会进入空排位池，效果等同于合同归档后释放的空排位；已进入空排位池的值会被锁定保存，即使从输入框删除也会重新显示，只有仍在等待中的值可以真正删除。",
@@ -542,8 +542,12 @@ def usage_docs_for_request(request) -> list[dict]:
             "title": "归档与回收逻辑",
             "items": [
                 "合同截止日期早于当前日期时显示已到期；超过归档年限后进入待归档状态。",
-                "归档时会保存独立的位置编号，并导出一份合同快照 JSON 用于留存。",
-                "归档后会清理该合同及关联记录的历史版本，减少长期数据占用。",
+                "归档合同需要填写有效的 3 位文件夹编号和 3 位位置编号；已归档合同如果把文件夹或位置保存回 000，合同会退回待归档状态。",
+                "合同归档和记录归档是两层状态：合同归档只代表合同文件完成归档，并不自动把该合同下的项目记录标记为已归档。",
+                "项目记录必须在归档项目弹窗中点击单条或批量“归档记录”按钮后，才会写入记录级归档标记；只填写记录位置编号但未点击归档按钮，记录整理页仍显示待归档。",
+                "记录归档保存 000000 会撤回该条记录的已归档标记，使记录整理页重新显示待归档；同一合同下不同记录可以分别处于待归档或已归档。",
+                "归档合同时会保存独立的位置编号，并导出一份合同快照 JSON 用于留存。",
+                "合同归档后会清理该合同及关联记录的历史版本，减少长期数据占用。",
                 "删除合同不会立即物理删除，而是移入回收站；回收站内项目可在保留期内恢复。",
                 "回收站中的合同超过系统保留天数后会在访问回收站时自动清理。",
             ],
@@ -1415,7 +1419,7 @@ def project_mode_chart_rows(rows: list[dict], records) -> list[dict]:
 # 根据系统设置和分册编号计算项目记录位置编号。
 def auto_record_position_number(contract: Contract, volume_number: str, setting: AppSetting | None = None) -> str:
     sequence_number = record_real_sequence_number(contract, volume_number, setting)
-    return record_position_number_from_sequence(sequence_number, setting)
+    return shelf_position_number_from_sequence(sequence_number, setting)
 
 
 # 根据合同文件编号和分册编号计算项目记录不可见实序编号。
@@ -1706,7 +1710,7 @@ def sync_reserved_record_positions(setting: AppSetting, remove_values: list[str]
 
 
 def update_records_for_volume_sequence(sequence: MaintenanceRecordVolumeSequence, setting: AppSetting) -> int:
-    position_number = record_position_number_from_sequence(sequence.real_sequence_number, setting)
+    position_number = shelf_position_number_from_sequence(sequence.real_sequence_number, setting)
     shelf_position_number = shelf_position_number_from_sequence(sequence.real_sequence_number, setting)
     if sequence.shelf_position_number != shelf_position_number:
         sequence.shelf_position_number = shelf_position_number
@@ -1866,7 +1870,7 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
                 record_date=parsed_record_date,
                 month=month,
                 date_number=normalize_record_date_number(date_number, parsed_record_date),
-                record_position_number=record_position_number_from_sequence(real_sequence, setting),
+                record_position_number=shelf_position_number_from_sequence(real_sequence, setting),
                 storage_location_number=normalize_record_volume_number(storage_location),
                 remark=remark,
             )
@@ -1922,13 +1926,124 @@ def archive_pending_contracts() -> list[Contract]:
     return [contract for contract in contracts if contract.status == "待归档"]
 
 
-# 查询归档页合同：待归档排前，已归档在后，各自按截止日期升序。
+# 查询归档页合同：默认按截止日期升序，可按页面表头切换排序。
 # 获取归档页面展示的合同列表。
-def archive_contracts_for_page() -> list[Contract]:
+def archive_contracts_for_page(sort: str = "end_date", direction: str = "asc") -> list[Contract]:
     contracts = Contract.objects.filter(is_deleted=False, end_date__isnull=False).order_by("end_date", "id")
-    pending = [contract for contract in contracts if contract.status == "待归档"]
-    archived = [contract for contract in contracts if contract.status == "已归档"]
-    return pending + archived
+    items = [contract for contract in contracts if contract.status in {"待归档", "已归档"}]
+    for contract in items:
+        contract.archive_status_info = record_archive_status_for_contract(contract)
+    sort_getters = {
+        "contract_name": lambda item: item.contract_name or "",
+        "contract_number": lambda item: item.display_contract_number or "",
+        "party_name": lambda item: item.party_name or "",
+        "amount": lambda item: item.amount or Decimal("0"),
+        "end_date": lambda item: item.end_date or date.max,
+        "archived_at": lambda item: item.archived_at or timezone.datetime.min.replace(tzinfo=timezone.get_current_timezone()),
+        "archive_number": lambda item: item.archive_number_display or "",
+        "status": lambda item: item.archive_status_info["label"],
+    }
+    if sort not in sort_getters:
+        sort = "end_date"
+    items.sort(key=lambda item: (sort_getters[sort](item), item.id), reverse=direction == "desc")
+    return items
+
+
+# 判断合同是否已经填写有效的归档文件夹和位置编号。
+def contract_has_archive_position(contract: Contract) -> bool:
+    folder_number = normalize_contract_number_part(contract.original_contract_folder, 3)
+    storage_number = normalize_storage_location_number(contract.storage_location_number)
+    return bool(folder_number and folder_number != "000" and storage_number != "000")
+
+
+# 根据合同自身归档标记和归档位置生成合同级归档状态。
+def record_archive_status_for_contract(contract: Contract) -> dict:
+    if contract.status == "待归档":
+        return {"label": "待归档", "class": "archiving"}
+    if contract.is_archived:
+        if contract_has_archive_position(contract):
+            return {"label": "已归档", "class": "archived"}
+        return {"label": "待归档", "class": "archiving"}
+    return {"label": "存档中", "class": "active"}
+
+
+# 根据合同前置状态和记录独立归档标记生成记录级归档状态。
+def record_archive_status_for_record(record: MaintenanceRecord) -> dict:
+    contract = record.contract
+    if not contract.is_archived or not contract_has_archive_position(contract):
+        if contract.status == "待归档":
+            return {"label": "待归档", "class": "archiving"}
+        return {"label": "存档中", "class": "active"}
+    if record.is_archived and normalize_record_position_number(record.record_position_number) != "000000":
+        return {"label": "已归档", "class": "archived"}
+    return {"label": "待归档", "class": "archiving"}
+
+
+# 将 6 位归档编号转换为页面使用的带横线格式。
+def archive_code_for_ui(value: str) -> str:
+    text = str(value or "").strip()
+    if len(text) == 6 and text.isdigit():
+        return f"{text[:3]}-{text[3:]}"
+    return text
+
+
+# 组装归档弹窗所需的合同和项目记录编号数据。
+def archive_modal_items(contracts: list[Contract]) -> list[dict]:
+    items = []
+    for contract in contracts:
+        record_items = []
+        for record in contract.maintenancerecord_set.all().order_by("record_date", "id"):
+            date_number = normalize_record_date_number(record.date_number, record.record_date)
+            position_number = normalize_record_position_number(record.record_position_number)
+            volume_number = normalize_record_volume_number(record.storage_location_number)
+            record_items.append(
+                {
+                    "id": record.pk,
+                    "number": display_code_for_ui(
+                        maintenance_record_number(
+                            contract,
+                            record.record_date,
+                            volume_number,
+                            position_number,
+                            date_number,
+                        )
+                    ),
+                    "business_code": contract.display_contract_number,
+                    "date_number": date_number,
+                    "position_number": position_number,
+                    "is_archived": record.is_archived,
+                    "volume_number": volume_number,
+                    "label": f"{record.record_date.strftime('%Y-%m-%d') if record.record_date else date_number} {volume_number}册",
+                    "remark": record.remark or "",
+                    "update_url": reverse("contracts:record_archive_position_update", args=[record.pk]),
+                }
+            )
+        first_record = record_items[0] if record_items else None
+        record_position_number = first_record["position_number"] if first_record else "000000"
+        record_archive_number = (
+            display_code_for_ui(
+                f"{contract.display_contract_number}{first_record['date_number']}{first_record['position_number']}{first_record['volume_number']}"
+            )
+            if first_record
+            else ""
+        )
+        archive_status = record_archive_status_for_contract(contract)
+        items.append(
+            {
+                "id": contract.pk,
+                "name": contract.contract_name,
+                "business_code": display_code_for_ui(contract.display_contract_number),
+                "raw_business_code": contract.display_contract_number,
+                "archive_code": archive_code_for_ui(contract.archive_number_display),
+                "status_label": archive_status["label"],
+                "status_class": archive_status["class"],
+                "is_archived": contract.is_archived,
+                "record_position_number": record_position_number,
+                "record_archive_number": record_archive_number,
+                "records": record_items,
+            }
+        )
+    return items
 
 
 # 把按日期汇总的数据转换成 SVG 折线图坐标。
@@ -3374,7 +3489,6 @@ def production_keyword_matches(contract: Contract, keyword: str) -> bool:
 def contracts_for_list_request(request):
     # 合同列表和 Excel 导出共用这一套搜索、筛选、排序规则，避免两处结果不一致。
     keyword = request.GET.get("q", "").strip()
-    archive_keyword = request.GET.get("archive_q", "").strip()
     filter_contract_type = request.GET.get("contract_type", "").strip()
     filter_invoice_status = request.GET.get("invoice_status", "").strip()
     filter_status = request.GET.get("status", "").strip()
@@ -3426,9 +3540,7 @@ def contracts_for_list_request(request):
         contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
 
     contracts = list(contracts)
-    if archive_keyword:
-        contracts = [contract for contract in contracts if archive_lookup_matches(contract, archive_keyword)]
-    if not keyword and not archive_keyword and filter_status not in {"待归档", "已归档"}:
+    if not keyword and filter_status not in {"待归档", "已归档"}:
         contracts = [contract for contract in contracts if contract.status not in {"待归档", "已归档"}]
     if filter_status in status_choices:
         contracts = [contract for contract in contracts if contract.status == filter_status]
@@ -3832,7 +3944,6 @@ def clear_contract_snapshot_versions(contract: Contract) -> int:
 def contract_list(request):
     purge_expired_trash()
     keyword = request.GET.get("q", "").strip()
-    archive_keyword = request.GET.get("archive_q", "").strip()
     filter_contract_type = request.GET.get("contract_type", "").strip()
     filter_invoice_status = request.GET.get("invoice_status", "").strip()
     filter_status = request.GET.get("status", "").strip()
@@ -3886,9 +3997,7 @@ def contract_list(request):
         contracts = contracts.order_by(f"{prefix}{sort_fields[sort]}", "id")
 
     contracts = list(contracts)
-    if archive_keyword:
-        contracts = [contract for contract in contracts if archive_lookup_matches(contract, archive_keyword)]
-    if not keyword and not archive_keyword and filter_status not in {"待归档", "已归档"}:
+    if not keyword and filter_status not in {"待归档", "已归档"}:
         contracts = [contract for contract in contracts if contract.status not in {"待归档", "已归档"}]
     if filter_status:
         contracts = [contract for contract in contracts if contract.status == filter_status]
@@ -3911,14 +4020,16 @@ def contract_list(request):
     hydrate_contract_file_status(contracts)
     hydrate_contract_record_counts(contracts)
     query_params = request.GET.copy()
+    query_params.pop("archive_q", None)
     query_params.pop("sort", None)
     query_params.pop("direction", None)
+    export_params = request.GET.copy()
+    export_params.pop("archive_q", None)
     context = context_with_auth(
         request,
         {
             "contracts": contracts,
             "keyword": keyword,
-            "archive_keyword": archive_keyword,
             "sort": sort,
             "direction": direction,
             "show_sort_indicator": explicit_sort,
@@ -3943,9 +4054,8 @@ def contract_list(request):
             "status_choices": status_choices,
             "has_filters": bool(filter_contract_type or filter_invoice_status or filter_status or filter_responsible_person),
             "query_base": query_params.urlencode(),
-            "export_query": request.GET.urlencode(),
+            "export_query": export_params.urlencode(),
             "expiring_contracts": expiring_contract_queryset(),
-            "archive_lookup_items": project_code_lookup_items(),
             "active_nav": "contracts",
         },
     )
@@ -4745,6 +4855,206 @@ def project_code_lookup_items() -> list[dict]:
     return items
 
 
+def record_organizer_rows(
+    keyword: str = "",
+    sort: str = "created_at",
+    direction: str = "desc",
+    contract_type: str = "",
+    archive_status: str = "",
+    file_status: str = "",
+) -> list[dict]:
+    valid_contract_types = {value for value, _ in Contract.CONTRACT_TYPES}
+    if contract_type not in valid_contract_types:
+        contract_type = ""
+    if archive_status not in {"存档中", "待归档", "已归档"}:
+        archive_status = ""
+    if file_status not in {"uploaded", "missing"}:
+        file_status = ""
+    records = list(
+        MaintenanceRecord.objects.select_related("contract")
+        .filter(contract__is_deleted=False)
+        .order_by("-created_at", "-id")
+    )
+    if contract_type:
+        records = [record for record in records if record.contract.contract_type == contract_type]
+    sequence_map = {
+        (sequence.contract_id, normalize_record_volume_number(sequence.storage_location_number)): sequence
+        for sequence in MaintenanceRecordVolumeSequence.objects.filter(
+            contract_id__in=[record.contract_id for record in records],
+            is_reserved=False,
+        )
+    }
+    compact_keyword = compact_archive_lookup_text(keyword)
+    rows = []
+    for record in records:
+        contract = record.contract
+        volume_number = normalize_record_volume_number(record.storage_location_number)
+        sequence = sequence_map.get((record.contract_id, volume_number))
+        record_number = maintenance_record_number(
+            contract,
+            record.record_date,
+            volume_number,
+            record.record_position_number,
+            record.date_number,
+        )
+        row = {
+            "record": record,
+            "contract": contract,
+            "record_number": record_number,
+            "archive_status": record_archive_status_for_record(record),
+            "real_sequence_number": sequence.real_sequence_number if sequence else "",
+            "shelf_position_number": sequence.shelf_position_number if sequence else normalize_record_position_number(record.record_position_number),
+            "volume_number": volume_number,
+            "file_is_uploaded": bool(record.file),
+        }
+        if archive_status and row["archive_status"]["label"] != archive_status:
+            continue
+        if file_status == "uploaded" and not row["file_is_uploaded"]:
+            continue
+        if file_status == "missing" and row["file_is_uploaded"]:
+            continue
+        if compact_keyword:
+            values = [
+                contract.contract_name,
+                contract.party_name,
+                contract.display_contract_number,
+                display_code_for_ui(contract.display_contract_number),
+                contract.archive_number_display,
+                record_number,
+                display_code_for_ui(record_number),
+                row["shelf_position_number"],
+                row["real_sequence_number"],
+            ]
+            if not any(compact_keyword in compact_archive_lookup_text(value) for value in values):
+                continue
+        rows.append(row)
+    sort_getters = {
+        "contract_name": lambda item: item["contract"].contract_name or "",
+        "contract_number": lambda item: item["contract"].display_contract_number or "",
+        "real_sequence_number": lambda item: item["real_sequence_number"] if item["real_sequence_number"] != "" else -1,
+        "shelf_position_number": lambda item: item["shelf_position_number"] or "",
+        "volume_number": lambda item: item["volume_number"] or "",
+        "file_time": lambda item: item["record"].record_date or date.min,
+        "created_at": lambda item: item["record"].created_at or timezone.datetime.min.replace(tzinfo=timezone.get_current_timezone()),
+        "remark": lambda item: item["record"].remark or "",
+        "archive_status": lambda item: item["archive_status"]["label"],
+        "file": lambda item: item["file_is_uploaded"],
+    }
+    if sort not in sort_getters:
+        sort = "created_at"
+    rows.sort(key=lambda item: (sort_getters[sort](item), item["record"].id), reverse=direction == "desc")
+    return rows
+
+
+@true_admin_required
+def record_organizer(request):
+    archive_keyword = request.GET.get("archive_q", "").strip()
+    filter_contract_type = request.GET.get("contract_type", "").strip()
+    filter_archive_status = request.GET.get("archive_status", "").strip()
+    filter_file_status = request.GET.get("file_status", "").strip()
+    explicit_sort = "sort" in request.GET
+    sort = request.GET.get("sort", "created_at").strip()
+    direction = request.GET.get("direction", "desc").strip()
+    if direction not in ("asc", "desc"):
+        direction = "desc"
+    archive_status_choices = ["存档中", "待归档", "已归档"]
+    file_status_choices = [("uploaded", "已上传"), ("missing", "未上传")]
+    if filter_archive_status not in archive_status_choices:
+        filter_archive_status = ""
+    if filter_file_status not in {value for value, _label in file_status_choices}:
+        filter_file_status = ""
+    valid_contract_types = {value for value, _label in Contract.CONTRACT_TYPES}
+    if filter_contract_type not in valid_contract_types:
+        filter_contract_type = ""
+    rows = record_organizer_rows(
+        archive_keyword,
+        sort,
+        direction,
+        filter_contract_type,
+        filter_archive_status,
+        filter_file_status,
+    )
+    query_params = request.GET.copy()
+    query_params.pop("sort", None)
+    query_params.pop("direction", None)
+    clear_filter_params = request.GET.copy()
+    clear_filter_params.pop("contract_type", None)
+    clear_filter_params.pop("archive_status", None)
+    clear_filter_params.pop("file_status", None)
+    clear_filter_params.pop("sort", None)
+    clear_filter_params.pop("direction", None)
+    context = context_with_auth(
+        request,
+        {
+            "rows": rows,
+            "archive_keyword": archive_keyword,
+            "contract_type_filter": filter_contract_type,
+            "archive_status_filter": filter_archive_status,
+            "file_status_filter": filter_file_status,
+            "contract_type_choices": Contract.CONTRACT_TYPES,
+            "archive_status_choices": archive_status_choices,
+            "file_status_choices": file_status_choices,
+            "has_filters": bool(filter_contract_type or filter_archive_status or filter_file_status),
+            "sort": sort,
+            "direction": direction,
+            "show_sort_indicator": explicit_sort,
+            "query_base": query_params.urlencode(),
+            "clear_filter_query": clear_filter_params.urlencode(),
+            "export_query": request.GET.urlencode(),
+            "archive_lookup_items": project_code_lookup_items(),
+            "archive_pending_contracts": archive_pending_contracts(),
+            "active_nav": "record_organizer",
+        },
+    )
+    return render(request, "contracts/record_organizer.html", context)
+
+
+@true_admin_required
+def record_organizer_export(request):
+    archive_keyword = request.GET.get("archive_q", "").strip()
+    filter_contract_type = request.GET.get("contract_type", "").strip()
+    filter_archive_status = request.GET.get("archive_status", "").strip()
+    filter_file_status = request.GET.get("file_status", "").strip()
+    sort = request.GET.get("sort", "created_at").strip()
+    direction = request.GET.get("direction", "desc").strip()
+    if direction not in ("asc", "desc"):
+        direction = "desc"
+    rows = record_organizer_rows(
+        archive_keyword,
+        sort,
+        direction,
+        filter_contract_type,
+        filter_archive_status,
+        filter_file_status,
+    )
+    headers = ["序号", "合同名称", "添加时间", "业务编号", "实序编号", "位置编号", "分册编号", "文件时间", "备注", "状态", "文件"]
+    export_rows = []
+    for index, row in enumerate(rows, start=1):
+        record = row["record"]
+        contract = row["contract"]
+        export_rows.append(
+            [
+                index,
+                contract.contract_name,
+                timezone.localtime(record.created_at).strftime("%Y-%m-%d %H:%M:%S") if record.created_at else "",
+                display_code_for_ui(contract.display_contract_number),
+                row["real_sequence_number"],
+                row["shelf_position_number"],
+                row["volume_number"],
+                record.record_date.strftime("%Y-%m-%d") if record.record_date else "",
+                record.remark or "",
+                row["archive_status"]["label"],
+                "已上传" if row["file_is_uploaded"] else "未上传",
+            ]
+        )
+    response = HttpResponse(
+        build_contract_list_xlsx(headers, export_rows, numeric_columns=set()),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="record_organizer.xlsx"'
+    return response
+
+
 # 按字段映射解析票据或项目记录导入工作表。
 def parse_record_import_rows_from_sheet(rows, field_map, row_builder):
     if not rows:
@@ -4904,8 +5214,8 @@ def parse_maintenance_import_xlsx(uploaded_file):
         compact_record_key = re.sub(r"[-\s]", "", record_key)
         if len(compact_record_key) >= 20 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
             contract_key = compact_record_key[:8]
-            date_number = value_for("date_number") or compact_record_key[8:14]
-            record_position = value_for("record_position_number") or compact_record_key[14:18]
+            date_number = value_for("date_number") or compact_record_key[8:12]
+            record_position = value_for("record_position_number") or compact_record_key[12:18]
             storage_location = value_for("storage_location_number") or compact_record_key[18:20]
         elif len(compact_record_key) >= 19 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
             contract_key = compact_record_key[:8]
@@ -5092,7 +5402,7 @@ def contract_import_template(request):
         "负责人": "填写负责人姓名。",
         "文件夹编号": "填写 3 位文件夹编号，例如 001。",
         "文件编号": "填写 5 位文件编号，例如 00001。",
-        "位置编号": "填写 2 位位置编号，前一位为柜号，后一位为层号，例如 12。",
+        "位置编号": "填写 3 位位置编号，例如 011。",
         "归档时间（年）": "填写归档年限数字，例如 3。",
         "备注": "可选。填写合同备注。",
     }
@@ -5111,7 +5421,7 @@ def contract_import_template(request):
         "负责人": "可选。填写后修改负责人，留空则不改。",
         "文件编号": "可选。填写 5 位文件编号；按默认编号匹配时允许修改业务编号中的文件编号部分，留空则不改。",
         "文件夹编号": "可选。填写 3 位文件夹编号，留空则不改。",
-        "位置编号": "可选。填写 2 位位置编号，留空则不改。",
+        "位置编号": "可选。填写 3 位位置编号，留空则不改。",
         "归档时间（年）": "可选。填写归档年限数字，留空则不改。",
         "备注": "可选。填写后修改合同备注，留空则不改。",
     })
@@ -5120,7 +5430,7 @@ def contract_import_template(request):
         "业务编号": "必填。填写已有业务编号，可带横线；该工作表不会修改业务编号本身。",
         "负责人": "可选。填写后修改已有合同负责人，留空则不改。",
         "文件夹编号": "可选。填写 3 位文件夹编号，留空则不改。",
-        "位置编号": "可选。填写 2 位位置编号，留空则不改。",
+        "位置编号": "可选。填写 3 位位置编号，留空则不改。",
         "归档时间（年）": "可选。填写归档年限数字，留空则不改。",
         "备注": "可选。填写后修改合同备注，留空则不改。",
     }
@@ -5182,7 +5492,7 @@ def record_import_template(request):
     comments = {
         "业务编号": "填写已有业务编号或合同名称，用于匹配合同。",
         "日期": "必填。日期格式：YYYY-MM-DD。",
-        "位置编号": "填写 4 位记录位置编号，前两位为柜号，后两位为栏目，例如 0101。",
+        "位置编号": "填写 6 位记录位置编号，前两位为柜号，中间两位为栏目，后两位为排位，例如 010501。",
         "分册编号": "填写 2 位分册编号，例如 00。",
         "备注": "可选。填写项目记录备注。",
     }
@@ -5298,7 +5608,7 @@ def contract_import(request):
                             record.month = month
                             record.date_number = date_number
                             record.storage_location_number = normalize_record_volume_number(data.get("storage_location_number"))
-                            record.record_position_number = normalize_record_position_number(data.get("record_position_number") or record_position_number_from_sequence(real_sequence, app_setting))
+                            record.record_position_number = normalize_record_position_number(data.get("record_position_number") or shelf_position_number_from_sequence(real_sequence, app_setting))
                             record.remark = data.get("remark", "")
                             record.save(
                                 update_fields=[
@@ -5321,7 +5631,7 @@ def contract_import(request):
                                 month=month,
                                 date_number=date_number,
                                 storage_location_number=normalize_record_volume_number(data.get("storage_location_number")),
-                                record_position_number=normalize_record_position_number(data.get("record_position_number") or record_position_number_from_sequence(real_sequence, app_setting)),
+                                record_position_number=normalize_record_position_number(data.get("record_position_number") or shelf_position_number_from_sequence(real_sequence, app_setting)),
                                 remark=data.get("remark", ""),
                             )
                             log_action = "新增"
@@ -5430,11 +5740,16 @@ def contract_import(request):
             )
             return render(request, "contracts/contract_import.html", context)
     else:
+        import_kind = request.GET.get("import_kind", "contract")
+        if import_kind not in {"contract", "invoice", "maintenance"}:
+            import_kind = "contract"
+        if is_normal_mode(request) and import_kind != "contract":
+            import_kind = "contract"
         upload_form = ContractImportUploadForm()
     return render(
         request,
         "contracts/contract_import.html",
-        contract_import_preview_context(request, upload_form, selected_contract=selected_contract),
+        contract_import_preview_context(request, upload_form, selected_contract=selected_contract, import_kind=import_kind),
     )
 
 
@@ -5477,15 +5792,18 @@ def contract_detail(request, pk: int):
     invoice_labels = invoice_mode_labels(contract.invoice_status)
     project_labels = project_record_labels(contract.contract_type)
     return_state = list_return_state(request, contract.pk)
+    maintenance_records = contract.maintenancerecord_set.order_by("-created_at", "-id")
+    invoice_records = contract.invoicerecord_set.order_by("-created_at", "-id")
+    payment_records = contract.paymentrecord_set.order_by("-created_at", "-id")
     context = context_with_auth(
         request,
         {
             "contract": contract,
             "contract_files": contract.files.all(),
             "primary_file": primary_file,
-            "maintenance_records": contract.maintenancerecord_set.all(),
-            "invoice_records": contract.invoicerecord_set.all(),
-            "payment_records": contract.paymentrecord_set.all(),
+            "maintenance_records": maintenance_records,
+            "invoice_records": invoice_records,
+            "payment_records": payment_records,
             "invoice_labels": invoice_labels,
             "project_record_labels": project_labels,
             **return_state,
@@ -5656,6 +5974,8 @@ def record_remark_update(request, kind: str, pk: int):
         record.remark = request.POST.get("remark", "").strip()
         record.save(update_fields=["remark", "updated_at"])
         log_operation(request, "修改", record.contract, object_type="记录备注", object_name=str(record), object_id=str(record.pk), version_obj=record)
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({"ok": True, "remark": record.remark})
     next_url = request.POST.get("next", "")
     if next_url.startswith("/"):
         return redirect(next_url)
@@ -5668,7 +5988,7 @@ def maintenance_record_list(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
     project_labels = project_record_labels(contract.contract_type)
     return_state = list_return_state(request, contract.pk)
-    maintenance_records = list(contract.maintenancerecord_set.all())
+    maintenance_records = list(contract.maintenancerecord_set.order_by("-created_at", "-id"))
     for record in maintenance_records:
         record.record_number = maintenance_record_number(
             contract,
@@ -6179,7 +6499,27 @@ def trash_list(request):
 # 视图函数：展示可归档合同列表。
 @admin_required
 def archive_list(request):
-    contracts = archive_contracts_for_page()
+    explicit_sort = "sort" in request.GET
+    sort = request.GET.get("sort", "end_date").strip()
+    direction = request.GET.get("direction", "asc").strip()
+    if direction not in ("asc", "desc"):
+        direction = "asc"
+    valid_sorts = {
+        "contract_name",
+        "contract_number",
+        "party_name",
+        "amount",
+        "end_date",
+        "archived_at",
+        "archive_number",
+        "status",
+    }
+    if sort not in valid_sorts:
+        sort = "end_date"
+    contracts = archive_contracts_for_page(sort, direction)
+    query_params = request.GET.copy()
+    query_params.pop("sort", None)
+    query_params.pop("direction", None)
     return render(
         request,
         "contracts/archive_list.html",
@@ -6187,6 +6527,11 @@ def archive_list(request):
             request,
             {
                 "contracts": contracts,
+                "archive_modal_items": archive_modal_items(contracts),
+                "sort": sort,
+                "direction": direction,
+                "show_sort_indicator": explicit_sort,
+                "query_base": query_params.urlencode(),
                 "active_nav": "archive",
             },
         ),
@@ -6197,19 +6542,43 @@ def archive_list(request):
 @admin_required
 def contract_archive(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
-    if request.method == "POST" and contract.status == "待归档" and not contract.uses_default_display_contract_number:
-        old_archive_number = contract.archive_number_display
-        folder_number = normalize_contract_number_part(request.POST.get("original_contract_folder"), 3)
-        storage_location = normalize_storage_location_number(request.POST.get("storage_location_number"))
-        changed_fields = []
-        if folder_number != normalize_contract_number_part(contract.original_contract_folder, 3):
-            contract.original_contract_folder = folder_number
-            changed_fields.append("original_contract_folder")
-        if storage_location != normalize_storage_location_number(contract.storage_location_number):
-            contract.storage_location_number = storage_location
-            changed_fields.append("storage_location_number")
-        if changed_fields:
-            contract.save(update_fields=[*changed_fields, "updated_at"])
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    if request.method != "POST":
+        if is_ajax:
+            return JsonResponse({"error": "只允许归档合同。"}, status=405)
+        return redirect("contracts:archive_list")
+    if contract.uses_default_display_contract_number:
+        if is_ajax:
+            return JsonResponse({"error": "缺少文件编号，无法归档合同。"}, status=400)
+        return redirect("contracts:archive_list")
+    old_archive_number = contract.archive_number_display
+    folder_number = normalize_contract_number_part(request.POST.get("original_contract_folder"), 3)
+    storage_location = normalize_storage_location_number(request.POST.get("storage_location_number"))
+    archive_position_ready = bool(folder_number and folder_number != "000" and storage_location != "000")
+    changed_fields = []
+    if folder_number != normalize_contract_number_part(contract.original_contract_folder, 3):
+        contract.original_contract_folder = folder_number
+        changed_fields.append("original_contract_folder")
+    if storage_location != normalize_storage_location_number(contract.storage_location_number):
+        contract.storage_location_number = storage_location
+        changed_fields.append("storage_location_number")
+    if changed_fields:
+        contract.save(update_fields=[*changed_fields, "updated_at"])
+    if contract.is_archived and not archive_position_ready:
+        contract.is_archived = False
+        contract.archived_at = None
+        contract.save(update_fields=["is_archived", "archived_at", "updated_at"])
+        log_operation(
+            request,
+            "修改",
+            contract,
+            detail=f"archive number: {old_archive_number} -> {contract.archive_number_display}; archive status: archived -> pending",
+        )
+    elif contract.status == "待归档":
+        if not archive_position_ready:
+            if is_ajax:
+                return JsonResponse({"error": "归档合同需要有效的文件夹编号和位置编号。"}, status=400)
+            return redirect("contracts:archive_list")
         contract.archive()
         released_sequences = release_record_volume_sequences_for_contract(contract, AppSetting.current())
         archive_path = archive_contract_snapshot_to_file(contract, "contract archived")
@@ -6224,7 +6593,76 @@ def contract_archive(request, pk: int):
                 f"released record positions: {released_sequences}"
             ),
         )
+    elif changed_fields:
+        log_operation(
+            request,
+            "修改",
+            contract,
+            detail=f"archive number: {old_archive_number} -> {contract.archive_number_display}",
+        )
+    if is_ajax:
+        return JsonResponse(
+            {
+                "ok": True,
+                "original_contract_folder": contract.original_contract_folder,
+                "storage_location_number": contract.storage_location_number,
+                "archive_number": contract.archive_number_display,
+                "item": archive_modal_items([contract])[0],
+            }
+        )
     return redirect("contracts:archive_list")
+
+
+@admin_required
+# 保存单条项目记录的独立归档位置并更新记录级归档状态。
+def record_archive_position_update(request, pk: int):
+    record = get_object_or_404(MaintenanceRecord.objects.select_related("contract"), pk=pk, contract__is_deleted=False)
+    if request.method != "POST":
+        return JsonResponse({"error": "只允许保存记录归档位置。"}, status=405)
+    if not record.contract.is_archived or not contract_has_archive_position(record.contract):
+        return JsonResponse({"error": "合同归档后才可以归档记录。"}, status=400)
+    position_number = normalize_record_position_number(request.POST.get("record_position_number"))
+    old_number = display_code_for_ui(
+        maintenance_record_number(
+            record.contract,
+            record.record_date,
+            normalize_record_volume_number(record.storage_location_number),
+            record.record_position_number,
+            record.date_number,
+        )
+    )
+    record.record_position_number = position_number
+    record.is_archived = position_number != "000000"
+    record.save(update_fields=["record_position_number", "is_archived", "updated_at"])
+    new_number = display_code_for_ui(
+        maintenance_record_number(
+            record.contract,
+            record.record_date,
+            normalize_record_volume_number(record.storage_location_number),
+            record.record_position_number,
+            record.date_number,
+        )
+    )
+    log_operation(
+        request,
+        "修改",
+        record.contract,
+        object_type="记录归档编号",
+        object_name=str(record),
+        object_id=str(record.pk),
+        detail=f"record archive number: {old_number} -> {new_number}",
+        version_obj=record,
+    )
+    archive_status = record_archive_status_for_record(record)
+    return JsonResponse(
+        {
+            "ok": True,
+            "record_id": record.pk,
+            "position_number": position_number,
+            "record_number": new_number,
+            "archive_status": archive_status,
+        }
+    )
 
 
 # 视图函数：更新归档合同的存档编号。
@@ -6239,7 +6677,13 @@ def contract_storage_number_update(request, pk: int):
     storage_location = normalize_storage_location_number(request.POST.get("storage_location_number"))
     contract.original_contract_folder = folder_number
     contract.storage_location_number = storage_location
-    contract.save(update_fields=["original_contract_folder", "storage_location_number", "updated_at"])
+    update_fields = ["original_contract_folder", "storage_location_number", "updated_at"]
+    if contract.is_archived and not contract_has_archive_position(contract):
+        contract.is_archived = False
+        contract.archived_at = None
+        update_fields.extend(["is_archived", "archived_at"])
+    contract.save(update_fields=update_fields)
+    archive_status = record_archive_status_for_contract(contract)
     log_operation(
         request,
         "修改",
@@ -6253,6 +6697,10 @@ def contract_storage_number_update(request, pk: int):
             "storage_location_number": storage_location,
             "archive_number": contract.archive_number_display,
             "display_contract_number": contract.display_contract_number,
+            "status_label": archive_status["label"],
+            "status_class": archive_status["class"],
+            "is_archived": contract.is_archived,
+            "item": archive_modal_items([contract])[0],
         }
     )
 

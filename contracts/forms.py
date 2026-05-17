@@ -80,7 +80,7 @@ class ContractForm(forms.ModelForm):
         )
         if not self.is_bound:
             storage_value = self.initial.get("storage_location_number") or getattr(self.instance, "storage_location_number", "")
-            if normalize_storage_location_number(storage_value) == "00":
+            if normalize_storage_location_number(storage_value) == "000":
                 self.initial["storage_location_number"] = ""
         self.fields["original_contract_inner_number"].widget.attrs.update(
             {
@@ -91,9 +91,9 @@ class ContractForm(forms.ModelForm):
         )
         self.fields["storage_location_number"].widget.attrs.update(
             {
-                "maxlength": "2",
+                "maxlength": "3",
                 "inputmode": "numeric",
-                "pattern": r"\d{0,2}",
+                "pattern": r"\d{0,3}",
             }
         )
 
@@ -120,7 +120,7 @@ class ContractForm(forms.ModelForm):
     def clean_original_contract_inner_number(self):
         return normalize_contract_number_part(self.cleaned_data.get("original_contract_inner_number"), 5)
 
-    # 将合同位置编号统一补齐为两位数字。
+    # 将合同位置编号统一补齐为三位数字。
     def clean_storage_location_number(self):
         return normalize_storage_location_number(self.cleaned_data.get("storage_location_number"))
 

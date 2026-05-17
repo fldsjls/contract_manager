@@ -31,11 +31,6 @@
         <input class="search-input" id="contractSearchInput" name="q" value="{{ keyword }}" placeholder="搜索合同名称、业务编号、默认编号、甲方名称、负责人">
         <div class="search-preview" id="searchPreview" hidden></div>
       </div>
-      <div class="search-preview-wrap archive-search-wrap">
-        <input class="search-input" id="archiveLookupInput" name="archive_q" value="{{ archive_keyword }}" type="search" placeholder="业务编号查找存档编号">
-        <button class="archive-lookup-clear" id="archiveLookupClear" type="button" aria-label="清空业务编号查找" {% if not archive_keyword %}hidden{% endif %}>×</button>
-        <div class="search-preview archive-search-preview" id="archiveLookupPreview" hidden></div>
-      </div>
       <input name="contract_type" type="hidden" value="{{ contract_type_filter }}">
       <input name="invoice_status" type="hidden" value="{{ invoice_status_filter }}">
       <input name="status" type="hidden" value="{{ status_filter }}">
@@ -75,7 +70,7 @@
       {% if can_manage %}
         <button class="button row-action" id="imageFolderButton" type="button" data-url-template="{% url 'contracts:contract_image_folder_open' 0 %}" aria-disabled="true">图片查看</button>
         <button class="button{% if has_filters %} primary{% endif %}" id="filterButton" type="button">筛选</button>
-        <a class="button" href="{% url 'contracts:contract_list' %}{% if keyword or archive_keyword %}?{% if keyword %}q={{ keyword|urlencode }}{% endif %}{% if keyword and archive_keyword %}&{% endif %}{% if archive_keyword %}archive_q={{ archive_keyword|urlencode }}{% endif %}{% endif %}">清除筛选</a>
+        <a class="button" href="{% url 'contracts:contract_list' %}{% if keyword %}?q={{ keyword|urlencode }}{% endif %}">清除筛选</a>
         <a
           class="button"
           id="contractExportButton"
@@ -255,7 +250,6 @@
       <div class="modal-header" id="filterModalTitle">筛选合同</div>
       <form method="get">
         <input name="q" type="hidden" value="{{ keyword }}">
-        <input name="archive_q" type="hidden" value="{{ archive_keyword }}">
         <input name="sort" type="hidden" value="{{ sort }}">
         <input name="direction" type="hidden" value="{{ direction }}">
         <div class="modal-body" style="white-space: normal;">
@@ -388,7 +382,6 @@
   </div>
 
   <!-- 表格行选择、按钮启用、文件打开和单项目统计弹窗逻辑。 -->
-  {{ archive_lookup_items|json_script:"archiveLookupData" }}
   <script src="{% static 'contracts/vendor/echarts.min.js' %}"></script>
   <script>
     const table = document.querySelector("#contractTable");
@@ -396,11 +389,6 @@
     const newContractButton = document.querySelector("#newContractButton");
     const contractSearchInput = document.querySelector("#contractSearchInput");
     const searchPreview = document.querySelector("#searchPreview");
-    const archiveLookupInput = document.querySelector("#archiveLookupInput");
-    const archiveLookupClear = document.querySelector("#archiveLookupClear");
-    const archiveLookupPreview = document.querySelector("#archiveLookupPreview");
-    const archiveLookupDataElement = document.querySelector("#archiveLookupData");
-    const archiveLookupData = archiveLookupDataElement ? JSON.parse(archiveLookupDataElement.textContent || "[]") : [];
     const rowButtons = document.querySelectorAll(".row-action");
     const recordButton = document.querySelector("#recordButton");
     const detailButton = document.querySelector("#detailButton");
@@ -525,6 +513,11 @@
 
     function formatDisplayCode(value) {
       const text = String(value || "");
+      if (/^[A-Za-z]\d{19,}$/.test(text)) {
+        return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 18), text.slice(18, 20), text.slice(20)]
+          .filter(Boolean)
+          .join("-");
+      }
       if (/^[A-Za-z]\d{17,}$/.test(text)) {
         return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 16), text.slice(16, 18), text.slice(18)]
           .filter(Boolean)
@@ -549,18 +542,6 @@
         return `${text.slice(0, 1)}-${text.slice(1, 3)}-${text.slice(3)}`;
       }
       return text;
-    }
-
-    function formatArchiveCode(value) {
-      const text = String(value || "");
-      if (/^\d{5}$/.test(text)) {
-        return `${text.slice(0, 3)}-${text.slice(3)}`;
-      }
-      return text;
-    }
-
-    function compactLookupCode(value) {
-      return String(value || "").replace(/[-\s]/g, "").toLowerCase();
     }
 
     // 函数说明：处理页面交互和数据展示逻辑。
@@ -1139,74 +1120,6 @@
       document.addEventListener("click", (event) => {
         if (!event.target.closest(".search-preview-wrap")) {
           hideSearchPreview();
-        }
-      });
-    }
-
-    function hideArchiveLookupPreview() {
-      if (archiveLookupPreview) {
-        archiveLookupPreview.hidden = true;
-      }
-    }
-
-    function renderArchiveLookupPreview() {
-      if (!archiveLookupInput || !archiveLookupPreview) {
-        return;
-      }
-      const keyword = compactLookupCode(archiveLookupInput.value);
-      if (archiveLookupClear) {
-        archiveLookupClear.hidden = !archiveLookupInput.value;
-      }
-      archiveLookupPreview.innerHTML = "";
-      if (!keyword) {
-        hideArchiveLookupPreview();
-        return;
-      }
-      const matches = archiveLookupData
-        .filter((item) => [
-          item.code,
-          formatDisplayCode(item.code || ""),
-          item.archive_code,
-          item.name,
-          item.party,
-          item.type,
-        ].some((value) => compactLookupCode(value).includes(keyword)))
-        .slice(0, 8);
-      matches.forEach((item) => {
-        const button = document.createElement("button");
-        button.className = "search-preview-item";
-        button.type = "button";
-        button.innerHTML = `
-          <span class="search-preview-title"><span class="archive-lookup-kind">${escapeHtml(item.kind_label || "合同文件")}</span>${escapeHtml(formatDisplayCode(item.code || ""))}</span>
-          <span class="search-preview-meta">存档编号: ${escapeHtml(formatArchiveCode(item.archive_code) || "未填写")}　合同: ${escapeHtml(item.name || "未填写")}　${escapeHtml(item.party || "未填写")}</span>
-        `;
-        button.addEventListener("mousedown", (event) => {
-          event.preventDefault();
-        });
-        button.addEventListener("click", () => {
-          archiveLookupInput.value = formatDisplayCode(item.code);
-          if (archiveLookupClear) {
-            archiveLookupClear.hidden = false;
-          }
-          hideArchiveLookupPreview();
-        });
-        archiveLookupPreview.appendChild(button);
-      });
-      archiveLookupPreview.hidden = matches.length === 0;
-    }
-
-    if (archiveLookupInput) {
-      archiveLookupInput.addEventListener("input", renderArchiveLookupPreview);
-      archiveLookupInput.addEventListener("focus", renderArchiveLookupPreview);
-      archiveLookupClear?.addEventListener("click", () => {
-        archiveLookupInput.value = "";
-        archiveLookupClear.hidden = true;
-        hideArchiveLookupPreview();
-        archiveLookupInput.focus();
-      });
-      document.addEventListener("click", (event) => {
-        if (!event.target.closest(".archive-search-wrap")) {
-          hideArchiveLookupPreview();
         }
       });
     }

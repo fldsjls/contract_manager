@@ -28,7 +28,7 @@
               {% if month_field %}
                 <th>记录编号 <small class="subtle-heading-note">业务编号-年月编号-位置编号-分册编号</small></th>
                 <th>分册编号 <small class="subtle-heading-note">项目年限 {{ project_years }}</small></th>
-                <th>位置编号 <small class="subtle-heading-note">柜号2位-栏目2位</small></th>
+                <th>位置编号 <small class="subtle-heading-note">柜号2-栏目2-排位2</small></th>
               {% endif %}
               {% if record_type_options %}<th>类型</th>{% endif %}
               {% if not month_field %}<th>{{ amount_label|default:labels.contract_amount }}</th>{% endif %}
@@ -47,7 +47,7 @@
               {% if month_field %}
                 <td><output class="record-number-output"></output></td>
                 <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="01" maxlength="2" inputmode="numeric" pattern="\d{0,2}"></td>
-                <td><input class="record-position-number-input" name="record_position_number" type="text" value="0000" maxlength="4" inputmode="numeric" pattern="\d{0,4}" readonly aria-readonly="true"></td>
+                <td><input class="record-position-number-input" name="record_position_number" type="text" value="000000" maxlength="6" inputmode="numeric" pattern="\d{0,6}" readonly aria-readonly="true"></td>
               {% endif %}
               {% if record_type_options %}
                 <td>
@@ -141,8 +141,8 @@
     }
 
     function normalizeRecordPosition(value) {
-      const digits = (value || "").replace(/\D/g, "").slice(0, 4);
-      return (digits || "0000").padStart(4, "0");
+      const digits = (value || "").replace(/\D/g, "").slice(0, 6);
+      return (digits || "000000").padStart(6, "0");
     }
 
     function autoRecordPosition(storageLocationValue) {
@@ -161,14 +161,17 @@
       const sequenceNumber = rememberedSequence || (appendMode ? Math.max(recordMaxSequenceNumber, recordBaseSequenceNumber) + volume - 1 : insertSequence);
       const offset = sequenceNumber - startFile + 1;
       let columnSteps;
+      let rank;
       let forwardDirection;
       let cabinetStep;
       if (offset > 0) {
         columnSteps = Math.floor((offset - 1) / capacity);
+        rank = ((offset - 1) % capacity) + 1;
         forwardDirection = recordPositionSettings.direction;
         cabinetStep = 1;
       } else {
         columnSteps = Math.floor((-offset - 1) / capacity) + 1;
+        rank = capacity - ((-offset - 1) % capacity);
         forwardDirection = recordPositionSettings.direction === "increment" ? "decrement" : "increment";
         cabinetStep = -1;
       }
@@ -183,7 +186,7 @@
         cabinet += cabinetStep * wraps;
         column = ((columnIndex % columnCount) + columnCount) % columnCount + 1;
       }
-      return `${String(Math.max(cabinet, 1)).padStart(2, "0")}${String(column).padStart(2, "0")}`;
+      return `${String(Math.max(cabinet, 1)).padStart(2, "0")}${String(column).padStart(2, "0")}${String(rank).padStart(2, "0")}`;
     }
 
     function rememberedRecordNumbers() {
@@ -228,6 +231,11 @@
 
     function formatDisplayCode(value) {
       const text = String(value || "");
+      if (/^[A-Za-z]\d{19,}$/.test(text)) {
+        return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 18), text.slice(18, 20), text.slice(20)]
+          .filter(Boolean)
+          .join("-");
+      }
       if (/^[A-Za-z]\d{17,}$/.test(text)) {
         return [text.slice(0, 1), text.slice(1, 3), text.slice(3, 8), text.slice(8, 12), text.slice(12, 16), text.slice(16, 18), text.slice(18)]
           .filter(Boolean)
@@ -324,7 +332,7 @@
         {% if month_field %}
           <td><output class="record-number-output"></output></td>
           <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="01" maxlength="2" inputmode="numeric" pattern="\\d{0,2}"></td>
-          <td><input class="record-position-number-input" name="record_position_number" type="text" value="0000" maxlength="4" inputmode="numeric" pattern="\\d{0,4}" readonly aria-readonly="true"></td>
+          <td><input class="record-position-number-input" name="record_position_number" type="text" value="000000" maxlength="6" inputmode="numeric" pattern="\\d{0,6}" readonly aria-readonly="true"></td>
         {% endif %}
         {% if record_type_options %}
           <td>

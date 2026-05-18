@@ -4319,7 +4319,8 @@ CONTRACT_IMPORT_COLUMNS = [
     ("end_date", "截止日期"),
     ("responsible_person", "负责人"),
     ("original_contract_inner_number", "文件编号"),
-    ("archive_number", "存档编号"),
+    ("original_contract_folder", "文件夹编号"),
+    ("storage_location_number", "位置编号"),
     ("archive_years", "归档时间（年）"),
     ("remark", "备注"),
 ]
@@ -4333,7 +4334,8 @@ CONTRACT_IMPORT_DEFAULT_MATCH_COLUMNS = [
 CONTRACT_IMPORT_BUSINESS_MATCH_COLUMNS = [
     ("business_number", "业务编号"),
     ("responsible_person", "负责人"),
-    ("archive_number", "存档编号"),
+    ("original_contract_folder", "文件夹编号"),
+    ("storage_location_number", "位置编号"),
     ("archive_years", "归档时间（年）"),
     ("remark", "备注"),
 ]
@@ -4349,13 +4351,15 @@ CONTRACT_IMPORT_UPDATE_FIELDS = {
         "end_date",
         "responsible_person",
         "original_contract_inner_number",
-        "archive_number",
+        "original_contract_folder",
+        "storage_location_number",
         "archive_years",
         "remark",
     ],
     "business_match": [
         "responsible_person",
-        "archive_number",
+        "original_contract_folder",
+        "storage_location_number",
         "archive_years",
         "remark",
     ],
@@ -4590,11 +4594,15 @@ def normalize_contract_archive_import_number(value) -> str:
     return normalize_contract_number_part(value, 6)
 
 
-def apply_contract_archive_number_import(row_data: dict) -> dict:
-    archive_number = normalize_contract_archive_import_number(row_data.get("archive_number"))
+def apply_contract_archive_number_import(row_data: dict, prefer_parts: bool = False) -> dict:
+    folder_number = normalize_contract_number_part(row_data.get("original_contract_folder"), 3)
+    location_number = normalize_storage_location_number(row_data.get("storage_location_number"))
+    archive_number = ""
+    if prefer_parts and folder_number:
+        archive_number = f"{folder_number}{location_number}"
     if not archive_number:
-        folder_number = normalize_contract_number_part(row_data.get("original_contract_folder"), 3)
-        location_number = normalize_storage_location_number(row_data.get("storage_location_number"))
+        archive_number = normalize_contract_archive_import_number(row_data.get("archive_number"))
+    if not archive_number:
         archive_number = f"{folder_number}{location_number}" if folder_number else ""
     row_data["archive_number"] = archive_number
     if archive_number:
@@ -4634,11 +4642,13 @@ def parse_contract_import_rows_from_sheet(rows, columns, required_fields, sheet_
                 if column_index is not None and column_index < len(values)
                 else ""
             )
+        has_legacy_archive_part = False
         for field_name in ("original_contract_folder", "storage_location_number"):
             column_index = header_map.get(field_name)
             if column_index is not None and column_index < len(values):
                 row_data[field_name] = normalize_import_value(field_name, values[column_index])
-        apply_contract_archive_number_import(row_data)
+                has_legacy_archive_part = True
+        apply_contract_archive_number_import(row_data, prefer_parts=has_legacy_archive_part)
         parsed_rows.append(
             {
                 "row_number": excel_row_number,
@@ -5506,7 +5516,8 @@ def contract_import_template(request):
         "截止日期": "日期格式：YYYY-MM-DD。",
         "负责人": "填写负责人姓名。",
         "文件编号": "填写 5 位文件编号，例如 00001。",
-        "存档编号": "填写 6 位存档编号，可带横线，例如 001-011。",
+        "文件夹编号": "填写 3 位文件夹编号，例如 001。",
+        "位置编号": "填写 3 位位置编号，例如 123。第 1 位为柜号，第 2 位为栏目号，第 3 位为排位号。",
         "归档时间（年）": "填写归档年限数字，例如 3。",
         "备注": "可选。填写合同备注。",
     }
@@ -5524,7 +5535,8 @@ def contract_import_template(request):
         "截止日期": "可选。日期格式：YYYY-MM-DD，留空则不改。",
         "负责人": "可选。填写后修改负责人，留空则不改。",
         "文件编号": "可选。填写 5 位文件编号；按默认编号匹配时允许修改业务编号中的文件编号部分，留空则不改。",
-        "存档编号": "可选。填写 6 位存档编号，可带横线；留空则不改。",
+        "文件夹编号": "可选。填写 3 位文件夹编号，留空则不改。",
+        "位置编号": "可选。填写 3 位位置编号，留空则不改。第 1 位为柜号，第 2 位为栏目号，第 3 位为排位号。",
         "归档时间（年）": "可选。填写归档年限数字，留空则不改。",
         "备注": "可选。填写后修改合同备注，留空则不改。",
     })
@@ -5532,7 +5544,8 @@ def contract_import_template(request):
     business_match_comments = {
         "业务编号": "必填。填写已有业务编号，可带横线；该工作表不会修改业务编号本身。",
         "负责人": "可选。填写后修改已有合同负责人，留空则不改。",
-        "存档编号": "可选。填写 6 位存档编号，可带横线；留空则不改。",
+        "文件夹编号": "可选。填写 3 位文件夹编号，留空则不改。",
+        "位置编号": "可选。填写 3 位位置编号，留空则不改。第 1 位为柜号，第 2 位为栏目号，第 3 位为排位号。",
         "归档时间（年）": "可选。填写归档年限数字，留空则不改。",
         "备注": "可选。填写后修改合同备注，留空则不改。",
     }

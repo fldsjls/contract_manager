@@ -4767,11 +4767,14 @@ def contract_form_data_from_instance(contract: Contract) -> dict:
 # 按导入模式把非空更新字段合并到表单数据。
 def apply_contract_import_updates(base_data: dict, row_data: dict, import_mode: str) -> dict:
     data = base_data.copy()
+    archive_part_updated = False
     for field_name in CONTRACT_IMPORT_UPDATE_FIELDS.get(import_mode, []):
         value = row_data.get(field_name, "")
         if normalize_import_cell(value):
             data[field_name] = value
-    apply_contract_archive_number_import(data)
+            if field_name in {"original_contract_folder", "storage_location_number"}:
+                archive_part_updated = True
+    apply_contract_archive_number_import(data, prefer_parts=archive_part_updated)
     return data
 
 

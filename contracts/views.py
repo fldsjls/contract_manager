@@ -5696,7 +5696,7 @@ def contract_import(request):
                         continue
                     if import_kind == "invoice":
                         data = row["data"].copy()
-                        contract = Contract.objects.get(pk=row["contract_id"])
+                        contract = Contract.objects.get(pk=row["contract_id"], is_deleted=False)
                         record_model = INVOICE_IMPORT_TYPES[data["record_type"]]
                         record = record_model.objects.create(
                             contract=contract,
@@ -5709,7 +5709,7 @@ def contract_import(request):
                         log_operation(request, "新增", contract, object_type="票据记录", object_name=str(record), object_id=str(record.pk), detail=f"Excel import row: {row['row_number']}", version_obj=record)
                     elif import_kind == "maintenance":
                         data = row["data"].copy()
-                        contract = Contract.objects.get(pk=row["contract_id"])
+                        contract = Contract.objects.get(pk=row["contract_id"], is_deleted=False)
                         record_date = date_from_import(data["record_date"])
                         month = normalize_maintenance_month(data.get("month"), record_date)
                         date_number = normalize_record_date_number(data.get("date_number"), record_date)

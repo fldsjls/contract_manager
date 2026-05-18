@@ -142,6 +142,7 @@ class ContractForm(forms.ModelForm):
             display_contract_number = f"{Contract.CONTRACT_TYPE_CODES.get(contract_type, '')}{str(base_date.year)[-2:]}{file_number}"
             candidates = Contract.objects.filter(
                 original_contract_inner_number__gt="",
+                is_deleted=False,
             )
             if self.instance and self.instance.pk:
                 candidates = candidates.exclude(pk=self.instance.pk)

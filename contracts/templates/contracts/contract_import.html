@@ -23,6 +23,7 @@
     .contract-import-preview-table th {
       font-size: 13px;
       line-height: 1.25;
+      text-overflow: clip;
     }
     .contract-import-preview-table tr.import-existing-row td {
       background: #eaf6ff;
@@ -53,6 +54,24 @@
     .contract-import-preview-table td:nth-child(12) { width: 76px; }
     .contract-import-preview-table th:nth-child(13),
     .contract-import-preview-table td:nth-child(13) { width: auto; }
+    .contract-import-preview-table.import-preview-invoice th:nth-child(1),
+    .contract-import-preview-table.import-preview-invoice td:nth-child(1) { width: 48px; }
+    .contract-import-preview-table.import-preview-invoice th:nth-child(2),
+    .contract-import-preview-table.import-preview-invoice td:nth-child(2) { width: 192px; }
+    .contract-import-preview-table.import-preview-invoice th:nth-child(3),
+    .contract-import-preview-table.import-preview-invoice td:nth-child(3) { width: 128px; }
+    .contract-import-preview-table.import-preview-invoice th:nth-child(4),
+    .contract-import-preview-table.import-preview-invoice td:nth-child(4) { width: 56px; }
+    .contract-import-preview-table.import-preview-invoice th:nth-child(5),
+    .contract-import-preview-table.import-preview-invoice td:nth-child(5) { width: 108px; }
+    .contract-import-preview-table.import-preview-invoice th:nth-child(6),
+    .contract-import-preview-table.import-preview-invoice td:nth-child(6),
+    .contract-import-preview-table.import-preview-invoice th:nth-child(7),
+    .contract-import-preview-table.import-preview-invoice td:nth-child(7) { width: 96px; }
+    .contract-import-preview-table.import-preview-invoice th:nth-child(8),
+    .contract-import-preview-table.import-preview-invoice td:nth-child(8) { width: 96px; }
+    .contract-import-preview-table.import-preview-invoice th:nth-child(9),
+    .contract-import-preview-table.import-preview-invoice td:nth-child(9) { width: auto; }
     .contract-import-preview-table .truncate-cell {
       cursor: help;
       font-size: 12px;
@@ -201,7 +220,7 @@
         </div>
       {% endif %}
 
-      {% if results %}
+      {% if show_preview_table %}
         <div class="panel" style="margin-top: 16px;">
           <div class="toolbar" style="margin-bottom: 12px;">
             <span>共 {{ results|length }} 行</span>
@@ -212,7 +231,7 @@
             <ul class="errorlist"><li>{{ confirm_error }}</li></ul>
           {% endif %}
           <div class="table-wrap">
-            <table class="contract-import-preview-table">
+            <table class="contract-import-preview-table {{ preview_table_class }}">
               <thead>
                 <tr>
                   {% for label in preview_columns %}

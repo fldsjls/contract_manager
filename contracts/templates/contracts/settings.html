@@ -208,6 +208,12 @@
         return Number.isFinite(value) && value > 0 ? value : fallback;
       }
 
+      function slashIntegerValue(input, fallback = 1) {
+        const firstValue = String(input?.value || "").split("/")[0] || "";
+        const value = Number.parseInt(firstValue.replace(/\D/g, ""), 10);
+        return Number.isFinite(value) && value > 0 ? value : fallback;
+      }
+
       function refreshRecordPositionRemainingCount() {
         if (!recordPositionRemainingOutput) {
           return;
@@ -216,8 +222,8 @@
         const endCabinet = integerValue(recordPositionInputs.endCabinet, startCabinet);
         const cabinetCount = Math.max(endCabinet - startCabinet + 1, 1);
         const columnCount = integerValue(recordPositionInputs.columnCount, 1);
-        const capacity = integerValue(recordPositionInputs.capacity, 1);
-        const startFile = integerValue(recordPositionInputs.startFile, 1);
+        const capacity = slashIntegerValue(recordPositionInputs.capacity, 1);
+        const startFile = slashIntegerValue(recordPositionInputs.startFile, 1);
         const startColumn = Math.min(integerValue(recordPositionInputs.startColumn, 1), columnCount);
         const firstCabinetColumns = recordPositionInputs.direction?.value === "increment"
           ? Math.max(columnCount - startColumn + 1, 0)

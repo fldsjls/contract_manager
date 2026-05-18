@@ -149,8 +149,6 @@
     function autoRecordPosition(storageLocationValue) {
       const normalizedVolume = normalizeStorageLocation(storageLocationValue);
       const volume = Number.parseInt(normalizedVolume, 10) || 1;
-      const startFile = Math.max(Number.parseInt(recordPositionSettings.startFile, 10) || 1, 1);
-      const capacity = Math.max(Number.parseInt(recordPositionSettings.capacity, 10) || 1, 1);
       const columnCount = Math.max(Number.parseInt(recordPositionSettings.columnCount, 10) || 1, 1);
       const startColumn = Math.min(Math.max(Number.parseInt(recordPositionSettings.startColumn, 10) || 1, 1), columnCount);
       let cabinet = Math.max(Number.parseInt(recordPositionSettings.cabinet, 10) || 1, 1);
@@ -160,6 +158,24 @@
       const rememberedPreviousSequence = Number.parseInt(recordVolumeSequences[previousVolume], 10) || 0;
       const insertSequence = (volume > 1 ? (rememberedPreviousSequence || recordBaseSequenceNumber + volume - 2) + 1 : recordBaseSequenceNumber);
       const sequenceNumber = rememberedSequence || (appendMode ? Math.max(recordMaxSequenceNumber, recordBaseSequenceNumber) + volume - 1 : insertSequence);
+      const tiers = Array.isArray(recordPositionSettings.tiers) && recordPositionSettings.tiers.length
+        ? recordPositionSettings.tiers
+        : [{ start_file: recordPositionSettings.startFile, capacity: recordPositionSettings.capacity }];
+      const normalizedTiers = tiers
+        .map((tier) => ({
+          startFile: Math.max(Number.parseInt(tier.start_file, 10) || 1, 1),
+          capacity: Math.max(Number.parseInt(tier.capacity, 10) || 1, 1),
+        }))
+        .sort((left, right) => right.startFile - left.startFile);
+      let tier = normalizedTiers.find((item) => sequenceNumber >= item.startFile);
+      if (!tier && normalizedTiers.length === 1) {
+        tier = normalizedTiers[0];
+      }
+      if (!tier) {
+        return "";
+      }
+      const startFile = tier.startFile;
+      const capacity = tier.capacity;
       const offset = sequenceNumber - startFile + 1;
       let columnSteps;
       let rank;
@@ -276,7 +292,15 @@
       const generatedPosition = autoRecordPosition(storageLocationInput?.value || "01");
       let recordPosition = generatedPosition;
       if (recordPositionInput) {
-        recordPositionInput.value = generatedPosition;
+        if (generatedPosition) {
+          recordPositionInput.value = generatedPosition;
+          recordPositionInput.readOnly = true;
+          recordPositionInput.setAttribute("aria-readonly", "true");
+        } else {
+          recordPositionInput.readOnly = false;
+          recordPositionInput.removeAttribute("aria-readonly");
+          recordPositionInput.value = (recordPositionInput.value || "").replace(/\D/g, "").slice(0, 6);
+        }
         recordPosition = normalizeRecordPosition(recordPositionInput.value);
       }
       if (monthInput) {
@@ -290,12 +314,18 @@
     }
 
     recordTableBody.addEventListener("input", (event) => {
-      if (event.target.matches(".record-date-input") || event.target.matches(".record-date-number-input") || event.target.matches(".storage-location-number-input")) {
+      if (event.target.matches(".record-date-input") || event.target.matches(".record-date-number-input") || event.target.matches(".storage-location-number-input") || event.target.matches(".record-position-number-input")) {
         syncMaintenanceRow(event.target.closest("tr"), event.target);
       }
     });
 
     recordTableBody.addEventListener("blur", (event) => {
+      if (event.target.matches(".record-position-number-input") && !event.target.readOnly) {
+        const row = event.target.closest("tr");
+        event.target.value = normalizeRecordPosition(event.target.value);
+        syncMaintenanceRow(row);
+        return;
+      }
       if (!event.target.matches(".storage-location-number-input")) {
         return;
       }

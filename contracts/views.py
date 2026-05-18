@@ -1488,14 +1488,50 @@ def record_position_column_before_start(
     return start_cabinet - 1 - (remaining_steps // column_count), (remaining_steps % column_count) + 1
 
 
+def record_position_slash_numbers(value, fallback: int = 1) -> list[int]:
+    numbers = []
+    for part in str(value or "").split("/"):
+        part = part.strip()
+        if part.isdigit() and int(part) > 0:
+            numbers.append(int(part))
+    return numbers or [fallback]
+
+
+def record_position_generation_tiers(setting: AppSetting | None = None) -> list[dict]:
+    setting = setting or AppSetting.current()
+    start_files = record_position_slash_numbers(setting.record_position_start_file_number, 1)
+    capacities = record_position_slash_numbers(setting.record_position_column_capacity, 1)
+    if len(capacities) < len(start_files):
+        capacities.extend([capacities[-1]] * (len(start_files) - len(capacities)))
+    tiers = [
+        {"start_file": start_file, "capacity": max(capacities[index], 1)}
+        for index, start_file in enumerate(start_files)
+    ]
+    return sorted(tiers, key=lambda item: item["start_file"], reverse=True)
+
+
+def record_position_tier_for_sequence(sequence_number: int, setting: AppSetting | None = None) -> dict | None:
+    tiers = record_position_generation_tiers(setting)
+    sequence_number = int(sequence_number or 0)
+    for tier in tiers:
+        if sequence_number >= tier["start_file"]:
+            return tier
+    if len(tiers) == 1:
+        return tiers[0]
+    return None
+
+
 def record_position_number_from_sequence(sequence_number: int, setting: AppSetting | None = None) -> str:
     setting = setting or AppSetting.current()
-    capacity = max(int(setting.record_position_column_capacity or 1), 1)
+    tier = record_position_tier_for_sequence(sequence_number, setting)
+    if tier is None:
+        return ""
+    capacity = tier["capacity"]
     column_count = max(int(setting.record_position_column_count or 1), 1)
     start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
     start_cabinet = max(int(setting.record_position_cabinet_number or 1), 1)
     sequence_number = int(sequence_number or 0)
-    start_file = max(int(setting.record_position_start_file_number or 1), 1)
+    start_file = tier["start_file"]
     sequence_offset = sequence_number - start_file + 1
     if sequence_offset > 0:
         column_steps = (sequence_offset - 1) // capacity
@@ -1520,12 +1556,15 @@ def record_position_number_from_sequence(sequence_number: int, setting: AppSetti
 
 def shelf_position_number_from_sequence(sequence_number: int, setting: AppSetting | None = None) -> str:
     setting = setting or AppSetting.current()
-    capacity = max(int(setting.record_position_column_capacity or 1), 1)
+    tier = record_position_tier_for_sequence(sequence_number, setting)
+    if tier is None:
+        return ""
+    capacity = tier["capacity"]
     column_count = max(int(setting.record_position_column_count or 1), 1)
     start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
     start_cabinet = max(int(setting.record_position_cabinet_number or 1), 1)
     sequence_number = int(sequence_number or 0)
-    start_file = max(int(setting.record_position_start_file_number or 1), 1)
+    start_file = tier["start_file"]
     sequence_offset = sequence_number - start_file + 1
     if sequence_offset > 0:
         column_steps = (sequence_offset - 1) // capacity
@@ -1595,7 +1634,7 @@ def sequence_after_empty_record_positions(real_sequence_number: int) -> int:
 
 def record_position_remaining_count(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
-    start_file = int(setting.record_position_start_file_number or 1)
+    start_file = record_position_generation_tiers(setting)[0]["start_file"]
     total_positions = record_position_total_capacity(setting)
     max_sequence = max_record_position_occupied_sequence()
     used_positions = max(int(max_sequence or 0) - start_file + 1, 0) if max_sequence else 0
@@ -1606,7 +1645,7 @@ def record_position_total_capacity(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
     start_column = int(setting.record_position_start_column or 1)
     column_count = int(setting.record_position_column_count or 1)
-    capacity = int(setting.record_position_column_capacity or 1)
+    capacity = record_position_generation_tiers(setting)[0]["capacity"]
     start_cabinet = int(setting.record_position_cabinet_number or 1)
     end_cabinet = int(getattr(setting, "record_position_end_cabinet_number", start_cabinet) or start_cabinet)
     cabinet_count = max(end_cabinet - start_cabinet + 1, 1)
@@ -1620,7 +1659,7 @@ def record_position_total_capacity(setting: AppSetting | None = None) -> int:
 
 def record_position_last_sequence_number(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
-    start_file = int(setting.record_position_start_file_number or 1)
+    start_file = record_position_generation_tiers(setting)[0]["start_file"]
     return start_file + record_position_total_capacity(setting) - 1
 
 
@@ -1629,37 +1668,88 @@ def exceeds_record_position_capacity(real_sequence_number: int, setting: AppSett
 
 
 def sequence_number_from_reserved_position(position_text: str, setting: AppSetting) -> int | None:
+    tiers = record_position_generation_tiers(setting)
+    return sequence_number_from_position_for_tier(position_text, setting, tiers[0])
+
+
+def sequence_number_from_position_for_tier(position_text: str, setting: AppSetting, tier: dict) -> int | None:
+    after_sequence, before_sequence = sequence_number_candidates_from_position_for_tier(position_text, setting, tier)
+    return after_sequence if after_sequence is not None else before_sequence
+
+
+def sequence_number_candidates_from_position_for_tier(
+    position_text: str,
+    setting: AppSetting,
+    tier: dict,
+) -> tuple[int | None, int | None]:
     if not position_text.isdigit() or len(position_text) != 6:
-        return None
+        return None, None
     cabinet = int(position_text[:2])
     column = int(position_text[2:4])
     rank = int(position_text[4:6])
     start_cabinet = int(setting.record_position_cabinet_number or 1)
     column_count = int(setting.record_position_column_count or 1)
-    capacity = int(setting.record_position_column_capacity or 1)
+    capacity = int(tier.get("capacity") or 1)
     start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
-    start_file = int(setting.record_position_start_file_number or 1)
+    start_file = int(tier.get("start_file") or 1)
     if cabinet < start_cabinet or not (1 <= column <= column_count) or not (1 <= rank <= capacity):
-        return None
+        return None, None
     cabinet_steps = cabinet - start_cabinet
+    after_sequence = None
     if cabinet_steps == 0 and setting.record_position_direction == "increment":
-        if column < start_column:
-            return None
-        column_steps = column - start_column
+        if column >= start_column:
+            column_steps = column - start_column
+            after_sequence = start_file + column_steps * capacity + rank - 1
     elif cabinet_steps == 0:
-        if column > start_column:
-            return None
-        column_steps = start_column - column
+        if column <= start_column:
+            column_steps = start_column - column
+            after_sequence = start_file + column_steps * capacity + rank - 1
     elif setting.record_position_direction == "increment":
         first_cabinet_columns = max(column_count - start_column + 1, 0)
         column_steps = first_cabinet_columns + (cabinet_steps - 1) * column_count + (column - 1)
+        after_sequence = start_file + column_steps * capacity + rank - 1
     else:
         first_cabinet_columns = max(start_column, 0)
         column_steps = first_cabinet_columns + (cabinet_steps - 1) * column_count + (column_count - column)
-    if column_steps < 0:
-        return None
-    offset = column_steps * capacity + rank
-    return start_file + offset - 1
+        after_sequence = start_file + column_steps * capacity + rank - 1
+
+    before_sequence = None
+    if setting.record_position_direction == "increment":
+        if cabinet == start_cabinet and column < start_column:
+            before_steps = start_column - column
+        elif cabinet < start_cabinet:
+            first_columns = max(start_column - 1, 0)
+            remaining = (start_cabinet - 1 - cabinet) * column_count + (column_count - column)
+            before_steps = first_columns + 1 + remaining
+        else:
+            before_steps = None
+    else:
+        if cabinet == start_cabinet and column > start_column:
+            before_steps = column - start_column
+        elif cabinet < start_cabinet:
+            first_columns = max(column_count - start_column, 0)
+            remaining = (start_cabinet - 1 - cabinet) * column_count + (column - 1)
+            before_steps = first_columns + 1 + remaining
+        else:
+            before_steps = None
+    if before_steps is not None and before_steps >= 1:
+        before_sequence = start_file - ((before_steps - 1) * capacity + (capacity - rank)) - 2
+    return after_sequence, before_sequence
+
+
+def manual_record_position_sequence_number(position_text: str, setting: AppSetting) -> int | None:
+    tiers = sorted(record_position_generation_tiers(setting), key=lambda item: item["start_file"])
+    for tier in tiers:
+        after_sequence, before_sequence = sequence_number_candidates_from_position_for_tier(position_text, setting, tier)
+        if after_sequence is not None and after_sequence >= tier["start_file"]:
+            continue
+        if before_sequence is not None and before_sequence < tier["start_file"]:
+            return before_sequence
+    return None
+
+
+def manual_record_position_is_allowed(position_text: str, setting: AppSetting) -> bool:
+    return manual_record_position_sequence_number(position_text, setting) is not None
 
 
 def locked_reserved_record_position_values() -> list[str]:
@@ -1784,7 +1874,7 @@ def update_records_for_volume_sequence(sequence: MaintenanceRecordVolumeSequence
     if sequence.shelf_position_number != shelf_position_number:
         sequence.shelf_position_number = shelf_position_number
         sequence.save(update_fields=["shelf_position_number", "updated_at"])
-    if not sequence.contract_id:
+    if not sequence.contract_id or not position_number:
         return 0
     return MaintenanceRecord.objects.filter(
         contract=sequence.contract,
@@ -2022,8 +2112,8 @@ def record_position_setting_key(setting) -> tuple:
         int(getattr(setting, "record_position_cabinet_number", 1) or 1),
         int(getattr(setting, "record_position_end_cabinet_number", 99) or 99),
         int(getattr(setting, "record_position_column_count", 1) or 1),
-        int(getattr(setting, "record_position_column_capacity", 1) or 1),
-        int(getattr(setting, "record_position_start_file_number", 1) or 1),
+        getattr(setting, "record_position_column_capacity", "1") or "1",
+        getattr(setting, "record_position_start_file_number", "1") or "1",
         int(getattr(setting, "record_position_start_column", 1) or 1),
         getattr(setting, "record_position_direction", "decrement") or "decrement",
     )
@@ -2073,6 +2163,7 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
     months = request.POST.getlist("month")
     date_numbers = request.POST.getlist("date_number")
     storage_locations = request.POST.getlist("storage_location_number")
+    record_positions = request.POST.getlist("record_position_number")
     remarks = request.POST.getlist("remark")
     setting = AppSetting.current()
     if record_position_remaining_count(setting) <= 0:
@@ -2083,6 +2174,7 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
             month = months[index] if index < len(months) else ""
             date_number = date_numbers[index] if index < len(date_numbers) else ""
             storage_location = storage_locations[index] if index < len(storage_locations) else ""
+            manual_position = normalize_record_position_number(record_positions[index] if index < len(record_positions) else "")
             remark = remarks[index] if index < len(remarks) else ""
             parsed_record_date = parse_form_date(record_date)
             if not parsed_record_date:
@@ -2094,13 +2186,19 @@ def save_maintenance_records_from_request(request, contract: Contract) -> int:
                 month = f"{year_text}年{int(month_text):02d}月"
             sequence = ensure_record_volume_sequence(contract, storage_location, setting)
             real_sequence = int(sequence.real_sequence_number or 0) if sequence else 0
+            auto_position = shelf_position_number_from_sequence(real_sequence, setting)
+            record_position = auto_position
+            if not record_position:
+                if not manual_record_position_is_allowed(manual_position, setting):
+                    continue
+                record_position = manual_position
             uploaded_file = request.FILES.get(f"file_{index}")
             record = MaintenanceRecord.objects.create(
                 contract=contract,
                 record_date=parsed_record_date,
                 month=month,
                 date_number=normalize_record_date_number(date_number, parsed_record_date),
-                record_position_number=shelf_position_number_from_sequence(real_sequence, setting),
+                record_position_number=record_position,
                 storage_location_number=normalize_record_volume_number(storage_location),
                 remark=remark,
             )
@@ -3616,13 +3714,20 @@ def dashboard(request):
 
 
 # 函数说明：封装可复用的业务处理。
+def contract_file_number_sort_value(contract: Contract) -> tuple[int, int, str]:
+    file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
+    if file_number:
+        return (0, int(file_number), contract.display_contract_number)
+    return (1, 0, contract.display_contract_number)
+
+
 def sort_contracts_by_number(contracts: list[Contract], direction: str, explicit_sort: bool) -> None:
-    # 默认列表仍按原始编号倒序；用户点击表头时红色默认编号固定在前，其余按显示编号升降序切换。
+    # 默认列表仍按原始编号倒序；用户点击业务编号表头时按 5 位文件编号升降序切换。
     if explicit_sort:
         default_number_contracts = [contract for contract in contracts if contract.uses_default_display_contract_number]
         display_number_contracts = [contract for contract in contracts if not contract.uses_default_display_contract_number]
         default_number_contracts.sort(key=lambda item: item.display_contract_number, reverse=direction == "desc")
-        display_number_contracts.sort(key=lambda item: item.display_contract_number, reverse=direction == "desc")
+        display_number_contracts.sort(key=contract_file_number_sort_value, reverse=direction == "desc")
         contracts[:] = default_number_contracts + display_number_contracts
     else:
         contracts.sort(key=lambda item: item.contract_number, reverse=True)
@@ -4447,6 +4552,11 @@ CONTRACT_IMPORT_COLUMNS = [
     ("archive_years", "归档时间（年）"),
     ("remark", "备注"),
 ]
+CONTRACT_IMPORT_CREATE_COLUMNS = [
+    (field, label)
+    for field, label in CONTRACT_IMPORT_COLUMNS
+    if field != "original_contract_inner_number"
+]
 CONTRACT_IMPORT_CREATE_SHEET_NAME = "导入合同"
 CONTRACT_IMPORT_DEFAULT_MATCH_SHEET_NAME = "默认匹配"
 CONTRACT_IMPORT_BUSINESS_MATCH_SHEET_NAME = "业务匹配"
@@ -4489,8 +4599,6 @@ CONTRACT_IMPORT_UPDATE_FIELDS = {
 }
 CONTRACT_IMPORT_PREVIEW_COLUMNS = [
     "序号",
-    "工作表",
-    "处理方式",
     UI_LABELS["contract_name"],
     "默认编号",
     "业务编号",
@@ -4517,11 +4625,12 @@ MAINTENANCE_IMPORT_PREVIEW_COLUMNS = [
     UI_LABELS["contract_name"],
     "业务编号",
     UI_LABELS["date"],
-    "位置编号",
+    "自动位置编号",
     "分册编号",
     UI_LABELS["remark"],
     "错误",
 ]
+MAINTENANCE_IMPORT_SHEET_NAMES = {"记录", "项目记录"}
 CONTRACT_IMPORT_HEADER_ALIASES = {
     "金额": "amount",
     "合同金额": "amount",
@@ -4791,7 +4900,7 @@ def parse_contract_import_xlsx(uploaded_file):
 
     sheet_configs = {
         CONTRACT_IMPORT_CREATE_SHEET_NAME: {
-            "columns": CONTRACT_IMPORT_COLUMNS,
+            "columns": CONTRACT_IMPORT_CREATE_COLUMNS,
             "required_fields": ["contract_name", "contract_type", "party_name"],
             "import_mode": "create",
         },
@@ -4832,7 +4941,7 @@ def parse_contract_import_xlsx(uploaded_file):
             return [], ["Excel 文件为空。"]
         parsed_rows, parse_errors = parse_contract_import_rows_from_sheet(
             rows,
-            CONTRACT_IMPORT_COLUMNS,
+            CONTRACT_IMPORT_CREATE_COLUMNS,
             ["contract_name", "contract_type", "party_name"],
             CONTRACT_IMPORT_CREATE_SHEET_NAME,
             "create",
@@ -4903,16 +5012,9 @@ def apply_contract_import_updates(base_data: dict, row_data: dict, import_mode: 
 
 # 生成合同导入预览表格的一行单元格数据。
 def contract_import_result_preview_cells(item, import_mode, preview_contract, errors):
-    mode_label = {
-        "create": "新增合同",
-        "default_match": "默认匹配修改",
-        "business_match": "业务匹配修改",
-    }.get(import_mode, "合同导入")
     business_number = display_code_for_ui(preview_contract.display_contract_number)
     return [
         {"value": item.get("preview_index", item["row_number"] - 1)},
-        {"value": item.get("sheet_name", "")},
-        {"value": mode_label},
         {"value": preview_contract.contract_name, "css_class": "truncate-cell", "title": preview_contract.contract_name},
         {"value": preview_contract.contract_number},
         {
@@ -4948,6 +5050,7 @@ def contract_import_duplicate_business_number_messages(changed_contract_ids: set
 def validate_contract_import_rows(parsed_rows, contract_numbers=None):
     create_count = sum(1 for item in parsed_rows if item.get("import_mode", "create") == "create")
     contract_numbers = contract_numbers or default_contract_numbers(max(create_count, 1))
+    next_file_number = max_contract_file_number()
     business_lookup = contract_business_import_lookup()
     results = []
     display_numbers = {}
@@ -4979,6 +5082,12 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
             )
         else:
             data["contract_number"] = contract_numbers[create_index]
+            next_file_number += 1
+            if next_file_number > 99999:
+                errors.append("文件编号已达到 99999，无法继续自动生成。")
+                data["original_contract_inner_number"] = ""
+            else:
+                data["original_contract_inner_number"] = f"{next_file_number:05d}"
             create_index += 1
             form_data = data
 
@@ -5459,7 +5568,14 @@ def validate_invoice_import_rows(parsed_rows):
 
 # 解析项目记录导入 Excel。
 def parse_maintenance_import_xlsx(uploaded_file):
-    rows = next(iter(parse_xlsx_sheets(uploaded_file).values()), [])
+    sheets = parse_xlsx_sheets(uploaded_file)
+    target_rows = None
+    for sheet_name, rows in sheets.items():
+        if normalize_import_cell(sheet_name) in MAINTENANCE_IMPORT_SHEET_NAMES:
+            target_rows = rows
+            break
+    if target_rows is None:
+        return [], ["未找到可导入的记录工作表，请使用“记录”工作表。"]
     field_map = {
         "业务编号": "contract_key",
         "记录编号": "contract_key",
@@ -5471,7 +5587,6 @@ def parse_maintenance_import_xlsx(uploaded_file):
         "日期编号": "date_number",
         "月份编号": "date_number",
         "月份": "month",
-        "位置编号": "record_position_number",
         "分册编号": "storage_location_number",
         "存储编号": "storage_location_number",
         "备注": "remark",
@@ -5486,7 +5601,6 @@ def parse_maintenance_import_xlsx(uploaded_file):
         compact_record_key = re.sub(r"[-\s]", "", record_key)
         contract_key = compact_record_key if len(compact_record_key) == 8 and compact_record_key[:1].isalpha() else record_key
         date_number = value_for("date_number")
-        record_position = value_for("record_position_number")
         storage_location = value_for("storage_location_number")
 
         return {
@@ -5496,13 +5610,12 @@ def parse_maintenance_import_xlsx(uploaded_file):
                 "record_date": normalize_import_value("record_date", value_for("record_date")),
                 "date_number": normalize_record_date_number(date_number) if normalize_import_cell(date_number) else "",
                 "month": normalize_import_cell(value_for("month")),
-                "record_position_number": normalize_record_position_number(record_position),
                 "storage_location_number": normalize_record_volume_number(storage_location),
                 "remark": normalize_import_cell(value_for("remark")),
             },
         }
 
-    parsed_rows, parse_errors = parse_record_import_rows_from_sheet(rows, field_map, build_row)
+    parsed_rows, parse_errors = parse_record_import_rows_from_sheet(target_rows, field_map, build_row)
     if len(parsed_rows) > 300:
         parse_errors.append("一次最多导入 300 条项目记录，请拆分 Excel 后再导入。")
     return parsed_rows, parse_errors
@@ -5511,6 +5624,7 @@ def parse_maintenance_import_xlsx(uploaded_file):
 # 校验项目记录导入预览行并绑定目标合同。
 def validate_maintenance_import_rows(parsed_rows):
     contract_lookup = import_contract_lookup()
+    setting = AppSetting.current()
     results = []
     import_keys = {}
     for item in parsed_rows:
@@ -5519,8 +5633,8 @@ def validate_maintenance_import_rows(parsed_rows):
         contract = contract_lookup.get(data.get("contract_key", ""))
         record_date = date_from_import(data.get("record_date"))
         date_number = normalize_record_date_number(data.get("date_number"), record_date)
-        record_position = normalize_record_position_number(data.get("record_position_number"))
         storage_location = normalize_record_volume_number(data.get("storage_location_number"))
+        record_position = ""
         existing_record = None
         if contract is None:
             errors.append("未找到对应合同。")
@@ -5537,6 +5651,10 @@ def validate_maintenance_import_rows(parsed_rows):
                 .order_by("id")
                 .first()
             )
+            real_sequence = record_real_sequence_number(contract, storage_location, setting)
+            record_position = shelf_position_number_from_sequence(real_sequence, setting)
+            if not record_position:
+                errors.append("当前记录位置规则无法自动生成位置编号，请在页面手动新增该记录。")
         if record_date is None:
             errors.append("日期格式不正确。")
         data["month"] = normalize_maintenance_month(data.get("month"), record_date)
@@ -5601,15 +5719,18 @@ def contract_import_preview_context(
         "invoice": INVOICE_IMPORT_PREVIEW_COLUMNS,
         "maintenance": MAINTENANCE_IMPORT_PREVIEW_COLUMNS,
     }.get(import_kind, CONTRACT_IMPORT_PREVIEW_COLUMNS)
+    show_preview_table = bool(results) or bool(parse_errors) or bool(confirm_error)
     return context_with_auth(
         request,
         {
             "form": upload_form,
             "columns": CONTRACT_IMPORT_COLUMNS,
             "preview_columns": preview_columns,
+            "preview_table_class": f"import-preview-{import_kind}",
             "results": results,
             "payload": payload,
             "parse_errors": parse_errors or [],
+            "show_preview_table": show_preview_table,
             "valid_count": valid_count,
             "error_count": error_count,
             "allow_partial_import_with_errors": allow_partial_import_with_errors,
@@ -5630,7 +5751,7 @@ def contract_import_preview_context(
 # 视图函数：下载合同导入 Excel 模板。
 @admin_required
 def contract_import_template(request):
-    headers = [label for _field, label in CONTRACT_IMPORT_COLUMNS]
+    headers = [label for _field, label in CONTRACT_IMPORT_CREATE_COLUMNS]
     comments = {
         "合同名称": "必填。填写要导入的合同名称。",
         "合同类型": "必填。填写维保、项目或其他系统支持的合同类型。",
@@ -5641,7 +5762,6 @@ def contract_import_template(request):
         "开始日期": "日期格式：YYYY-MM-DD。",
         "截止日期": "日期格式：YYYY-MM-DD。",
         "负责人": "填写负责人姓名。",
-        "文件编号": "填写 5 位文件编号，例如 00001。",
         "文件夹编号": "填写 3 位文件夹编号，例如 001。",
         "位置编号": "填写 3 位位置编号，例如 123。第 1 位为柜号，第 2 位为栏目号，第 3 位为排位号。",
         "归档时间（年）": "填写归档年限数字，例如 3。",
@@ -5729,12 +5849,11 @@ def invoice_import_template(request):
 # 视图函数：下载项目记录导入 Excel 模板。
 @true_admin_required
 def record_import_template(request):
-    headers = ["业务编号", "日期", "位置编号", "分册编号", "备注"]
+    headers = ["业务编号", "日期", "分册编号", "备注"]
     comments = {
         "业务编号": "填写已有业务编号或合同名称，用于匹配合同。",
         "日期": "必填。日期格式：YYYY-MM-DD。",
-        "位置编号": "填写 6 位记录位置编号，前两位为柜号，中间两位为栏目，后两位为排位，例如 010501。",
-        "分册编号": "填写 2 位分册编号，例如 01。",
+        "分册编号": "填写 2 位分册编号，例如 01。位置编号会按当前记录位置规则自动分配，不能通过导入修改。",
         "备注": "可选。填写项目记录备注。",
     }
     response = HttpResponse(
@@ -5845,11 +5964,14 @@ def contract_import(request):
                         if record:
                             sequence = ensure_record_volume_sequence(contract, data.get("storage_location_number"), app_setting)
                             real_sequence = int(sequence.real_sequence_number or 0) if sequence else 0
+                            auto_position = shelf_position_number_from_sequence(real_sequence, app_setting)
+                            if not auto_position:
+                                raise RuntimeError("当前记录位置规则无法自动生成位置编号，请在页面手动新增该记录。")
                             record.record_date = record_date
                             record.month = month
                             record.date_number = date_number
                             record.storage_location_number = normalize_record_volume_number(data.get("storage_location_number"))
-                            record.record_position_number = normalize_record_position_number(data.get("record_position_number") or shelf_position_number_from_sequence(real_sequence, app_setting))
+                            record.record_position_number = normalize_record_position_number(auto_position)
                             record.remark = data.get("remark", "")
                             record.save(
                                 update_fields=[
@@ -5866,13 +5988,16 @@ def contract_import(request):
                         else:
                             sequence = ensure_record_volume_sequence(contract, data.get("storage_location_number"), app_setting)
                             real_sequence = int(sequence.real_sequence_number or 0) if sequence else 0
+                            auto_position = shelf_position_number_from_sequence(real_sequence, app_setting)
+                            if not auto_position:
+                                raise RuntimeError("当前记录位置规则无法自动生成位置编号，请在页面手动新增该记录。")
                             record = MaintenanceRecord.objects.create(
                                 contract=contract,
                                 record_date=record_date,
                                 month=month,
                                 date_number=date_number,
                                 storage_location_number=normalize_record_volume_number(data.get("storage_location_number")),
-                                record_position_number=normalize_record_position_number(data.get("record_position_number") or shelf_position_number_from_sequence(real_sequence, app_setting)),
+                                record_position_number=normalize_record_position_number(auto_position),
                                 remark=data.get("remark", ""),
                             )
                             log_action = "新增"
@@ -6721,6 +6846,7 @@ def maintenance_record_create(request, pk: int):
                     "endCabinet": setting.record_position_end_cabinet_number,
                     "direction": setting.record_position_direction,
                     "insertSort": setting.record_position_enable_insert_sort,
+                    "tiers": record_position_generation_tiers(setting),
                 },
                 "project_years": project_years,
                 "file_label": project_labels["file"],

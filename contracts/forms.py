@@ -308,6 +308,26 @@ class AppSettingForm(forms.ModelForm):
             }
         ),
     )
+    record_position_column_capacity = forms.CharField(
+        label="记录位置栏目存放数",
+        widget=forms.TextInput(
+            attrs={
+                "inputmode": "numeric",
+                "pattern": r"\d+(?:/\d+)*",
+                "placeholder": "13/18",
+            }
+        ),
+    )
+    record_position_start_file_number = forms.CharField(
+        label="记录位置起始界限点",
+        widget=forms.TextInput(
+            attrs={
+                "inputmode": "numeric",
+                "pattern": r"\d+(?:/\d+)*",
+                "placeholder": "3441/3364",
+            }
+        ),
+    )
 
     # 根据当前权限控制图片保存目录和记录位置生成参数是否允许编辑。
     def __init__(
@@ -321,8 +341,6 @@ class AppSettingForm(forms.ModelForm):
         image_field = self.fields["image_root_path"]
         numeric_fields = [
             "record_position_column_count",
-            "record_position_column_capacity",
-            "record_position_start_file_number",
         ]
         for field_name in numeric_fields:
             self.fields[field_name].widget.attrs.update({"min": "1", "step": "1", "inputmode": "numeric"})
@@ -381,13 +399,36 @@ class AppSettingForm(forms.ModelForm):
             raise forms.ValidationError("存放栏目不能大于栏目量。")
         return number
 
+    def clean_record_position_column_capacity(self):
+        return self.clean_record_position_slash_numbers("record_position_column_capacity", "栏目存放数")
+
+    def clean_record_position_start_file_number(self):
+        return self.clean_record_position_slash_numbers("record_position_start_file_number", "起始界限点")
+
+    def clean_record_position_slash_numbers(self, field_name: str, label: str) -> str:
+        value = str(self.cleaned_data.get(field_name) or "").strip()
+        parts = [part.strip() for part in value.split("/") if part.strip()]
+        if not parts or any(not part.isdigit() or int(part) < 1 for part in parts):
+            raise forms.ValidationError(f"{label}必须填写大于 0 的数字，可用 / 分隔多段。")
+        return "/".join(str(int(part)) for part in parts)
+
     # 方法说明：执行表单字段或整表校验。
     def clean(self):
         cleaned_data = super().clean()
         start_cabinet = cleaned_data.get("record_position_cabinet_number")
         end_cabinet = cleaned_data.get("record_position_end_cabinet_number")
+        start_files = str(cleaned_data.get("record_position_start_file_number") or "").split("/")
+        capacities = str(cleaned_data.get("record_position_column_capacity") or "").split("/")
         if start_cabinet and end_cabinet and end_cabinet < start_cabinet:
             self.add_error("record_position_end_cabinet_number", "终止柜号不能小于起始柜号。")
+        if len(start_files) != len(capacities):
+            self.add_error("record_position_column_capacity", "栏目存放数的分段数量必须与起始界限点一致。")
+        start_file_numbers = [int(value) for value in start_files if value.isdigit()]
+        if len(start_file_numbers) == len(start_files):
+            for left, right in zip(start_file_numbers, start_file_numbers[1:]):
+                if left <= right:
+                    self.add_error("record_position_start_file_number", "起始界限点必须按从左到右递减填写，且不能相等。")
+                    break
         return cleaned_data
 
     @staticmethod

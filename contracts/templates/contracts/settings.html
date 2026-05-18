@@ -78,7 +78,7 @@
             </div>
             <div class="form-row record-position-side-card">
               <span class="field-label">剩余排位数</span>
-              <strong>{{ record_position_remaining_count }}</strong>
+              <strong id="recordPositionRemainingCount">{{ record_position_remaining_count }}</strong>
             </div>
             <div class="form-row">
               <label class="field-label" for="{{ form.record_position_start_file_number.id_for_label }}">起始界限点</label>
@@ -171,7 +171,49 @@
         </div>
       </div>
     </div>
+    {{ record_position_max_sequence|json_script:"recordPositionMaxSequence" }}
+    {{ record_position_reusable_empty_count|json_script:"recordPositionReusableEmptyCount" }}
     <script>
+      const recordPositionRemainingOutput = document.querySelector("#recordPositionRemainingCount");
+      const recordPositionMaxSequence = Number(JSON.parse(document.querySelector("#recordPositionMaxSequence")?.textContent || "0")) || 0;
+      const recordPositionReusableEmptyCount = Number(JSON.parse(document.querySelector("#recordPositionReusableEmptyCount")?.textContent || "0")) || 0;
+      const recordPositionInputs = {
+        startCabinet: document.querySelector("#id_record_position_cabinet_number"),
+        endCabinet: document.querySelector("#id_record_position_end_cabinet_number"),
+        columnCount: document.querySelector("#id_record_position_column_count"),
+        capacity: document.querySelector("#id_record_position_column_capacity"),
+        startFile: document.querySelector("#id_record_position_start_file_number"),
+      };
+
+      function integerValue(input, fallback = 1) {
+        const value = Number.parseInt(String(input?.value || "").replace(/\D/g, ""), 10);
+        return Number.isFinite(value) && value > 0 ? value : fallback;
+      }
+
+      function refreshRecordPositionRemainingCount() {
+        if (!recordPositionRemainingOutput) {
+          return;
+        }
+        const startCabinet = integerValue(recordPositionInputs.startCabinet, 1);
+        const endCabinet = integerValue(recordPositionInputs.endCabinet, startCabinet);
+        const cabinetCount = Math.max(endCabinet - startCabinet + 1, 1);
+        const columnCount = integerValue(recordPositionInputs.columnCount, 1);
+        const capacity = integerValue(recordPositionInputs.capacity, 1);
+        const startFile = integerValue(recordPositionInputs.startFile, 1);
+        const totalPositions = columnCount * capacity * cabinetCount;
+        const usedPositions = recordPositionMaxSequence > 0
+          ? Math.max(recordPositionMaxSequence - startFile + 1, 0)
+          : 0;
+        const remaining = Math.max(totalPositions - usedPositions + recordPositionReusableEmptyCount, 0);
+        recordPositionRemainingOutput.textContent = String(remaining);
+      }
+
+      Object.values(recordPositionInputs).forEach((input) => {
+        input?.addEventListener("input", refreshRecordPositionRemainingCount);
+        input?.addEventListener("change", refreshRecordPositionRemainingCount);
+      });
+      refreshRecordPositionRemainingCount();
+
       const importTemplateModalButton = document.querySelector("#importTemplateModalButton");
       const importTemplateModal = document.querySelector("#importTemplateModal");
       const importTemplateModalClose = document.querySelector("#importTemplateModalClose");

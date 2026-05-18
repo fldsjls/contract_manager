@@ -1453,27 +1453,22 @@ def record_position_number_from_sequence(sequence_number: int, setting: AppSetti
     capacity = max(int(setting.record_position_column_capacity or 1), 1)
     column_count = max(int(setting.record_position_column_count or 1), 1)
     start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
-    cabinet = max(int(setting.record_position_cabinet_number or 1), 1)
+    start_cabinet = max(int(setting.record_position_cabinet_number or 1), 1)
     sequence_number = int(sequence_number or 0)
     start_file = max(int(setting.record_position_start_file_number or 1), 1)
     sequence_offset = sequence_number - start_file + 1
     if sequence_offset > 0:
         column_steps = (sequence_offset - 1) // capacity
-        forward_direction = setting.record_position_direction
-        cabinet_step = 1
+        cabinet = start_cabinet + (column_steps // column_count)
+        column_slot = column_steps % column_count
     else:
         column_steps = ((-sequence_offset - 1) // capacity) + 1
-        forward_direction = "decrement" if setting.record_position_direction == "increment" else "increment"
-        cabinet_step = -1
-    if forward_direction == "increment":
-        column_index = start_column - 1 + column_steps
-        cabinet += cabinet_step * (column_index // column_count)
-        column = (column_index % column_count) + 1
+        cabinet = start_cabinet - ((column_steps - 1) // column_count + 1)
+        column_slot = column_steps % column_count
+    if setting.record_position_direction == "increment":
+        column = ((start_column - 1 + column_slot) % column_count) + 1
     else:
-        column_index = start_column - 1 - column_steps
-        wraps = ((-column_index - 1) // column_count + 1) if column_index < 0 else 0
-        cabinet += cabinet_step * wraps
-        column = (column_index % column_count) + 1
+        column = ((start_column - 1 - column_slot) % column_count) + 1
     return f"{max(cabinet, 1):02d}{column:02d}"
 
 
@@ -1482,29 +1477,24 @@ def shelf_position_number_from_sequence(sequence_number: int, setting: AppSettin
     capacity = max(int(setting.record_position_column_capacity or 1), 1)
     column_count = max(int(setting.record_position_column_count or 1), 1)
     start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
-    cabinet = max(int(setting.record_position_cabinet_number or 1), 1)
+    start_cabinet = max(int(setting.record_position_cabinet_number or 1), 1)
     sequence_number = int(sequence_number or 0)
     start_file = max(int(setting.record_position_start_file_number or 1), 1)
     sequence_offset = sequence_number - start_file + 1
     if sequence_offset > 0:
         column_steps = (sequence_offset - 1) // capacity
         rank = ((sequence_offset - 1) % capacity) + 1
-        forward_direction = setting.record_position_direction
-        cabinet_step = 1
+        cabinet = start_cabinet + (column_steps // column_count)
+        column_slot = column_steps % column_count
     else:
         column_steps = ((-sequence_offset - 1) // capacity) + 1
         rank = capacity - ((-sequence_offset - 1) % capacity)
-        forward_direction = "decrement" if setting.record_position_direction == "increment" else "increment"
-        cabinet_step = -1
-    if forward_direction == "increment":
-        column_index = start_column - 1 + column_steps
-        cabinet += cabinet_step * (column_index // column_count)
-        column = (column_index % column_count) + 1
+        cabinet = start_cabinet - ((column_steps - 1) // column_count + 1)
+        column_slot = column_steps % column_count
+    if setting.record_position_direction == "increment":
+        column = ((start_column - 1 + column_slot) % column_count) + 1
     else:
-        column_index = start_column - 1 - column_steps
-        wraps = ((-column_index - 1) // column_count + 1) if column_index < 0 else 0
-        cabinet += cabinet_step * wraps
-        column = (column_index % column_count) + 1
+        column = ((start_column - 1 - column_slot) % column_count) + 1
     return f"{max(cabinet, 1):02d}{column:02d}{rank:02d}"
 
 
@@ -1556,10 +1546,7 @@ def record_position_remaining_count(setting: AppSetting | None = None) -> int:
     start_cabinet = int(setting.record_position_cabinet_number or 1)
     end_cabinet = int(getattr(setting, "record_position_end_cabinet_number", start_cabinet) or start_cabinet)
     cabinet_count = max(end_cabinet - start_cabinet + 1, 1)
-    if setting.record_position_direction == "increment":
-        total_positions = max(column_count - start_column, 0) * capacity * cabinet_count
-    else:
-        total_positions = max(start_column, 0) * capacity * cabinet_count
+    total_positions = column_count * capacity * cabinet_count
     max_sequence = MaintenanceRecordVolumeSequence.objects.aggregate(max_sequence=Max("real_sequence_number")).get("max_sequence")
     used_positions = max(int(max_sequence or 0) - start_file + 1, 0) if max_sequence else 0
     return max(total_positions - used_positions + reusable_empty_record_position_count(), 0)
@@ -1580,14 +1567,9 @@ def sequence_number_from_reserved_position(position_text: str, setting: AppSetti
         return None
     cabinet_steps = cabinet - start_cabinet
     if setting.record_position_direction == "increment":
-        column_steps = cabinet_steps * column_count + (column - start_column)
+        column_steps = cabinet_steps * column_count + ((column - start_column) % column_count)
     else:
-        if cabinet_steps == 0:
-            if column > start_column:
-                return None
-            column_steps = start_column - column
-        else:
-            column_steps = start_column + (cabinet_steps - 1) * column_count + (column_count - column)
+        column_steps = cabinet_steps * column_count + ((start_column - column) % column_count)
     if column_steps < 0:
         return None
     offset = column_steps * capacity + rank
@@ -7064,6 +7046,11 @@ def settings_view(request):
                 "host_ip": host_ip,
                 "lan_url": f"http://{host_ip}:8000",
                 "record_position_remaining_count": record_position_remaining_count(setting),
+                "record_position_max_sequence": int(
+                    MaintenanceRecordVolumeSequence.objects.aggregate(max_sequence=Max("real_sequence_number")).get("max_sequence")
+                    or 0
+                ),
+                "record_position_reusable_empty_count": reusable_empty_record_position_count(),
                 "can_edit_image_root_path": can_edit_image_root_path,
                 "can_edit_record_position_generation": can_edit_record_position_generation,
                 "active_nav": "settings",

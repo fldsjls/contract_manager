@@ -46,7 +46,7 @@
               </td>
               {% if month_field %}
                 <td><output class="record-number-output"></output></td>
-                <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="01" maxlength="2" inputmode="numeric" pattern="\d{0,2}"></td>
+                <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="{{ default_record_volume_number|default:'01' }}" maxlength="2" inputmode="numeric" pattern="\d{0,2}"></td>
                 <td><input class="record-position-number-input" name="record_position_number" type="text" value="000000" maxlength="6" inputmode="numeric" pattern="\d{0,6}" readonly aria-readonly="true"></td>
               {% endif %}
               {% if record_type_options %}
@@ -102,6 +102,7 @@
     const recordMaxSequenceNumber = Number.parseInt("{{ record_max_sequence_number|default:'0'|escapejs }}", 10) || 0;
     const recordBaseSequenceNumber = Number.parseInt("{{ record_base_sequence_number|default:'0'|escapejs }}", 10) || 0;
     const recordRemainingPositions = Number.parseInt("{{ record_position_remaining_count|default:'1'|escapejs }}", 10) || 0;
+    const defaultRecordVolumeNumber = "{{ default_record_volume_number|default:'01'|escapejs }}";
     const recordPositionSettings = JSON.parse(document.querySelector("#recordPositionSettingsData")?.textContent || "{}");
     const recordVolumeSequences = JSON.parse(document.querySelector("#recordVolumeSequencesData")?.textContent || "{}") || {};
     const saveRecordButton = document.querySelector("#saveRecordButton");
@@ -190,14 +191,7 @@
     }
 
     function rememberedRecordNumbers() {
-      try {
-        const data = JSON.parse(localStorage.getItem(recordNumberMemoryKey) || "{}");
-        return {
-          storageLocation: normalizeStorageLocation(data.storageLocation),
-        };
-      } catch (error) {
-        return { storageLocation: "01" };
-      }
+      return { storageLocation: normalizeStorageLocation(defaultRecordVolumeNumber) };
     }
 
     function rememberRecordNumbers(row) {
@@ -331,7 +325,7 @@
         </td>
         {% if month_field %}
           <td><output class="record-number-output"></output></td>
-          <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="01" maxlength="2" inputmode="numeric" pattern="\\d{0,2}"></td>
+          <td><input class="storage-location-number-input" name="storage_location_number" type="text" value="${normalizeStorageLocation(defaultRecordVolumeNumber)}" maxlength="2" inputmode="numeric" pattern="\\d{0,2}"></td>
           <td><input class="record-position-number-input" name="record_position_number" type="text" value="000000" maxlength="6" inputmode="numeric" pattern="\\d{0,6}" readonly aria-readonly="true"></td>
         {% endif %}
         {% if record_type_options %}

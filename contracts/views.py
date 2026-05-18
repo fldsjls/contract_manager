@@ -6541,6 +6541,15 @@ def maintenance_record_create(request, pk: int):
         for sequence in contract.record_volume_sequences.all()
     }
     record_volume_sequences.setdefault("01", record_real_sequence_number(contract, "01", setting))
+    existing_volume_numbers = [
+        int(volume)
+        for volume in (
+            normalize_record_volume_number(value)
+            for value in contract.maintenancerecord_set.values_list("storage_location_number", flat=True)
+        )
+        if volume.isdigit() and int(volume) > 0
+    ]
+    default_record_volume_number = f"{max(existing_volume_numbers) if existing_volume_numbers else 1:02d}"
     return render(
         request,
         "contracts/record_form.html",
@@ -6560,6 +6569,7 @@ def maintenance_record_create(request, pk: int):
                 "record_max_sequence_number": max_record_real_sequence_number(),
                 "record_base_sequence_number": record_real_sequence_number(contract, "01", setting),
                 "record_position_remaining_count": record_position_remaining_count(setting),
+                "default_record_volume_number": default_record_volume_number,
                 "record_volume_sequences": record_volume_sequences,
                 "record_position_settings": {
                     "cabinet": setting.record_position_cabinet_number,

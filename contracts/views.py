@@ -469,7 +469,8 @@ def usage_docs_for_request(request) -> list[dict]:
             "title": "项目记录实序编号与位置生成",
             "items": [
                 "实序编号是项目记录分册的内部排位依据，不显示在记录编号中；系统按“合同-分册-实序编号-排位”保存对应关系，避免同一分册下多条记录重复保存同一实序位置。",
-                "01 册的实序编号默认等于合同的 5 位文件编号；同一合同新增后续分册时，会先查找上一分册的实序编号，再生成当前分册的实序编号。",
+                "实序编号已经与合同文件编号分离：文件编号只影响业务编号和记录编号前缀，不参与新增实序编号排序，也不会重算已有实序编号、位置编号或已占用排位。",
+                "首次生成实序编号时，系统把设置页最左侧起始界限点减 1 视为初始最大实序编号；因此第一份合同 01 册会生成“起始界限点 - 1 + 1”，之后新增合同或追加分册按当前最大实序编号 + 1 继续递增。",
                 "未开启插入重排序时，新增 02 册及后续分册会追加到当前最大实序编号之后，适合把新记录放到现有档案末尾。",
                 "开启插入重排序时，新分册按“上一分册实序编号 + 1”插入，并把该位置之后的排位整体后移 1；因此 02 册不会跳过 01 册直接生成，03 册也会接在 02 册之后。",
                 "正常生成实序编号时，系统会把已生效的空排位视为档案柜中真实空出的位置：只有目标实序编号正好落到空排位上时，才会向后顺延到下一个可用排位；目标前方的空排位不会额外影响当前目标编号。",
@@ -1423,14 +1424,12 @@ def auto_record_position_number(contract: Contract, volume_number: str, setting:
     return shelf_position_number_from_sequence(sequence_number, setting)
 
 
-# 根据合同文件编号和分册编号计算项目记录不可见实序编号。
+# 根据已有分册映射和当前排位池计算项目记录不可见实序编号。
 def record_real_sequence_number(contract: Contract, volume_number: str, setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
-    file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
     volume = normalize_record_volume_number(volume_number)
-    if not file_number or not volume:
+    if not volume:
         return 0
-    file_value = int(file_number)
     volume_value = int(volume)
     if getattr(contract, "pk", None):
         sequence = (
@@ -1441,10 +1440,14 @@ def record_real_sequence_number(contract: Contract, volume_number: str, setting:
         if sequence:
             return int(sequence or 0)
     if volume_value == 1:
-        return sequence_after_empty_record_positions(file_value)
+        return next_record_real_sequence_number(setting)
     if volume_value > 1 and not setting.record_position_enable_insert_sort:
-        return max_record_real_sequence_number(file_value) + 1
-    return sequence_after_empty_record_positions(file_value + volume_value - 1)
+        return next_record_real_sequence_number(setting)
+    previous_volume = f"{volume_value - 1:02d}"
+    previous_sequence = record_real_sequence_number(contract, previous_volume, setting)
+    if previous_sequence:
+        return sequence_after_empty_record_positions(previous_sequence + 1)
+    return next_record_real_sequence_number(setting)
 
 
 # 将实序编号换算为可见位置编号。
@@ -1600,22 +1603,35 @@ def max_contract_file_number(fallback: int = 0) -> int:
 
 
 # 获取当前项目记录的最大实序编号，追加分册时作为末尾基准。
-def max_record_real_sequence_number(fallback: int = 0) -> int:
+def record_sequence_baseline(setting: AppSetting | None = None) -> int:
+    return max(record_position_generation_tiers(setting)[0]["start_file"] - 1, 0)
+
+
+def max_record_real_sequence_number(fallback: int | None = None) -> int:
+    if fallback is None:
+        fallback = record_sequence_baseline()
     max_sequence = MaintenanceRecordVolumeSequence.objects.aggregate(max_sequence=Max("real_sequence_number")).get("max_sequence")
     return max(int(max_sequence or 0), fallback)
 
 
-def max_record_position_occupied_sequence(fallback: int = 0) -> int:
-    return max(max_record_real_sequence_number(fallback), max_contract_file_number(fallback))
+def max_record_position_occupied_sequence(fallback: int | None = None) -> int:
+    return max_record_real_sequence_number(fallback)
 
 
-def max_active_record_real_sequence_number(fallback: int = 0) -> int:
+def max_active_record_real_sequence_number(fallback: int | None = None) -> int:
+    if fallback is None:
+        fallback = record_sequence_baseline()
     max_sequence = (
         MaintenanceRecordVolumeSequence.objects.filter(is_reserved=False)
         .aggregate(max_sequence=Max("real_sequence_number"))
         .get("max_sequence")
     )
     return max(int(max_sequence or 0), fallback)
+
+
+def next_record_real_sequence_number(setting: AppSetting | None = None) -> int:
+    setting = setting or AppSetting.current()
+    return sequence_after_empty_record_positions(max_record_real_sequence_number(record_sequence_baseline(setting)) + 1)
 
 
 def reusable_empty_record_position_count() -> int:
@@ -1920,9 +1936,6 @@ def reserve_default_record_volume_sequence(
     setting: AppSetting | None = None,
 ) -> MaintenanceRecordVolumeSequence | None:
     setting = setting or AppSetting.current()
-    file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
-    if not file_number:
-        return None
     sequence = MaintenanceRecordVolumeSequence.objects.filter(
         contract=contract,
         storage_location_number="01",
@@ -1933,7 +1946,7 @@ def reserve_default_record_volume_sequence(
         empty_sequence = reconnect_empty_record_volume_sequence(contract, "01", setting)
         if empty_sequence:
             return empty_sequence
-    real_sequence = sequence_after_empty_record_positions(int(file_number))
+    real_sequence = next_record_real_sequence_number(setting)
     if exceeds_record_position_capacity(real_sequence, setting):
         empty_sequence = reconnect_empty_record_volume_sequence(contract, "01", setting)
         if empty_sequence:
@@ -1953,11 +1966,9 @@ def ensure_record_volume_sequence(
     setting: AppSetting | None = None,
 ) -> MaintenanceRecordVolumeSequence | None:
     setting = setting or AppSetting.current()
-    file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
     volume = normalize_record_volume_number(volume_number)
-    if not file_number or not volume:
+    if not volume:
         return None
-    file_value = int(file_number)
     volume_value = int(volume)
     sequence = MaintenanceRecordVolumeSequence.objects.filter(
         contract=contract,
@@ -1970,7 +1981,7 @@ def ensure_record_volume_sequence(
         if empty_sequence:
             return empty_sequence
     if volume_value == 1:
-        real_sequence = sequence_after_empty_record_positions(file_value)
+        real_sequence = next_record_real_sequence_number(setting)
     elif setting.record_position_enable_insert_sort:
         previous_volume = f"{volume_value - 1:02d}"
         previous_sequence = ensure_record_volume_sequence(contract, previous_volume, setting)
@@ -1983,7 +1994,7 @@ def ensure_record_volume_sequence(
                 return empty_sequence
         shift_record_volume_sequences_after(real_sequence - 1, setting)
     else:
-        real_sequence = max_record_real_sequence_number(file_value) + 1
+        real_sequence = next_record_real_sequence_number(setting)
     if exceeds_record_position_capacity(real_sequence, setting):
         empty_sequence = reconnect_empty_record_volume_sequence(contract, volume, setting)
         if empty_sequence:
@@ -2137,10 +2148,6 @@ def backfill_default_record_volume_sequences(setting: AppSetting | None = None) 
     contracts = Contract.objects.filter(is_deleted=False).order_by("id")
     with transaction.atomic():
         for contract in contracts:
-            file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
-            if not file_number:
-                missing_file_number_count += 1
-                continue
             if MaintenanceRecordVolumeSequence.objects.filter(
                 contract=contract,
                 storage_location_number="01",

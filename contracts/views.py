@@ -475,7 +475,8 @@ def usage_docs_for_request(request) -> list[dict]:
                 "开启插入重排序时，新分册按“上一分册实序编号 + 1”插入，并把该位置之后的排位整体后移 1；因此 02 册不会跳过 01 册直接生成，03 册也会接在 02 册之后。",
                 "正常生成实序编号时，系统会把已生效的空排位视为档案柜中真实空出的位置：只有目标实序编号正好落到空排位上时，才会向后顺延到下一个可用排位；目标前方的空排位不会额外影响当前目标编号。",
                 "位置编号由实序编号和设置页的起始界限点、柜号范围、栏目量、栏目存放数、存放栏目、存放逻辑共同换算；记录表单中的位置编号是 6 位实际排位（柜号 2 位 + 栏目 2 位 + 排位 2 位）。",
-                "设置页的剩余排位数按当前柜号范围和存放逻辑计算容量，再扣除“最大实序编号 - 起始界限点 + 1”，最后加上可复用的空排位；剩余为 0 时，新增项目记录页面会把保存按钮置灰，避免继续写入超出范围的位置。",
+                "设置页的剩余排位数会按不同起始界限点分段计算：从最右侧较小界限点开始，每段统计到左侧下一界限点前一位；最左侧界限点仍按柜号范围、栏目量、栏目存放数和存放逻辑计算完整容量，最后扣除已占用实序并加上可复用空排位。",
+                "剩余排位数为 0 时，新增项目记录页面会把保存按钮置灰，避免继续写入超出范围的位置。",
                 "排位预留值按 6 位实际位置填写，多个值用英文分号分隔，例如 011205;020101；当该排位换算出的实序编号大于当前最大实序编号时，它只作为等待值保存在设置中，不进入空排位池。",
                 "当排位预留值换算出的实序编号不大于当前最大实序编号时，它会进入空排位池，效果等同于合同归档后释放的空排位；已进入空排位池的值会被锁定保存，即使从输入框删除也会重新显示，只有仍在等待中的值可以真正删除。",
                 "排位预留值支持批量输入，格式为“柜号范围,栏目范围,排位范围”，例如 01-03,03-04,01-10 表示 01 至 03 柜、03 至 04 栏、01 至 10 排位全部预留；保存后会展开成单独条目显示，也可以在设置页导出 Excel 快速核对。",
@@ -1650,14 +1651,14 @@ def sequence_after_empty_record_positions(real_sequence_number: int) -> int:
 
 def record_position_remaining_count(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
-    start_file = record_position_generation_tiers(setting)[0]["start_file"]
-    total_positions = record_position_total_capacity(setting)
     max_sequence = max_record_position_occupied_sequence()
-    used_positions = max(int(max_sequence or 0) - start_file + 1, 0) if max_sequence else 0
-    return max(total_positions - used_positions + reusable_empty_record_position_count(), 0)
+    remaining_positions = 0
+    for start_file, end_file in record_position_sequence_ranges(setting):
+        remaining_positions += max(end_file - max(int(max_sequence or 0), start_file - 1), 0)
+    return max(remaining_positions + reusable_empty_record_position_count(), 0)
 
 
-def record_position_total_capacity(setting: AppSetting | None = None) -> int:
+def record_position_leftmost_total_capacity(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
     start_column = int(setting.record_position_start_column or 1)
     column_count = int(setting.record_position_column_count or 1)
@@ -1673,10 +1674,29 @@ def record_position_total_capacity(setting: AppSetting | None = None) -> int:
     return total_columns * capacity
 
 
+def record_position_sequence_ranges(setting: AppSetting | None = None) -> list[tuple[int, int]]:
+    tiers = record_position_generation_tiers(setting)
+    ranges = []
+    for index in range(len(tiers) - 1, -1, -1):
+        tier = tiers[index]
+        start_file = int(tier["start_file"])
+        if index == 0:
+            end_file = start_file + record_position_leftmost_total_capacity(setting) - 1
+        else:
+            end_file = int(tiers[index - 1]["start_file"]) - 1
+        if end_file >= start_file:
+            ranges.append((start_file, end_file))
+    return ranges
+
+
+def record_position_total_capacity(setting: AppSetting | None = None) -> int:
+    return sum(end_file - start_file + 1 for start_file, end_file in record_position_sequence_ranges(setting))
+
+
 def record_position_last_sequence_number(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
     start_file = record_position_generation_tiers(setting)[0]["start_file"]
-    return start_file + record_position_total_capacity(setting) - 1
+    return start_file + record_position_leftmost_total_capacity(setting) - 1
 
 
 def exceeds_record_position_capacity(real_sequence_number: int, setting: AppSetting | None = None) -> bool:

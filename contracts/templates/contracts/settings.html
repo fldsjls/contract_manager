@@ -208,9 +208,50 @@
         return Number.isFinite(value) && value > 0 ? value : fallback;
       }
 
+      function slashIntegerValues(input, fallback = 1) {
+        const values = String(input?.value || "")
+          .split("/")
+          .map((part) => Number.parseInt(part.replace(/\D/g, ""), 10))
+          .filter((value) => Number.isFinite(value) && value > 0);
+        return values.length ? values : [fallback];
+      }
+
+      function leftmostTotalPositions(capacity) {
+        const startCabinet = integerValue(recordPositionInputs.startCabinet, 1);
+        const endCabinet = integerValue(recordPositionInputs.endCabinet, startCabinet);
+        const cabinetCount = Math.max(endCabinet - startCabinet + 1, 1);
+        const columnCount = integerValue(recordPositionInputs.columnCount, 1);
+        const startColumn = Math.min(integerValue(recordPositionInputs.startColumn, 1), columnCount);
+        const firstCabinetColumns = recordPositionInputs.direction?.value === "increment"
+          ? Math.max(columnCount - startColumn + 1, 0)
+          : Math.max(startColumn, 0);
+        const totalColumns = firstCabinetColumns + Math.max(cabinetCount - 1, 0) * columnCount;
+        return totalColumns * capacity;
+      }
+
+      function remainingPositionsBetween(startFile, endFile) {
+        if (endFile < startFile) {
+          return 0;
+        }
+        return Math.max(endFile - Math.max(recordPositionMaxSequence, startFile - 1), 0);
+      }
+
+      function recordPositionTiersFromInputs() {
+        const startFiles = slashIntegerValues(recordPositionInputs.startFile, 1);
+        const capacities = slashIntegerValues(recordPositionInputs.capacity, 1);
+        while (capacities.length < startFiles.length) {
+          capacities.push(capacities[capacities.length - 1] || 1);
+        }
+        return startFiles
+          .map((startFile, index) => ({
+            startFile,
+            capacity: Math.max(capacities[index] || 1, 1),
+          }))
+          .sort((left, right) => right.startFile - left.startFile);
+      }
+
       function slashIntegerValue(input, fallback = 1) {
-        const firstValue = String(input?.value || "").split("/")[0] || "";
-        const value = Number.parseInt(firstValue.replace(/\D/g, ""), 10);
+        const value = slashIntegerValues(input, fallback)[0];
         return Number.isFinite(value) && value > 0 ? value : fallback;
       }
 
@@ -218,22 +259,18 @@
         if (!recordPositionRemainingOutput) {
           return;
         }
-        const startCabinet = integerValue(recordPositionInputs.startCabinet, 1);
-        const endCabinet = integerValue(recordPositionInputs.endCabinet, startCabinet);
-        const cabinetCount = Math.max(endCabinet - startCabinet + 1, 1);
-        const columnCount = integerValue(recordPositionInputs.columnCount, 1);
-        const capacity = slashIntegerValue(recordPositionInputs.capacity, 1);
-        const startFile = slashIntegerValue(recordPositionInputs.startFile, 1);
-        const startColumn = Math.min(integerValue(recordPositionInputs.startColumn, 1), columnCount);
-        const firstCabinetColumns = recordPositionInputs.direction?.value === "increment"
-          ? Math.max(columnCount - startColumn + 1, 0)
-          : Math.max(startColumn, 0);
-        const totalColumns = firstCabinetColumns + Math.max(cabinetCount - 1, 0) * columnCount;
-        const totalPositions = totalColumns * capacity;
-        const usedPositions = recordPositionMaxSequence > 0
-          ? Math.max(recordPositionMaxSequence - startFile + 1, 0)
-          : 0;
-        const remaining = Math.max(totalPositions - usedPositions + recordPositionReusableEmptyCount, 0);
+        const tiers = recordPositionTiersFromInputs();
+        const remainingByTiers = tiers
+          .slice()
+          .reverse()
+          .reduce((total, tier, reversedIndex) => {
+            const originalIndex = tiers.length - 1 - reversedIndex;
+            const endFile = originalIndex === 0
+              ? tier.startFile + leftmostTotalPositions(tier.capacity) - 1
+              : tiers[originalIndex - 1].startFile - 1;
+            return total + remainingPositionsBetween(tier.startFile, endFile);
+          }, 0);
+        const remaining = Math.max(remainingByTiers + recordPositionReusableEmptyCount, 0);
         recordPositionRemainingOutput.textContent = String(remaining);
       }
 

@@ -1432,8 +1432,6 @@ def record_real_sequence_number(contract: Contract, volume_number: str, setting:
         return 0
     file_value = int(file_number)
     volume_value = int(volume)
-    if volume_value == 1:
-        return sequence_after_empty_record_positions(file_value)
     if getattr(contract, "pk", None):
         sequence = (
             MaintenanceRecordVolumeSequence.objects.filter(contract=contract, storage_location_number=volume)
@@ -1442,6 +1440,8 @@ def record_real_sequence_number(contract: Contract, volume_number: str, setting:
         )
         if sequence:
             return int(sequence or 0)
+    if volume_value == 1:
+        return sequence_after_empty_record_positions(file_value)
     if volume_value > 1 and not setting.record_position_enable_insert_sort:
         return max_record_real_sequence_number(file_value) + 1
     return sequence_after_empty_record_positions(file_value + volume_value - 1)
@@ -1592,6 +1592,14 @@ def sequence_after_empty_record_positions(real_sequence_number: int) -> int:
 def record_position_remaining_count(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
     start_file = int(setting.record_position_start_file_number or 1)
+    total_positions = record_position_total_capacity(setting)
+    max_sequence = MaintenanceRecordVolumeSequence.objects.aggregate(max_sequence=Max("real_sequence_number")).get("max_sequence")
+    used_positions = max(int(max_sequence or 0) - start_file + 1, 0) if max_sequence else 0
+    return max(total_positions - used_positions + reusable_empty_record_position_count(), 0)
+
+
+def record_position_total_capacity(setting: AppSetting | None = None) -> int:
+    setting = setting or AppSetting.current()
     start_column = int(setting.record_position_start_column or 1)
     column_count = int(setting.record_position_column_count or 1)
     capacity = int(setting.record_position_column_capacity or 1)
@@ -1603,10 +1611,17 @@ def record_position_remaining_count(setting: AppSetting | None = None) -> int:
     else:
         first_cabinet_columns = max(start_column, 0)
     total_columns = first_cabinet_columns + max(cabinet_count - 1, 0) * column_count
-    total_positions = total_columns * capacity
-    max_sequence = MaintenanceRecordVolumeSequence.objects.aggregate(max_sequence=Max("real_sequence_number")).get("max_sequence")
-    used_positions = max(int(max_sequence or 0) - start_file + 1, 0) if max_sequence else 0
-    return max(total_positions - used_positions + reusable_empty_record_position_count(), 0)
+    return total_columns * capacity
+
+
+def record_position_last_sequence_number(setting: AppSetting | None = None) -> int:
+    setting = setting or AppSetting.current()
+    start_file = int(setting.record_position_start_file_number or 1)
+    return start_file + record_position_total_capacity(setting) - 1
+
+
+def exceeds_record_position_capacity(real_sequence_number: int, setting: AppSetting | None = None) -> bool:
+    return int(real_sequence_number or 0) > record_position_last_sequence_number(setting)
 
 
 def sequence_number_from_reserved_position(position_text: str, setting: AppSetting) -> int | None:
@@ -1773,13 +1788,6 @@ def update_records_for_volume_sequence(sequence: MaintenanceRecordVolumeSequence
     ).update(record_position_number=position_number)
 
 
-def is_terminal_cabinet_sequence(real_sequence_number: int, setting: AppSetting) -> bool:
-    position_number = record_position_number_from_sequence(real_sequence_number, setting)
-    cabinet_number = int(position_number[:2] or 0)
-    end_cabinet = int(getattr(setting, "record_position_end_cabinet_number", 99) or 99)
-    return cabinet_number >= end_cabinet
-
-
 def reconnect_empty_record_volume_sequence(
     contract: Contract,
     volume: str,
@@ -1813,6 +1821,38 @@ def shift_record_volume_sequences_after(real_sequence_number: int, setting: AppS
         update_records_for_volume_sequence(sequence, setting)
 
 
+def reserve_default_record_volume_sequence(
+    contract: Contract,
+    setting: AppSetting | None = None,
+) -> MaintenanceRecordVolumeSequence | None:
+    setting = setting or AppSetting.current()
+    file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
+    if not file_number:
+        return None
+    sequence = MaintenanceRecordVolumeSequence.objects.filter(
+        contract=contract,
+        storage_location_number="01",
+    ).first()
+    if sequence:
+        return sequence
+    if setting.record_position_force_empty_slot:
+        empty_sequence = reconnect_empty_record_volume_sequence(contract, "01", setting)
+        if empty_sequence:
+            return empty_sequence
+    real_sequence = sequence_after_empty_record_positions(int(file_number))
+    if exceeds_record_position_capacity(real_sequence, setting):
+        empty_sequence = reconnect_empty_record_volume_sequence(contract, "01", setting)
+        if empty_sequence:
+            return empty_sequence
+    shelf_position_number = shelf_position_number_from_sequence(real_sequence, setting)
+    return MaintenanceRecordVolumeSequence.objects.create(
+        contract=contract,
+        storage_location_number="01",
+        real_sequence_number=real_sequence,
+        shelf_position_number=shelf_position_number,
+    )
+
+
 def ensure_record_volume_sequence(
     contract: Contract,
     volume_number: str,
@@ -1830,9 +1870,6 @@ def ensure_record_volume_sequence(
         storage_location_number=volume,
     ).first()
     if sequence:
-        if volume_value == 1 and sequence.real_sequence_number != file_value:
-            sequence.real_sequence_number = file_value
-            sequence.save(update_fields=["real_sequence_number", "updated_at"])
         return sequence
     if setting.record_position_force_empty_slot:
         empty_sequence = reconnect_empty_record_volume_sequence(contract, volume, setting)
@@ -1846,14 +1883,14 @@ def ensure_record_volume_sequence(
         if previous_sequence is None:
             return None
         real_sequence = sequence_after_empty_record_positions(int(previous_sequence.real_sequence_number or 0) + 1)
-        if is_terminal_cabinet_sequence(real_sequence, setting):
+        if exceeds_record_position_capacity(real_sequence, setting):
             empty_sequence = reconnect_empty_record_volume_sequence(contract, volume, setting)
             if empty_sequence:
                 return empty_sequence
         shift_record_volume_sequences_after(real_sequence - 1, setting)
     else:
         real_sequence = max_record_real_sequence_number(file_value) + 1
-    if is_terminal_cabinet_sequence(real_sequence, setting):
+    if exceeds_record_position_capacity(real_sequence, setting):
         empty_sequence = reconnect_empty_record_volume_sequence(contract, volume, setting)
         if empty_sequence:
             return empty_sequence
@@ -3769,7 +3806,12 @@ def contract_export_column_widths(headers, rows) -> list[int]:
 
 
 # 函数说明：封装可复用的业务处理。
-def build_contract_list_xlsx(headers, rows, numeric_columns: set[int] | None = None) -> bytes:
+def build_contract_list_xlsx(
+    headers,
+    rows,
+    numeric_columns: set[int] | None = None,
+    sheet_name: str = "合同列表",
+) -> bytes:
     # 使用标准库拼装最小 XLSX 包，避免依赖用户虚拟环境中未安装的 openpyxl。
     column_widths = contract_export_column_widths(headers, rows)
     cols = "".join(
@@ -3796,9 +3838,10 @@ def build_contract_list_xlsx(headers, rows, numeric_columns: set[int] | None = N
   <cols>{cols}</cols>
   <sheetData>{"".join(sheet_rows)}</sheetData>
 </worksheet>"""
-    workbook_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    sheet_title = escape(safe_xlsx_sheet_name(sheet_name))
+    workbook_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets><sheet name="合同列表" sheetId="1" r:id="rId1"/></sheets>
+  <sheets><sheet name="{sheet_title}" sheetId="1" r:id="rId1"/></sheets>
 </workbook>"""
     workbook_rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -5825,6 +5868,8 @@ def contract_import(request):
                         if not form.is_valid():
                             raise RuntimeError("确认导入时数据校验失败，请重新上传 Excel。")
                         contract = form.save()
+                        if not existing_contract:
+                            reserve_default_record_volume_sequence(contract)
                         changed_contract_ids.add(contract.pk)
                         ensure_contract_image_folder(contract)
                         log_action = "修改" if existing_contract else "新增"
@@ -6197,6 +6242,7 @@ def contract_create(request):
         form = ContractForm(request.POST, request.FILES)
         if form.is_valid():
             contract = form.save()
+            reserve_default_record_volume_sequence(contract)
             ensure_contract_image_folder(contract)
             uploaded_count = len(save_contract_files_and_return(contract, request.FILES.getlist("files")))
             detail = f"uploaded contract files: {uploaded_count}" if uploaded_count else ""
@@ -7039,7 +7085,7 @@ def settings_reserved_positions_export(request):
     headers = ["预留值", "柜号", "栏目", "排位", "实序编号", "状态", "绑定合同", "绑定分册"]
     rows = reserved_record_position_export_rows(setting)
     response = HttpResponse(
-        build_contract_list_xlsx(headers, rows, numeric_columns=set()),
+        build_contract_list_xlsx(headers, rows, numeric_columns=set(), sheet_name="预留排位"),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     response["Content-Disposition"] = 'attachment; filename="reserved_record_positions.xlsx"'

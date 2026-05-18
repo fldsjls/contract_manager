@@ -1448,6 +1448,46 @@ def record_real_sequence_number(contract: Contract, volume_number: str, setting:
 
 
 # 将实序编号换算为可见位置编号。
+def record_position_column_from_steps(
+    column_steps: int,
+    start_cabinet: int,
+    start_column: int,
+    column_count: int,
+    direction: str,
+) -> tuple[int, int]:
+    if direction == "increment":
+        first_cabinet_columns = max(column_count - start_column + 1, 0)
+        if column_steps < first_cabinet_columns:
+            return start_cabinet, start_column + column_steps
+        remaining_steps = column_steps - first_cabinet_columns
+        return start_cabinet + 1 + (remaining_steps // column_count), (remaining_steps % column_count) + 1
+    first_cabinet_columns = max(start_column, 0)
+    if column_steps < first_cabinet_columns:
+        return start_cabinet, start_column - column_steps
+    remaining_steps = column_steps - first_cabinet_columns
+    return start_cabinet + 1 + (remaining_steps // column_count), column_count - (remaining_steps % column_count)
+
+
+def record_position_column_before_start(
+    column_steps: int,
+    start_cabinet: int,
+    start_column: int,
+    column_count: int,
+    direction: str,
+) -> tuple[int, int]:
+    if direction == "increment":
+        first_cabinet_columns = max(start_column - 1, 0)
+        if column_steps <= first_cabinet_columns:
+            return start_cabinet, start_column - column_steps
+        remaining_steps = column_steps - first_cabinet_columns - 1
+        return start_cabinet - 1 - (remaining_steps // column_count), column_count - (remaining_steps % column_count)
+    first_cabinet_columns = max(column_count - start_column, 0)
+    if column_steps <= first_cabinet_columns:
+        return start_cabinet, start_column + column_steps
+    remaining_steps = column_steps - first_cabinet_columns - 1
+    return start_cabinet - 1 - (remaining_steps // column_count), (remaining_steps % column_count) + 1
+
+
 def record_position_number_from_sequence(sequence_number: int, setting: AppSetting | None = None) -> str:
     setting = setting or AppSetting.current()
     capacity = max(int(setting.record_position_column_capacity or 1), 1)
@@ -1459,16 +1499,22 @@ def record_position_number_from_sequence(sequence_number: int, setting: AppSetti
     sequence_offset = sequence_number - start_file + 1
     if sequence_offset > 0:
         column_steps = (sequence_offset - 1) // capacity
-        cabinet = start_cabinet + (column_steps // column_count)
-        column_slot = column_steps % column_count
+        cabinet, column = record_position_column_from_steps(
+            column_steps,
+            start_cabinet,
+            start_column,
+            column_count,
+            setting.record_position_direction,
+        )
     else:
         column_steps = ((-sequence_offset - 1) // capacity) + 1
-        cabinet = start_cabinet - ((column_steps - 1) // column_count + 1)
-        column_slot = column_steps % column_count
-    if setting.record_position_direction == "increment":
-        column = ((start_column - 1 + column_slot) % column_count) + 1
-    else:
-        column = ((start_column - 1 - column_slot) % column_count) + 1
+        cabinet, column = record_position_column_before_start(
+            column_steps,
+            start_cabinet,
+            start_column,
+            column_count,
+            setting.record_position_direction,
+        )
     return f"{max(cabinet, 1):02d}{column:02d}"
 
 
@@ -1484,17 +1530,23 @@ def shelf_position_number_from_sequence(sequence_number: int, setting: AppSettin
     if sequence_offset > 0:
         column_steps = (sequence_offset - 1) // capacity
         rank = ((sequence_offset - 1) % capacity) + 1
-        cabinet = start_cabinet + (column_steps // column_count)
-        column_slot = column_steps % column_count
+        cabinet, column = record_position_column_from_steps(
+            column_steps,
+            start_cabinet,
+            start_column,
+            column_count,
+            setting.record_position_direction,
+        )
     else:
         column_steps = ((-sequence_offset - 1) // capacity) + 1
         rank = capacity - ((-sequence_offset - 1) % capacity)
-        cabinet = start_cabinet - ((column_steps - 1) // column_count + 1)
-        column_slot = column_steps % column_count
-    if setting.record_position_direction == "increment":
-        column = ((start_column - 1 + column_slot) % column_count) + 1
-    else:
-        column = ((start_column - 1 - column_slot) % column_count) + 1
+        cabinet, column = record_position_column_before_start(
+            column_steps,
+            start_cabinet,
+            start_column,
+            column_count,
+            setting.record_position_direction,
+        )
     return f"{max(cabinet, 1):02d}{column:02d}{rank:02d}"
 
 
@@ -1571,10 +1623,20 @@ def sequence_number_from_reserved_position(position_text: str, setting: AppSetti
     if cabinet < start_cabinet or not (1 <= column <= column_count) or not (1 <= rank <= capacity):
         return None
     cabinet_steps = cabinet - start_cabinet
-    if setting.record_position_direction == "increment":
-        column_steps = cabinet_steps * column_count + ((column - start_column) % column_count)
+    if cabinet_steps == 0 and setting.record_position_direction == "increment":
+        if column < start_column:
+            return None
+        column_steps = column - start_column
+    elif cabinet_steps == 0:
+        if column > start_column:
+            return None
+        column_steps = start_column - column
+    elif setting.record_position_direction == "increment":
+        first_cabinet_columns = max(column_count - start_column + 1, 0)
+        column_steps = first_cabinet_columns + (cabinet_steps - 1) * column_count + (column - 1)
     else:
-        column_steps = cabinet_steps * column_count + ((start_column - column) % column_count)
+        first_cabinet_columns = max(start_column, 0)
+        column_steps = first_cabinet_columns + (cabinet_steps - 1) * column_count + (column_count - column)
     if column_steps < 0:
         return None
     offset = column_steps * capacity + rank

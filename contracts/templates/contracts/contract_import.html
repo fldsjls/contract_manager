@@ -233,8 +233,8 @@
           </div>
           {% if completed %}
             <div class="toolbar" id="contractImportCompletedActions" style="margin-top: 16px;">
-              <a class="button primary" href="{% url 'contracts:contract_list' %}">返回列表</a>
-              <button class="button import-preview-button" type="button" data-import-kind="{{ import_kind }}">继续导入</button>
+              <a class="button" href="{% url 'contracts:contract_list' %}">返回列表</a>
+              <button class="button primary import-preview-button" type="button" data-import-kind="{{ import_kind }}">继续导入</button>
             </div>
           {% else %}
             <form method="post" style="margin-top: 16px;">

@@ -165,6 +165,8 @@
         .map((tier) => ({
           startFile: Math.max(Number.parseInt(tier.start_file, 10) || 1, 1),
           capacity: Math.max(Number.parseInt(tier.capacity, 10) || 1, 1),
+          startCabinet: Math.max(Number.parseInt(tier.start_cabinet, 10) || Number.parseInt(recordPositionSettings.cabinet, 10) || 1, 1),
+          startColumn: Math.min(Math.max(Number.parseInt(tier.start_column, 10) || Number.parseInt(recordPositionSettings.startColumn, 10) || 1, 1), columnCount),
         }))
         .sort((left, right) => right.startFile - left.startFile);
       let tier = normalizedTiers.find((item) => sequenceNumber >= item.startFile);
@@ -176,6 +178,7 @@
       }
       const startFile = tier.startFile;
       const capacity = tier.capacity;
+      cabinet = tier.startCabinet;
       const offset = sequenceNumber - startFile + 1;
       let columnSteps;
       let rank;
@@ -194,11 +197,11 @@
       }
       let column;
       if (forwardDirection === "increment") {
-        const columnIndex = startColumn - 1 + columnSteps;
+        const columnIndex = tier.startColumn - 1 + columnSteps;
         cabinet += cabinetStep * Math.floor(columnIndex / columnCount);
         column = (columnIndex % columnCount) + 1;
       } else {
-        const columnIndex = startColumn - 1 - columnSteps;
+        const columnIndex = tier.startColumn - 1 - columnSteps;
         const wraps = columnIndex < 0 ? Math.floor((-columnIndex - 1) / columnCount) + 1 : 0;
         cabinet += cabinetStep * wraps;
         column = ((columnIndex % columnCount) + columnCount) % columnCount + 1;

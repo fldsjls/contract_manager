@@ -1512,7 +1512,29 @@ def record_position_generation_tiers(setting: AppSetting | None = None) -> list[
         {"start_file": start_file, "capacity": max(capacities[index], 1)}
         for index, start_file in enumerate(start_files)
     ]
-    return sorted(tiers, key=lambda item: item["start_file"], reverse=True)
+    tiers = sorted(tiers, key=lambda item: item["start_file"], reverse=True)
+    column_count = max(int(setting.record_position_column_count or 1), 1)
+    start_cabinet = max(int(setting.record_position_cabinet_number or 1), 1)
+    start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
+    anchor_cabinet = start_cabinet
+    anchor_column = start_column
+    previous_start_file = None
+    for tier in tiers:
+        if previous_start_file is not None:
+            sequence_delta = max(int(previous_start_file) - int(tier["start_file"]), 0)
+            capacity = max(int(tier["capacity"]), 1)
+            column_delta = (sequence_delta + capacity - 1) // capacity
+            anchor_cabinet, anchor_column = record_position_column_before_start(
+                column_delta,
+                anchor_cabinet,
+                anchor_column,
+                column_count,
+                setting.record_position_direction,
+            )
+        tier["start_cabinet"] = anchor_cabinet
+        tier["start_column"] = anchor_column
+        previous_start_file = tier["start_file"]
+    return tiers
 
 
 def record_position_tier_for_sequence(sequence_number: int, setting: AppSetting | None = None) -> dict | None:
@@ -1533,8 +1555,8 @@ def record_position_number_from_sequence(sequence_number: int, setting: AppSetti
         return ""
     capacity = tier["capacity"]
     column_count = max(int(setting.record_position_column_count or 1), 1)
-    start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
-    start_cabinet = max(int(setting.record_position_cabinet_number or 1), 1)
+    start_column = min(max(int(tier.get("start_column") or setting.record_position_start_column or 1), 1), column_count)
+    start_cabinet = max(int(tier.get("start_cabinet") or setting.record_position_cabinet_number or 1), 1)
     sequence_number = int(sequence_number or 0)
     start_file = tier["start_file"]
     sequence_offset = sequence_number - start_file + 1
@@ -1566,8 +1588,8 @@ def shelf_position_number_from_sequence(sequence_number: int, setting: AppSettin
         return ""
     capacity = tier["capacity"]
     column_count = max(int(setting.record_position_column_count or 1), 1)
-    start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
-    start_cabinet = max(int(setting.record_position_cabinet_number or 1), 1)
+    start_column = min(max(int(tier.get("start_column") or setting.record_position_start_column or 1), 1), column_count)
+    start_cabinet = max(int(tier.get("start_cabinet") or setting.record_position_cabinet_number or 1), 1)
     sequence_number = int(sequence_number or 0)
     start_file = tier["start_file"]
     sequence_offset = sequence_number - start_file + 1
@@ -1733,10 +1755,10 @@ def sequence_number_candidates_from_position_for_tier(
     cabinet = int(position_text[:2])
     column = int(position_text[2:4])
     rank = int(position_text[4:6])
-    start_cabinet = int(setting.record_position_cabinet_number or 1)
+    start_cabinet = int(tier.get("start_cabinet") or setting.record_position_cabinet_number or 1)
     column_count = int(setting.record_position_column_count or 1)
     capacity = int(tier.get("capacity") or 1)
-    start_column = min(max(int(setting.record_position_start_column or 1), 1), column_count)
+    start_column = min(max(int(tier.get("start_column") or setting.record_position_start_column or 1), 1), column_count)
     start_file = int(tier.get("start_file") or 1)
     if cabinet < start_cabinet or not (1 <= column <= column_count) or not (1 <= rank <= capacity):
         return None, None
@@ -2217,6 +2239,7 @@ def backfill_default_record_volume_sequences(setting: AppSetting | None = None) 
     existing_count = 0
     missing_file_number_count = 0
     repaired_count = 0
+    deleted_count = 0
     contracts = sorted(
         Contract.objects.filter(is_deleted=False),
         key=lambda contract: (
@@ -2229,6 +2252,15 @@ def backfill_default_record_volume_sequences(setting: AppSetting | None = None) 
             file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
             if not file_number:
                 missing_file_number_count += 1
+                sequences = MaintenanceRecordVolumeSequence.objects.filter(contract=contract)
+                for sequence in sequences:
+                    if MaintenanceRecord.objects.filter(
+                        contract=contract,
+                        storage_location_number=sequence.storage_location_number,
+                    ).exists():
+                        continue
+                    sequence.delete()
+                    deleted_count += 1
                 continue
             sequence = MaintenanceRecordVolumeSequence.objects.filter(
                 contract=contract,
@@ -2251,6 +2283,7 @@ def backfill_default_record_volume_sequences(setting: AppSetting | None = None) 
         "existing_count": existing_count,
         "missing_file_number_count": missing_file_number_count,
         "repaired_count": repaired_count,
+        "deleted_count": deleted_count,
     }
 
 
@@ -7360,6 +7393,7 @@ def settings_backfill_record_volume_sequences(request):
             "backfill_existing": result["existing_count"],
             "backfill_missing": result["missing_file_number_count"],
             "backfill_repaired": result["repaired_count"],
+            "backfill_deleted": result["deleted_count"],
         }
     )
     return redirect(f"{reverse('contracts:settings')}?{query}")
@@ -7441,6 +7475,7 @@ def settings_view(request):
                     "existing": request.GET.get("backfill_existing", ""),
                     "missing": request.GET.get("backfill_missing", ""),
                     "repaired": request.GET.get("backfill_repaired", ""),
+                    "deleted": request.GET.get("backfill_deleted", ""),
                 },
                 "active_nav": "settings",
             },

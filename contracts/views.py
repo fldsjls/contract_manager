@@ -476,6 +476,7 @@ def usage_docs_for_request(request) -> list[dict]:
                 "正常生成实序编号时，系统会把已生效的空排位视为档案柜中真实空出的位置：只有目标实序编号正好落到空排位上时，才会向后顺延到下一个可用排位；目标前方的空排位不会额外影响当前目标编号。",
                 "位置编号由实序编号和设置页的起始界限点、柜号范围、栏目量、栏目存放数、存放栏目、存放逻辑共同换算；记录表单中的位置编号是 6 位实际排位（柜号 2 位 + 栏目 2 位 + 排位 2 位）。",
                 "设置页的剩余排位数会按不同起始界限点分段计算：从最右侧较小界限点开始，每段统计到左侧下一界限点前一位；最左侧界限点仍按柜号范围、栏目量、栏目存放数和存放逻辑计算完整容量，最后扣除已占用实序并加上可复用空排位。",
+                "设置页的“补历史预关联”会跳过没有文件编号的合同，不生成 01 册预关联、实序编号或位置编号，并把这些合同计入“无文件编号”数量。",
                 "剩余排位数为 0 时，新增项目记录页面会把保存按钮置灰，避免继续写入超出范围的位置。",
                 "排位预留值按 6 位实际位置填写，多个值用英文分号分隔，例如 011205;020101；当该排位换算出的实序编号大于当前最大实序编号时，它只作为等待值保存在设置中，不进入空排位池。",
                 "当排位预留值换算出的实序编号不大于当前最大实序编号时，它会进入空排位池，效果等同于合同归档后释放的空排位；已进入空排位池的值会被锁定保存，即使从输入框删除也会重新显示，只有仍在等待中的值可以真正删除。",
@@ -1689,6 +1690,15 @@ def record_position_sequence_ranges(setting: AppSetting | None = None) -> list[t
     return ranges
 
 
+def record_sequence_from_file_number(file_number: str | int, setting: AppSetting | None = None) -> int:
+    file_value = int(normalize_contract_number_part(file_number, 5) or 0)
+    if not file_value:
+        return 0
+    tiers = record_position_generation_tiers(setting)
+    tier = next((item for item in tiers if file_value >= int(item["start_file"])), tiers[-1])
+    return int(tier["start_file"]) + (file_value - int(tier["start_file"]))
+
+
 def record_position_total_capacity(setting: AppSetting | None = None) -> int:
     return sum(end_file - start_file + 1 for start_file, end_file in record_position_sequence_ranges(setting))
 
@@ -1956,17 +1966,25 @@ def reserve_default_record_volume_sequence(
     setting: AppSetting | None = None,
 ) -> MaintenanceRecordVolumeSequence | None:
     setting = setting or AppSetting.current()
+    file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
+    real_sequence = record_sequence_from_file_number(file_number, setting)
+    if not real_sequence:
+        return None
     sequence = MaintenanceRecordVolumeSequence.objects.filter(
         contract=contract,
         storage_location_number="01",
     ).first()
     if sequence:
+        if int(sequence.real_sequence_number or 0) != real_sequence:
+            sequence.real_sequence_number = real_sequence
+            sequence.shelf_position_number = shelf_position_number_from_sequence(real_sequence, setting)
+            sequence.save(update_fields=["real_sequence_number", "shelf_position_number", "updated_at"])
+            update_records_for_volume_sequence(sequence, setting)
         return sequence
     if setting.record_position_force_empty_slot:
         empty_sequence = reconnect_empty_record_volume_sequence(contract, "01", setting)
         if empty_sequence:
             return empty_sequence
-    real_sequence = next_record_real_sequence_number(setting)
     if exceeds_record_position_capacity(real_sequence, setting):
         empty_sequence = reconnect_empty_record_volume_sequence(contract, "01", setting)
         if empty_sequence:
@@ -1978,6 +1996,39 @@ def reserve_default_record_volume_sequence(
         real_sequence_number=real_sequence,
         shelf_position_number=shelf_position_number,
     )
+
+
+def rebuild_record_volume_sequences_from_default(
+    contract: Contract,
+    setting: AppSetting | None = None,
+) -> tuple[bool, int]:
+    setting = setting or AppSetting.current()
+    sequences = list(
+        MaintenanceRecordVolumeSequence.objects.filter(contract=contract).order_by("storage_location_number", "id")
+    )
+    default_sequence = next((sequence for sequence in sequences if normalize_record_volume_number(sequence.storage_location_number) == "01"), None)
+    old_default_sequence = int(default_sequence.real_sequence_number or 0) if default_sequence else 0
+    offsets = {}
+    if old_default_sequence:
+        for sequence in sequences:
+            volume = normalize_record_volume_number(sequence.storage_location_number)
+            if volume and volume != "01":
+                offsets[sequence.pk] = int(sequence.real_sequence_number or 0) - old_default_sequence
+    default_sequence = reserve_default_record_volume_sequence(contract, setting)
+    if default_sequence is None:
+        return False, 0
+    new_default_sequence = int(default_sequence.real_sequence_number or 0)
+    repaired_count = 0
+    if old_default_sequence and old_default_sequence != new_default_sequence:
+        for sequence in sequences:
+            if sequence.pk not in offsets:
+                continue
+            sequence.real_sequence_number = new_default_sequence + offsets[sequence.pk]
+            sequence.shelf_position_number = shelf_position_number_from_sequence(sequence.real_sequence_number, setting)
+            sequence.save(update_fields=["real_sequence_number", "shelf_position_number", "updated_at"])
+            update_records_for_volume_sequence(sequence, setting)
+            repaired_count += 1
+    return True, repaired_count
 
 
 def ensure_record_volume_sequence(
@@ -2165,21 +2216,41 @@ def backfill_default_record_volume_sequences(setting: AppSetting | None = None) 
     created_count = 0
     existing_count = 0
     missing_file_number_count = 0
-    contracts = Contract.objects.filter(is_deleted=False).order_by("id")
+    repaired_count = 0
+    contracts = sorted(
+        Contract.objects.filter(is_deleted=False),
+        key=lambda contract: (
+            int(normalize_contract_number_part(contract.original_contract_inner_number, 5) or 0),
+            contract.id,
+        ),
+    )
     with transaction.atomic():
         for contract in contracts:
-            if MaintenanceRecordVolumeSequence.objects.filter(
+            file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
+            if not file_number:
+                missing_file_number_count += 1
+                continue
+            sequence = MaintenanceRecordVolumeSequence.objects.filter(
                 contract=contract,
                 storage_location_number="01",
-            ).exists():
+            ).first()
+            if sequence:
                 existing_count += 1
+                before_sequence = int(sequence.real_sequence_number or 0)
+                _, repaired_volumes = rebuild_record_volume_sequences_from_default(contract, setting)
+                if before_sequence != record_sequence_from_file_number(file_number, setting):
+                    repaired_count += 1
+                repaired_count += repaired_volumes
                 continue
-            if reserve_default_record_volume_sequence(contract, setting):
+            created, repaired_volumes = rebuild_record_volume_sequences_from_default(contract, setting)
+            if created:
                 created_count += 1
+                repaired_count += repaired_volumes
     return {
         "created_count": created_count,
         "existing_count": existing_count,
         "missing_file_number_count": missing_file_number_count,
+        "repaired_count": repaired_count,
     }
 
 
@@ -7288,6 +7359,7 @@ def settings_backfill_record_volume_sequences(request):
             "backfill_created": result["created_count"],
             "backfill_existing": result["existing_count"],
             "backfill_missing": result["missing_file_number_count"],
+            "backfill_repaired": result["repaired_count"],
         }
     )
     return redirect(f"{reverse('contracts:settings')}?{query}")
@@ -7368,6 +7440,7 @@ def settings_view(request):
                     "created": request.GET.get("backfill_created", ""),
                     "existing": request.GET.get("backfill_existing", ""),
                     "missing": request.GET.get("backfill_missing", ""),
+                    "repaired": request.GET.get("backfill_repaired", ""),
                 },
                 "active_nav": "settings",
             },

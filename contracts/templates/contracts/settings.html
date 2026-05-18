@@ -114,6 +114,7 @@
               <button class="button" type="submit" form="backfillRecordVolumeSequencesForm">补历史预关联</button>
               {% if record_sequence_backfill_result.created != "" %}
                 <span style="color: #667085;">
+                  已修正 {{ record_sequence_backfill_result.repaired }} 条；
                   已补 {{ record_sequence_backfill_result.created }} 条；已有 {{ record_sequence_backfill_result.existing }} 条；无文件编号 {{ record_sequence_backfill_result.missing }} 条。
                 </span>
               {% endif %}

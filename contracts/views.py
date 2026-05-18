@@ -1566,6 +1566,10 @@ def max_record_real_sequence_number(fallback: int = 0) -> int:
     return max(int(max_sequence or 0), fallback)
 
 
+def max_record_position_occupied_sequence(fallback: int = 0) -> int:
+    return max(max_record_real_sequence_number(fallback), max_contract_file_number(fallback))
+
+
 def max_active_record_real_sequence_number(fallback: int = 0) -> int:
     max_sequence = (
         MaintenanceRecordVolumeSequence.objects.filter(is_reserved=False)
@@ -1593,7 +1597,7 @@ def record_position_remaining_count(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
     start_file = int(setting.record_position_start_file_number or 1)
     total_positions = record_position_total_capacity(setting)
-    max_sequence = MaintenanceRecordVolumeSequence.objects.aggregate(max_sequence=Max("real_sequence_number")).get("max_sequence")
+    max_sequence = max_record_position_occupied_sequence()
     used_positions = max(int(max_sequence or 0) - start_file + 1, 0) if max_sequence else 0
     return max(total_positions - used_positions + reusable_empty_record_position_count(), 0)
 
@@ -6676,7 +6680,7 @@ def maintenance_record_create(request, pk: int):
                 "business_record_number": contract.display_contract_number,
                 "record_file_number": normalize_contract_number_part(contract.original_contract_inner_number, 5),
                 "record_max_file_number": max_contract_file_number(),
-                "record_max_sequence_number": max_record_real_sequence_number(),
+                "record_max_sequence_number": max_record_position_occupied_sequence(),
                 "record_base_sequence_number": record_real_sequence_number(contract, "01", setting),
                 "record_position_remaining_count": record_position_remaining_count(setting),
                 "default_record_volume_number": default_record_volume_number,
@@ -7159,10 +7163,7 @@ def settings_view(request):
                 "host_ip": host_ip,
                 "lan_url": f"http://{host_ip}:8000",
                 "record_position_remaining_count": record_position_remaining_count(setting),
-                "record_position_max_sequence": int(
-                    MaintenanceRecordVolumeSequence.objects.aggregate(max_sequence=Max("real_sequence_number")).get("max_sequence")
-                    or 0
-                ),
+                "record_position_max_sequence": max_record_position_occupied_sequence(),
                 "record_position_reusable_empty_count": reusable_empty_record_position_count(),
                 "can_edit_image_root_path": can_edit_image_root_path,
                 "can_edit_record_position_generation": can_edit_record_position_generation,

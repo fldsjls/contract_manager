@@ -289,7 +289,18 @@
           input.value = input.value.padStart(maxLength, "0");
         }
       };
+      const clearArchiveNumbersWhenNoFileNumber = () => {
+        if (contractInnerNumberInput.value.trim()) {
+          return false;
+        }
+        contractFolderInput.value = "";
+        storageLocationNumberInput.value = "";
+        return true;
+      };
       const rememberNumberFields = () => {
+        if (clearArchiveNumbersWhenNoFileNumber()) {
+          return;
+        }
         const folderValue = normalizedDigits(contractFolderInput.value, 3);
         const locationValue = normalizedDigits(storageLocationNumberInput.value, 3);
         if (folderValue) {
@@ -307,6 +318,9 @@
       }
       contractInnerNumberInput.addEventListener("input", () => {
         keepDigits(contractInnerNumberInput, 5);
+        if (clearArchiveNumbersWhenNoFileNumber()) {
+          return;
+        }
         if (contractInnerNumberInput.value.length === 5) {
           contractFolderInput.focus();
           contractFolderInput.select();
@@ -322,7 +336,10 @@
       storageLocationNumberInput.addEventListener("input", () => {
         keepDigits(storageLocationNumberInput, 3);
       });
-      contractInnerNumberInput.addEventListener("blur", () => padDigits(contractInnerNumberInput, 5));
+      contractInnerNumberInput.addEventListener("blur", () => {
+        padDigits(contractInnerNumberInput, 5);
+        clearArchiveNumbersWhenNoFileNumber();
+      });
       contractFolderInput.addEventListener("blur", () => {
         padDigits(contractFolderInput, 3);
         rememberNumberFields();
@@ -358,7 +375,11 @@
       if (storageLocationNumberInput.value) {
         storageLocationNumberInput.value = storageLocationNumberInput.value.replace(/\D/g, "").slice(0, 3).padStart(3, "0");
       }
-      contractFolderInput.closest("form")?.addEventListener("submit", rememberNumberFields);
+      clearArchiveNumbersWhenNoFileNumber();
+      contractFolderInput.closest("form")?.addEventListener("submit", () => {
+        clearArchiveNumbersWhenNoFileNumber();
+        rememberNumberFields();
+      });
     }
 
     if (copySignDateButton && signDateInput && startDateInput) {

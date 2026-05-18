@@ -60,7 +60,7 @@ class ContractForm(forms.ModelForm):
         self.fields["storage_location_number"].label = "位置编号"
         self.fields["archive_years"].label = "归档时间（年）"
         self.fields["original_contract_folder"].required = False
-        self.fields["original_contract_inner_number"].required = True
+        self.fields["original_contract_inner_number"].required = False
         self.fields["contract_number"].widget.attrs.update(
             {
                 "readonly": "readonly",
@@ -134,6 +134,10 @@ class ContractForm(forms.ModelForm):
             self.add_error("end_date", "必须填写截止日期。")
 
         file_number = normalize_contract_number_part(cleaned_data.get("original_contract_inner_number"), 5)
+        if not file_number:
+            cleaned_data["original_contract_folder"] = ""
+            cleaned_data["storage_location_number"] = ""
+            return cleaned_data
         if file_number and not self.skip_display_number_unique:
             base_date = cleaned_data.get("sign_date") or cleaned_data.get("start_date") or timezone.localdate()
             display_contract_number = (

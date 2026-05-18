@@ -4319,8 +4319,7 @@ CONTRACT_IMPORT_COLUMNS = [
     ("end_date", "截止日期"),
     ("responsible_person", "负责人"),
     ("original_contract_inner_number", "文件编号"),
-    ("original_contract_folder", "文件夹编号"),
-    ("storage_location_number", "位置编号"),
+    ("archive_number", "存档编号"),
     ("archive_years", "归档时间（年）"),
     ("remark", "备注"),
 ]
@@ -4334,8 +4333,7 @@ CONTRACT_IMPORT_DEFAULT_MATCH_COLUMNS = [
 CONTRACT_IMPORT_BUSINESS_MATCH_COLUMNS = [
     ("business_number", "业务编号"),
     ("responsible_person", "负责人"),
-    ("original_contract_folder", "文件夹编号"),
-    ("storage_location_number", "位置编号"),
+    ("archive_number", "存档编号"),
     ("archive_years", "归档时间（年）"),
     ("remark", "备注"),
 ]
@@ -4351,15 +4349,13 @@ CONTRACT_IMPORT_UPDATE_FIELDS = {
         "end_date",
         "responsible_person",
         "original_contract_inner_number",
-        "original_contract_folder",
-        "storage_location_number",
+        "archive_number",
         "archive_years",
         "remark",
     ],
     "business_match": [
         "responsible_person",
-        "original_contract_folder",
-        "storage_location_number",
+        "archive_number",
         "archive_years",
         "remark",
     ],
@@ -4372,8 +4368,7 @@ CONTRACT_IMPORT_PREVIEW_COLUMNS = [
     "默认编号",
     "业务编号",
     "文件编号",
-    "文件夹编号",
-    "位置编号",
+    "存档编号",
     UI_LABELS["responsible_person"],
     "归档时间",
     UI_LABELS["status"],
@@ -4415,6 +4410,9 @@ CONTRACT_IMPORT_HEADER_ALIASES = {
     "业务编号": "business_number",
     "显示编号": "business_number",
     "显示合同编号": "business_number",
+    "存档编号": "archive_number",
+    "归档编号": "archive_number",
+    "档案编号": "archive_number",
     "存储位置": "storage_location_number",
     "存储编号": "storage_location_number",
     "位置编号": "storage_location_number",
@@ -4588,11 +4586,28 @@ def parse_contract_import_xlsx_with_stdlib(uploaded_file):
     return next(iter(sheets.values()), [])
 
 
+def normalize_contract_archive_import_number(value) -> str:
+    return normalize_contract_number_part(value, 6)
+
+
+def apply_contract_archive_number_import(row_data: dict) -> dict:
+    archive_number = normalize_contract_archive_import_number(row_data.get("archive_number"))
+    if not archive_number:
+        folder_number = normalize_contract_number_part(row_data.get("original_contract_folder"), 3)
+        location_number = normalize_storage_location_number(row_data.get("storage_location_number"))
+        archive_number = f"{folder_number}{location_number}" if folder_number else ""
+    row_data["archive_number"] = archive_number
+    if archive_number:
+        row_data["original_contract_folder"] = archive_number[:3]
+        row_data["storage_location_number"] = archive_number[3:]
+    return row_data
+
+
 # 按标题行解析合同导入工作表。
 def parse_contract_import_rows_from_sheet(rows, columns, required_fields, sheet_name, import_mode):
     headers = [normalize_import_cell(value) for value in rows[0]]
     header_map = {}
-    expected_fields = {field for field, _label in columns}
+    expected_fields = {field for field, _label in columns} | {"original_contract_folder", "storage_location_number"}
     expected_labels = {label: field for field, label in columns}
     for index, header in enumerate(headers):
         field_name = expected_labels.get(header) or CONTRACT_IMPORT_HEADER_ALIASES.get(header)
@@ -4619,6 +4634,11 @@ def parse_contract_import_rows_from_sheet(rows, columns, required_fields, sheet_
                 if column_index is not None and column_index < len(values)
                 else ""
             )
+        for field_name in ("original_contract_folder", "storage_location_number"):
+            column_index = header_map.get(field_name)
+            if column_index is not None and column_index < len(values):
+                row_data[field_name] = normalize_import_value(field_name, values[column_index])
+        apply_contract_archive_number_import(row_data)
         parsed_rows.append(
             {
                 "row_number": excel_row_number,
@@ -4717,6 +4737,7 @@ def contract_form_data_from_instance(contract: Contract) -> dict:
     return {
         "contract_name": contract.contract_name,
         "contract_number": contract.contract_number,
+        "archive_number": contract.archive_number_display,
         "original_contract_folder": contract.original_contract_folder,
         "original_contract_inner_number": contract.original_contract_inner_number,
         "storage_location_number": contract.storage_location_number,
@@ -4740,6 +4761,7 @@ def apply_contract_import_updates(base_data: dict, row_data: dict, import_mode: 
         value = row_data.get(field_name, "")
         if normalize_import_cell(value):
             data[field_name] = value
+    apply_contract_archive_number_import(data)
     return data
 
 
@@ -4762,8 +4784,7 @@ def contract_import_result_preview_cells(item, import_mode, preview_contract, er
             "css_class": "default-contract-number" if preview_contract.uses_default_display_contract_number else "",
         },
         {"value": preview_contract.original_contract_inner_number},
-        {"value": normalize_contract_number_part(preview_contract.original_contract_folder, 3)},
-        {"value": normalize_storage_location_number(preview_contract.storage_location_number)},
+        {"value": archive_code_for_ui(preview_contract.archive_number_display)},
         {"value": preview_contract.responsible_person},
         {"value": preview_contract.archive_years},
         {"value": preview_contract.status, "css_class": f"status {preview_contract.status_class}"},
@@ -5327,41 +5348,10 @@ def parse_maintenance_import_xlsx(uploaded_file):
 
         record_key = normalize_import_cell(value_for("contract_key"))
         compact_record_key = re.sub(r"[-\s]", "", record_key)
-        if len(compact_record_key) >= 20 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
-            contract_key = compact_record_key[:8]
-            date_number = value_for("date_number") or compact_record_key[8:12]
-            record_position = value_for("record_position_number") or compact_record_key[12:18]
-            storage_location = value_for("storage_location_number") or compact_record_key[18:20]
-        elif len(compact_record_key) >= 19 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
-            contract_key = compact_record_key[:8]
-            date_number = value_for("date_number") or compact_record_key[8:14]
-            record_position = value_for("record_position_number") or compact_record_key[14:17]
-            storage_location = value_for("storage_location_number") or compact_record_key[17:19]
-        elif len(compact_record_key) >= 18 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
-            contract_key = compact_record_key[:8]
-            date_number = value_for("date_number") or compact_record_key[8:12]
-            record_position = value_for("record_position_number") or compact_record_key[12:16]
-            storage_location = value_for("storage_location_number") or compact_record_key[16:18]
-        elif len(compact_record_key) >= 17 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
-            contract_key = compact_record_key[:8]
-            date_number = value_for("date_number") or compact_record_key[8:12]
-            record_position = value_for("record_position_number") or compact_record_key[12:15]
-            storage_location = value_for("storage_location_number") or compact_record_key[15:17]
-        elif len(compact_record_key) >= 15 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
-            contract_key = compact_record_key[:8]
-            date_number = value_for("date_number")
-            record_position = value_for("record_position_number") or compact_record_key[10:13]
-            storage_location = value_for("storage_location_number") or compact_record_key[13:15]
-        elif len(compact_record_key) >= 13 and compact_record_key[:1].isalpha() and compact_record_key[1:].isdigit():
-            contract_key = compact_record_key[:8]
-            date_number = value_for("date_number")
-            record_position = value_for("record_position_number") or compact_record_key[8:11]
-            storage_location = value_for("storage_location_number") or compact_record_key[11:13]
-        else:
-            contract_key = compact_record_key if len(compact_record_key) == 8 and compact_record_key[:1].isalpha() else record_key
-            date_number = value_for("date_number")
-            record_position = value_for("record_position_number")
-            storage_location = value_for("storage_location_number")
+        contract_key = compact_record_key if len(compact_record_key) == 8 and compact_record_key[:1].isalpha() else record_key
+        date_number = value_for("date_number")
+        record_position = value_for("record_position_number")
+        storage_location = value_for("storage_location_number")
 
         return {
             "row_number": excel_row_number,
@@ -5371,7 +5361,7 @@ def parse_maintenance_import_xlsx(uploaded_file):
                 "date_number": normalize_record_date_number(date_number) if normalize_import_cell(date_number) else "",
                 "month": normalize_import_cell(value_for("month")),
                 "record_position_number": normalize_record_position_number(record_position),
-                "storage_location_number": normalize_import_value("storage_location_number", storage_location),
+                "storage_location_number": normalize_record_volume_number(storage_location),
                 "remark": normalize_import_cell(value_for("remark")),
             },
         }
@@ -5515,9 +5505,8 @@ def contract_import_template(request):
         "开始日期": "日期格式：YYYY-MM-DD。",
         "截止日期": "日期格式：YYYY-MM-DD。",
         "负责人": "填写负责人姓名。",
-        "文件夹编号": "填写 3 位文件夹编号，例如 001。",
         "文件编号": "填写 5 位文件编号，例如 00001。",
-        "位置编号": "填写 3 位位置编号，例如 011。",
+        "存档编号": "填写 6 位存档编号，可带横线，例如 001-011。",
         "归档时间（年）": "填写归档年限数字，例如 3。",
         "备注": "可选。填写合同备注。",
     }
@@ -5535,8 +5524,7 @@ def contract_import_template(request):
         "截止日期": "可选。日期格式：YYYY-MM-DD，留空则不改。",
         "负责人": "可选。填写后修改负责人，留空则不改。",
         "文件编号": "可选。填写 5 位文件编号；按默认编号匹配时允许修改业务编号中的文件编号部分，留空则不改。",
-        "文件夹编号": "可选。填写 3 位文件夹编号，留空则不改。",
-        "位置编号": "可选。填写 3 位位置编号，留空则不改。",
+        "存档编号": "可选。填写 6 位存档编号，可带横线；留空则不改。",
         "归档时间（年）": "可选。填写归档年限数字，留空则不改。",
         "备注": "可选。填写后修改合同备注，留空则不改。",
     })
@@ -5544,8 +5532,7 @@ def contract_import_template(request):
     business_match_comments = {
         "业务编号": "必填。填写已有业务编号，可带横线；该工作表不会修改业务编号本身。",
         "负责人": "可选。填写后修改已有合同负责人，留空则不改。",
-        "文件夹编号": "可选。填写 3 位文件夹编号，留空则不改。",
-        "位置编号": "可选。填写 3 位位置编号，留空则不改。",
+        "存档编号": "可选。填写 6 位存档编号，可带横线；留空则不改。",
         "归档时间（年）": "可选。填写归档年限数字，留空则不改。",
         "备注": "可选。填写后修改合同备注，留空则不改。",
     }
@@ -5608,7 +5595,7 @@ def record_import_template(request):
         "业务编号": "填写已有业务编号或合同名称，用于匹配合同。",
         "日期": "必填。日期格式：YYYY-MM-DD。",
         "位置编号": "填写 6 位记录位置编号，前两位为柜号，中间两位为栏目，后两位为排位，例如 010501。",
-        "分册编号": "填写 2 位分册编号，例如 00。",
+        "分册编号": "填写 2 位分册编号，例如 01。",
         "备注": "可选。填写项目记录备注。",
     }
     response = HttpResponse(

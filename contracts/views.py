@@ -1927,13 +1927,25 @@ def restore_record_volume_sequences_for_contract(
     return {"ok": not conflicts, "conflicts": conflicts, "restored_count": restored_count}
 
 
-# 起始界限点变化时，只刷新已有记录的位置编号，实序编号本身保持合同分册映射。
-def shift_record_sequences_for_start_file_change(old_start_file: int, new_start_file: int, setting: AppSetting) -> int:
-    if int(old_start_file or 0) == int(new_start_file or 0):
+def record_position_setting_key(setting) -> tuple:
+    return (
+        int(getattr(setting, "record_position_cabinet_number", 1) or 1),
+        int(getattr(setting, "record_position_end_cabinet_number", 99) or 99),
+        int(getattr(setting, "record_position_column_count", 1) or 1),
+        int(getattr(setting, "record_position_column_capacity", 1) or 1),
+        int(getattr(setting, "record_position_start_file_number", 1) or 1),
+        int(getattr(setting, "record_position_start_column", 1) or 1),
+        getattr(setting, "record_position_direction", "decrement") or "decrement",
+    )
+
+
+# 记录位置设置变化时，只按新标签刷新位置编号，实序编号本身保持不变。
+def refresh_record_positions_for_setting_change(old_setting_key: tuple, new_setting: AppSetting) -> int:
+    if old_setting_key == record_position_setting_key(new_setting):
         return 0
     changed_count = 0
     for sequence in MaintenanceRecordVolumeSequence.objects.select_related("contract").order_by("id"):
-        changed_count += update_records_for_volume_sequence(sequence, setting)
+        changed_count += update_records_for_volume_sequence(sequence, new_setting)
     return changed_count
 
 
@@ -7006,7 +7018,7 @@ def settings_view(request):
     can_edit_image_root_path = is_super_admin_mode(request)
     can_edit_record_position_generation = is_super_admin_mode(request)
     if request.method == "POST":
-        old_start_file = int(setting.record_position_start_file_number or 1)
+        old_record_position_setting_key = record_position_setting_key(setting)
         form = AppSettingForm(
             request.POST,
             instance=setting,
@@ -7022,8 +7034,7 @@ def settings_view(request):
                     if item.strip()
                 ]
                 reserved_count = sync_reserved_record_positions(saved_setting, remove_values=remove_values)
-                new_start_file = int(saved_setting.record_position_start_file_number or 1)
-                shifted_count = shift_record_sequences_for_start_file_change(old_start_file, new_start_file, saved_setting)
+                shifted_count = refresh_record_positions_for_setting_change(old_record_position_setting_key, saved_setting)
             detail = "updated system settings"
             if shifted_count:
                 detail += f"; refreshed record positions: {shifted_count}"

@@ -4,18 +4,19 @@
 {% block title %}{{ title }}{% endblock %}
 
 {% block content %}
+  <div class="record-form-page">
   <!-- 开票、收票或维护保养记录批量新增页面。 -->
   <h1 class="page-title">{{ title }}</h1>
 
   <!-- 表格表单支持一次新增多条记录。 -->
-  <section class="panel">
+  <section class="panel record-form-panel">
     <div class="summary">
       <span>所属合同：{{ contract.contract_name }}</span>
       <span>业务编号：<span class="{{ contract.business_number_css_class }}">{{ contract.display_contract_number|display_code }}</span></span>
     </div>
 
     <!-- 上传附件时必须使用 multipart 表单。 -->
-    <form method="post" enctype="multipart/form-data">
+    <form class="record-entry-form" method="post" enctype="multipart/form-data">
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ next_url }}">
       <input type="hidden" name="scroll" value="{{ scroll_position }}">
@@ -85,7 +86,75 @@
         <a class="button" href="{{ return_url }}">取消</a>
       </div>
     </form>
+
+    <section class="existing-record-preview" id="existingRecordPreview">
+      <button class="button preview-toggle-button" type="button" id="previewToggleButton" aria-expanded="false">
+        <span data-preview-toggle-label>&#25289;&#36215;&#39044;&#35272;</span>
+      </button>
+      <div class="existing-record-preview-header">
+        <h2>已添加记录预览</h2>
+        <span>共 {{ existing_record_preview_rows|length }} 条</span>
+      </div>
+      <div class="existing-record-preview-scroll">
+        {% if existing_record_preview_rows %}
+          {% if existing_record_preview_kind == "maintenance" %}
+            <table class="existing-record-preview-table">
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>记录编号</th>
+                  <th>分册</th>
+                  <th>位置</th>
+                  <th>备注</th>
+                  <th>文件</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in existing_record_preview_rows %}
+                  <tr>
+                    <td>{{ row.record_date|date:"Y/m/d" }}</td>
+                    <td title="{{ row.record_number|display_code }}">{{ row.record_number|display_code }}</td>
+                    <td>{{ row.volume_number }}</td>
+                    <td>{{ row.position_number }}</td>
+                    <td class="preview-remark" title="{{ row.remark }}">{{ row.remark|default:"" }}</td>
+                    <td class="{% if not row.has_file %}file-missing{% endif %}" title="{{ row.file_name }}">{% if row.has_file %}已上传{% else %}未上传{% endif %}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <table class="existing-record-preview-table">
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>类型</th>
+                  <th>金额</th>
+                  <th>实际金额</th>
+                  <th>备注</th>
+                  <th>文件</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in existing_record_preview_rows %}
+                  <tr>
+                    <td>{{ row.record_date|date:"Y/m/d" }}</td>
+                    <td>{{ row.record_type }}</td>
+                    <td>¥ {{ row.amount|floatformat:2 }}</td>
+                    <td>¥ {{ row.actual_amount|floatformat:2 }}</td>
+                    <td class="preview-remark" title="{{ row.remark }}">{{ row.remark|default:"" }}</td>
+                    <td class="{% if not row.has_file %}file-missing{% endif %}" title="{{ row.file_name }}">{% if row.has_file %}已上传{% else %}未上传{% endif %}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% endif %}
+        {% else %}
+          <div class="empty existing-record-preview-empty">暂无已添加记录</div>
+        {% endif %}
+      </div>
+    </section>
   </section>
+  </div>
 
   {{ record_position_settings|json_script:"recordPositionSettingsData" }}
   {{ record_volume_sequences|json_script:"recordVolumeSequencesData" }}
@@ -417,6 +486,48 @@
       const fileName = event.target.files.length ? baseFileName(event.target.files[0].name) : "{{ labels.upload_file|escapejs }}";
       label.textContent = fileName;
       label.title = fileName;
+    });
+
+    const existingRecordPreview = document.querySelector("#existingRecordPreview");
+    const previewToggleButton = document.querySelector("#previewToggleButton");
+    const previewToggleLabel = previewToggleButton?.querySelector("[data-preview-toggle-label]");
+
+    function setRaisedPreviewHeight() {
+      if (!existingRecordPreview) {
+        return;
+      }
+      const panel = existingRecordPreview.closest(".record-form-panel");
+      const summary = panel?.querySelector(":scope > .summary");
+      const form = panel?.querySelector(".record-entry-form");
+      const header = existingRecordPreview.querySelector(".existing-record-preview-header");
+      if (!panel || !form || !header) {
+        return;
+      }
+      const availableHeight = panel.clientHeight - (summary?.offsetHeight || 0) - form.offsetHeight - header.offsetHeight - 58;
+      const raisedHeight = Math.max(0, Math.min(availableHeight, 240));
+      existingRecordPreview.style.setProperty("--raised-preview-height", `${raisedHeight}px`);
+    }
+
+    previewToggleButton?.addEventListener("click", () => {
+      const shouldRaise = !existingRecordPreview?.classList.contains("is-raised");
+      if (shouldRaise) {
+        setRaisedPreviewHeight();
+      }
+      existingRecordPreview?.classList.add("is-animating");
+      const isRaised = existingRecordPreview?.classList.toggle("is-raised", shouldRaise) || false;
+      previewToggleButton.setAttribute("aria-expanded", isRaised ? "true" : "false");
+      if (previewToggleLabel) {
+        previewToggleLabel.textContent = isRaised ? "\u964d\u4e0b\u9884\u89c8" : "\u62c9\u8d77\u9884\u89c8";
+      }
+      window.setTimeout(() => {
+        existingRecordPreview?.classList.remove("is-animating");
+      }, 620);
+    });
+
+    window.addEventListener("resize", () => {
+      if (existingRecordPreview?.classList.contains("is-raised")) {
+        setRaisedPreviewHeight();
+      }
     });
   </script>
 {% endblock %}

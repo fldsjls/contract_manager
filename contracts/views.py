@@ -6848,7 +6848,46 @@ def record_add(request, pk: int):
     return redirect_with_current_query(request, reverse("contracts:maintenance_record_create", args=[pk]))
 
 
-# 函数说明：封装可复用的业务处理。
+# 为新增记录页准备下方“已添加记录预览”数据。
+def existing_maintenance_record_preview_rows(contract: Contract) -> list[dict]:
+    return [
+        {
+            "record_date": record.record_date,
+            "record_number": maintenance_record_number(
+                contract,
+                record.record_date,
+                record.storage_location_number,
+                record.record_position_number,
+                record.date_number,
+            ),
+            "volume_number": normalize_record_volume_number(record.storage_location_number),
+            "position_number": normalize_record_position_number(record.record_position_number),
+            "remark": record.remark,
+            "has_file": bool(record.file),
+            "file_name": Path(record.file.name).name if record.file else "",
+        }
+        for record in contract.maintenancerecord_set.order_by("-created_at", "-id")
+    ]
+
+
+def existing_money_record_preview_rows(contract: Contract) -> list[dict]:
+    rows = [
+        {
+            "record_date": record.record_date,
+            "record_type": record.record_type,
+            "amount": record.amount or Decimal("0"),
+            "actual_amount": record.actual_amount or Decimal("0"),
+            "remark": record.remark,
+            "has_file": bool(record.file),
+            "file_name": Path(record.file.name).name if record.file else "",
+            "created_at": record.created_at,
+            "id": record.id,
+        }
+        for record in list(contract.invoicerecord_set.all()) + list(contract.paymentrecord_set.all())
+    ]
+    return sorted(rows, key=lambda item: (item["created_at"], item["id"]), reverse=True)
+
+
 @money_record_required
 # 新增一批开票记录。
 def invoice_record_create(request, pk: int):
@@ -6876,6 +6915,8 @@ def invoice_record_create(request, pk: int):
                 "amount_label": UI_LABELS["face_amount"],
                 "actual_amount_field": True,
                 "file_label": mode_labels["income_file"],
+                "existing_record_preview_kind": "money",
+                "existing_record_preview_rows": existing_money_record_preview_rows(contract),
                 **return_state,
                 "active_nav": "contracts",
             },
@@ -6910,6 +6951,8 @@ def payment_record_create(request, pk: int):
                 "amount_label": UI_LABELS["face_amount"],
                 "actual_amount_field": True,
                 "file_label": mode_labels["expense_file"],
+                "existing_record_preview_kind": "money",
+                "existing_record_preview_rows": existing_money_record_preview_rows(contract),
                 **return_state,
                 "active_nav": "contracts",
             },
@@ -6981,6 +7024,8 @@ def maintenance_record_create(request, pk: int):
                 },
                 "project_years": project_years,
                 "file_label": project_labels["file"],
+                "existing_record_preview_kind": "maintenance",
+                "existing_record_preview_rows": existing_maintenance_record_preview_rows(contract),
                 **return_state,
                 "active_nav": "contracts",
             },

@@ -194,7 +194,7 @@
         {% if selected_contract %}
           <div class="summary" style="margin-bottom: 12px;">
             <span>当前合同：{{ selected_contract.contract_name }}</span>
-            <span>合同编号：<span class="{% if selected_contract.uses_default_display_contract_number or selected_contract.missing_storage_position %}default-contract-number{% endif %}">{{ selected_contract.display_contract_number|display_code }}</span></span>
+            <span>合同编号：<span class="{{ selected_contract.business_number_css_class }}">{{ selected_contract.display_contract_number|display_code }}</span></span>
           </div>
         {% endif %}
         {% if form.non_field_errors %}

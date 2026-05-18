@@ -199,6 +199,12 @@ class Contract(models.Model):
         return not folder_number or folder_number == "000" or storage_number == "000"
 
     @property
+    def business_number_css_class(self) -> str:
+        if self.uses_default_display_contract_number or self.missing_storage_position:
+            return "default-contract-number"
+        return ""
+
+    @property
     def project_years(self) -> int:
         if not self.start_date or not self.end_date:
             return 0

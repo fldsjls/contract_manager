@@ -38,7 +38,7 @@
             <tr class="selectable-row" data-contract-id="{{ contract.id }}" data-detail-url="{% url 'contracts:maintenance_record_list' contract.id %}">
               <td>{{ forloop.counter }}</td>
               <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
-              <td class="archive-business-number{% if contract.uses_default_display_contract_number or contract.missing_storage_position %} default-contract-number{% endif %}">{{ contract.display_contract_number|display_code }}</td>
+              <td class="archive-business-number {{ contract.business_number_css_class }}">{{ contract.display_contract_number|display_code }}</td>
               <td class="party" title="{{ contract.party_name }}">{{ contract.party_name }}</td>
               <td>¥ {{ contract.amount|floatformat:2 }}</td>
               <td>{{ contract.end_date|date:"Y-m-d" }}</td>

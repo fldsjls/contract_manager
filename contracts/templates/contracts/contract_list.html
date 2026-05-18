@@ -183,7 +183,7 @@
                 <td>{{ forloop.counter }}</td>
                 <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
                 <td
-                  class="{% if contract.uses_default_display_contract_number or contract.missing_storage_position %}default-contract-number{% endif %}"
+                  class="{{ contract.business_number_css_class }}"
                   title="{{ contract.display_contract_number|display_code }}{% if contract.archive_number %}   {{ contract.archive_number|archive_code }}{% endif %}"
                 >{{ contract.display_contract_number|display_code }}</td>
                 <td>{{ contract.contract_type }}</td>

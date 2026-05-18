@@ -20,6 +20,7 @@ urlpatterns = [
     path("operation-logs/export/", views.operation_log_export, name="operation_log_export"),
     path("settings/", views.settings_view, name="settings"),
     path("settings/reserved-positions/export/", views.settings_reserved_positions_export, name="settings_reserved_positions_export"),
+    path("settings/record-volume-sequences/backfill/", views.settings_backfill_record_volume_sequences, name="settings_backfill_record_volume_sequences"),
     path("settings/password/", views.password_change, name="password_change"),
     # 回收站和归档项目相关操作。
     path("trash/", views.trash_list, name="trash"),

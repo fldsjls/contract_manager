@@ -106,9 +106,19 @@
             </div>
           </div>
           <p style="color: #667085; line-height: 1.8;">
-            说明：新增项目记录时，系统会保存合同-分册对应的实序编号和排位，并根据排位自动计算位置编号。
+            新增项目记录时，系统会保存合同-分册对应的实序编号和排位，并根据排位自动计算位置编号。
             启用插入重排序后，新分册会接在上一分册后方，并把后续排位整体后移重算；排位预留值支持单条 6 位值和“柜号范围,栏目范围,排位范围”批量值，保存后会展开显示为单条；在值前加 <code>-</code> 可反向移除预留值，例如 <code>-011205</code> 或 <code>-01-03,03-04,01-10</code>。
           </p>
+          {% if can_edit_record_position_generation %}
+            <div class="toolbar" style="margin-top: 12px; margin-bottom: 0;">
+              <button class="button" type="submit" form="backfillRecordVolumeSequencesForm">补历史预关联</button>
+              {% if record_sequence_backfill_result.created != "" %}
+                <span style="color: #667085;">
+                  已补 {{ record_sequence_backfill_result.created }} 条；已有 {{ record_sequence_backfill_result.existing }} 条；无文件编号 {{ record_sequence_backfill_result.missing }} 条。
+                </span>
+              {% endif %}
+            </div>
+          {% endif %}
         </div>
       </section>
 
@@ -134,6 +144,11 @@
         </div>
       </section>
     </form>
+    {% if can_edit_record_position_generation %}
+      <form id="backfillRecordVolumeSequencesForm" method="post" action="{% url 'contracts:settings_backfill_record_volume_sequences' %}">
+        {% csrf_token %}
+      </form>
+    {% endif %}
 
     <!-- 局域网访问说明，供同一网络内其他用户打开系统。 -->
     <section class="panel">

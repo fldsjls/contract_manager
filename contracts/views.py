@@ -2039,6 +2039,33 @@ def refresh_record_positions_for_setting_change(old_setting_key: tuple, new_sett
     return changed_count
 
 
+def backfill_default_record_volume_sequences(setting: AppSetting | None = None) -> dict:
+    setting = setting or AppSetting.current()
+    created_count = 0
+    existing_count = 0
+    missing_file_number_count = 0
+    contracts = Contract.objects.filter(is_deleted=False).order_by("id")
+    with transaction.atomic():
+        for contract in contracts:
+            file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
+            if not file_number:
+                missing_file_number_count += 1
+                continue
+            if MaintenanceRecordVolumeSequence.objects.filter(
+                contract=contract,
+                storage_location_number="01",
+            ).exists():
+                existing_count += 1
+                continue
+            if reserve_default_record_volume_sequence(contract, setting):
+                created_count += 1
+    return {
+        "created_count": created_count,
+        "existing_count": existing_count,
+        "missing_file_number_count": missing_file_number_count,
+    }
+
+
 # 从批量记录表单中读取多行维护保养数据。
 # 函数说明：封装可复用的业务处理。
 def save_maintenance_records_from_request(request, contract: Contract) -> int:
@@ -7096,6 +7123,23 @@ def settings_reserved_positions_export(request):
     return response
 
 
+@admin_required
+def settings_backfill_record_volume_sequences(request):
+    if request.method != "POST":
+        return redirect("contracts:settings")
+    if not is_super_admin_mode(request):
+        return redirect("contracts:settings")
+    result = backfill_default_record_volume_sequences(AppSetting.current())
+    query = urlencode(
+        {
+            "backfill_created": result["created_count"],
+            "backfill_existing": result["existing_count"],
+            "backfill_missing": result["missing_file_number_count"],
+        }
+    )
+    return redirect(f"{reverse('contracts:settings')}?{query}")
+
+
 # 渲染当前用户可见的使用文档页面。
 def usage_docs(request):
     return render(
@@ -7167,6 +7211,11 @@ def settings_view(request):
                 "record_position_reusable_empty_count": reusable_empty_record_position_count(),
                 "can_edit_image_root_path": can_edit_image_root_path,
                 "can_edit_record_position_generation": can_edit_record_position_generation,
+                "record_sequence_backfill_result": {
+                    "created": request.GET.get("backfill_created", ""),
+                    "existing": request.GET.get("backfill_existing", ""),
+                    "missing": request.GET.get("backfill_missing", ""),
+                },
                 "active_nav": "settings",
             },
         ),

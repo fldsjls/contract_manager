@@ -1546,7 +1546,12 @@ def record_position_remaining_count(setting: AppSetting | None = None) -> int:
     start_cabinet = int(setting.record_position_cabinet_number or 1)
     end_cabinet = int(getattr(setting, "record_position_end_cabinet_number", start_cabinet) or start_cabinet)
     cabinet_count = max(end_cabinet - start_cabinet + 1, 1)
-    total_positions = column_count * capacity * cabinet_count
+    if setting.record_position_direction == "increment":
+        first_cabinet_columns = max(column_count - start_column + 1, 0)
+    else:
+        first_cabinet_columns = max(start_column, 0)
+    total_columns = first_cabinet_columns + max(cabinet_count - 1, 0) * column_count
+    total_positions = total_columns * capacity
     max_sequence = MaintenanceRecordVolumeSequence.objects.aggregate(max_sequence=Max("real_sequence_number")).get("max_sequence")
     used_positions = max(int(max_sequence or 0) - start_file + 1, 0) if max_sequence else 0
     return max(total_positions - used_positions + reusable_empty_record_position_count(), 0)

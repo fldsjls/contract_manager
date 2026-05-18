@@ -183,6 +183,8 @@
         columnCount: document.querySelector("#id_record_position_column_count"),
         capacity: document.querySelector("#id_record_position_column_capacity"),
         startFile: document.querySelector("#id_record_position_start_file_number"),
+        startColumn: document.querySelector("#id_record_position_start_column"),
+        direction: document.querySelector("#id_record_position_direction"),
       };
 
       function integerValue(input, fallback = 1) {
@@ -200,7 +202,12 @@
         const columnCount = integerValue(recordPositionInputs.columnCount, 1);
         const capacity = integerValue(recordPositionInputs.capacity, 1);
         const startFile = integerValue(recordPositionInputs.startFile, 1);
-        const totalPositions = columnCount * capacity * cabinetCount;
+        const startColumn = Math.min(integerValue(recordPositionInputs.startColumn, 1), columnCount);
+        const firstCabinetColumns = recordPositionInputs.direction?.value === "increment"
+          ? Math.max(columnCount - startColumn + 1, 0)
+          : Math.max(startColumn, 0);
+        const totalColumns = firstCabinetColumns + Math.max(cabinetCount - 1, 0) * columnCount;
+        const totalPositions = totalColumns * capacity;
         const usedPositions = recordPositionMaxSequence > 0
           ? Math.max(recordPositionMaxSequence - startFile + 1, 0)
           : 0;

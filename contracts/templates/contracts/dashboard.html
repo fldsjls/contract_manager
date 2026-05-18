@@ -189,7 +189,7 @@
                   >
                     <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
                     <td
-                      class="{% if contract.uses_default_display_contract_number %}default-contract-number{% endif %}"
+                      class="{% if contract.uses_default_display_contract_number or contract.missing_storage_position %}default-contract-number{% endif %}"
                       title="{{ contract.display_contract_number }}"
                     >{{ contract.display_contract_number|display_code }}</td>
                     <td>{{ contract.archive_number_display|archive_code }}</td>

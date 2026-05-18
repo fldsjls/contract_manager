@@ -23,12 +23,12 @@
             <span>
               {{ labels.contract_number }}：
               <a
-                class="contract-folder-link{% if contract.uses_default_display_contract_number %} default-contract-number{% endif %}"
+                class="contract-folder-link{% if contract.uses_default_display_contract_number or contract.missing_storage_position %} default-contract-number{% endif %}"
                 href="{% url 'contracts:contract_file_folder_open' contract.id %}"
                 data-folder-url="{% url 'contracts:contract_file_folder_open' contract.id %}"
               >{{ contract.contract_number }}</a>
               {% if contract.display_contract_number != contract.contract_number %}
-                <span class="display-contract-number">{{ contract.display_contract_number|display_code }}</span>
+                <span class="display-contract-number{% if contract.missing_storage_position %} default-contract-number{% endif %}">{{ contract.display_contract_number|display_code }}</span>
               {% endif %}
               {% if contract.archive_number %}
                 <span class="archive-contract-number">{{ contract.archive_number|archive_code }}</span>

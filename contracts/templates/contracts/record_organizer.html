@@ -90,7 +90,7 @@
                 <td>{{ forloop.counter }}</td>
                 <td class="name" title="{{ row.contract.contract_name }}">{{ row.contract.contract_name }}</td>
                 <td>{{ row.record.created_at|date:"Y-m-d H:i" }}</td>
-                <td class="{% if row.contract.uses_default_display_contract_number %}default-contract-number{% endif %}" title="{{ row.contract.display_contract_number|display_code }}">{{ row.contract.display_contract_number|display_code }}</td>
+                <td class="{% if row.contract.uses_default_display_contract_number or row.contract.missing_storage_position %}default-contract-number{% endif %}" title="{{ row.contract.display_contract_number|display_code }}">{{ row.contract.display_contract_number|display_code }}</td>
                 <td>{{ row.real_sequence_number|default:"" }}</td>
                 <td class="position-number-cell">{{ row.shelf_position_number }}</td>
                 <td>{{ row.volume_number }}</td>

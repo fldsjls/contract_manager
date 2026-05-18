@@ -5150,7 +5150,7 @@ def contract_import_result_preview_cells(item, import_mode, preview_contract, er
         {"value": preview_contract.contract_number},
         {
             "value": business_number,
-            "css_class": "default-contract-number" if preview_contract.uses_default_display_contract_number else "",
+            "css_class": "default-contract-number" if preview_contract.uses_default_display_contract_number or preview_contract.missing_storage_position else "",
         },
         {"value": preview_contract.original_contract_inner_number},
         {"value": archive_code_for_ui(preview_contract.archive_number_display)},
@@ -5681,7 +5681,7 @@ def validate_invoice_import_rows(parsed_rows):
                     {"value": contract.contract_name if contract else data.get("contract_key", ""), "css_class": "truncate-cell", "title": contract.contract_name if contract else data.get("contract_key", "")},
                     {
                         "value": display_code_for_ui(contract.display_contract_number) if contract else "",
-                        "css_class": "default-contract-number" if contract and contract.uses_default_display_contract_number else "",
+                        "css_class": "default-contract-number" if contract and (contract.uses_default_display_contract_number or contract.missing_storage_position) else "",
                     },
                     {"value": data.get("record_type", "")},
                     {"value": record_date.strftime("%Y-%m-%d") if record_date else data.get("record_date", "")},
@@ -5803,7 +5803,7 @@ def validate_maintenance_import_rows(parsed_rows):
                     {"value": contract.contract_name if contract else data.get("contract_key", ""), "css_class": "truncate-cell", "title": contract.contract_name if contract else data.get("contract_key", "")},
                     {
                         "value": display_code_for_ui(contract.display_contract_number) if contract else "",
-                        "css_class": "default-contract-number" if contract and contract.uses_default_display_contract_number else "",
+                        "css_class": "default-contract-number" if contract and (contract.uses_default_display_contract_number or contract.missing_storage_position) else "",
                     },
                     {"value": record_date.strftime("%Y-%m-%d") if record_date else data.get("record_date", "")},
                     {"value": record_position},

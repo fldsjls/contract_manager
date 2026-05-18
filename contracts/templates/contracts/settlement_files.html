@@ -10,7 +10,7 @@
   <section class="panel">
     <div class="summary">
       <span>所属合同：{{ contract.contract_name }}</span>
-      <span>合同编号：<span class="{% if contract.uses_default_display_contract_number %}default-contract-number{% endif %}">{{ contract.display_contract_number|display_code }}</span></span>
+      <span>合同编号：<span class="{% if contract.uses_default_display_contract_number or contract.missing_storage_position %}default-contract-number{% endif %}">{{ contract.display_contract_number|display_code }}</span></span>
     </div>
 
     <!-- 选择文件即上传，保持和合同文件列表相同的操作方式。 -->

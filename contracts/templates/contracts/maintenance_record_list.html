@@ -22,7 +22,7 @@
       <!-- 复用合同详情信息表，便于在记录页确认当前合同。 -->
       <section class="panel">
         <div class="summary">
-          <span>业务编号：<span class="{% if contract.uses_default_display_contract_number %}default-contract-number{% endif %}">{{ contract.display_contract_number|display_code }}</span></span>
+          <span>业务编号：<span class="{% if contract.uses_default_display_contract_number or contract.missing_storage_position %}default-contract-number{% endif %}">{{ contract.display_contract_number|display_code }}</span></span>
           <span>{{ labels.contract_type }}：{{ contract.contract_type }}</span>
           <span>{{ labels.status }}：<span class="status {{ contract.status_class }}">{{ contract.status }}</span></span>
         </div>

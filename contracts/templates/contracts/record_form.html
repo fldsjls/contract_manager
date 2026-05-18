@@ -11,7 +11,7 @@
   <section class="panel">
     <div class="summary">
       <span>所属合同：{{ contract.contract_name }}</span>
-      <span>业务编号：<span class="{% if contract.uses_default_display_contract_number %}default-contract-number{% endif %}">{{ contract.display_contract_number|display_code }}</span></span>
+      <span>业务编号：<span class="{% if contract.uses_default_display_contract_number or contract.missing_storage_position %}default-contract-number{% endif %}">{{ contract.display_contract_number|display_code }}</span></span>
     </div>
 
     <!-- 上传附件时必须使用 multipart 表单。 -->

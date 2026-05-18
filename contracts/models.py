@@ -193,6 +193,12 @@ class Contract(models.Model):
         return not normalize_contract_number_part(self.original_contract_inner_number, 5)
 
     @property
+    def missing_storage_position(self) -> bool:
+        folder_number = normalize_contract_number_part(self.original_contract_folder, 3)
+        storage_number = normalize_storage_location_number(self.storage_location_number)
+        return not folder_number or folder_number == "000" or storage_number == "000"
+
+    @property
     def project_years(self) -> int:
         if not self.start_date or not self.end_date:
             return 0

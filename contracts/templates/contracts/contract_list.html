@@ -183,7 +183,7 @@
                 <td>{{ forloop.counter }}</td>
                 <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
                 <td
-                  class="{% if contract.uses_default_display_contract_number %}default-contract-number{% endif %}"
+                  class="{% if contract.uses_default_display_contract_number or contract.missing_storage_position %}default-contract-number{% endif %}"
                   title="{{ contract.display_contract_number|display_code }}{% if contract.archive_number %}   {{ contract.archive_number|archive_code }}{% endif %}"
                 >{{ contract.display_contract_number|display_code }}</td>
                 <td>{{ contract.contract_type }}</td>
@@ -823,6 +823,50 @@
       }
     }
 
+    function currentRowActionRawUrl(button, row) {
+      if (!button || !row) {
+        return button?.dataset.currentUrl || button?.getAttribute?.("href") || "";
+      }
+      const id = row.dataset.contractId || "";
+      if (button === fileButton) {
+        return row.dataset.fileUrl || "";
+      }
+      if (button === moneyRecordButton) {
+        const invoiceStatus = row.dataset.invoiceStatus || "";
+        const template = invoiceStatus === "开收据"
+          ? moneyRecordButton.dataset.receiptUrlTemplate
+          : moneyRecordButton.dataset.invoiceUrlTemplate;
+        return template ? template.replace("/0/", `/${id}/`) : "";
+      }
+      if (button.dataset.urlTemplate) {
+        return urlFor(button, id);
+      }
+      return button.dataset.currentUrl || button.getAttribute?.("href") || "";
+    }
+
+    function refreshSelectedRowActionUrls() {
+      const row = document.querySelector(".selectable-row.selected");
+      if (!row) {
+        return;
+      }
+      const id = row.dataset.contractId || "";
+      rowButtons.forEach((button) => {
+        if (isDisabled(button)) {
+          return;
+        }
+        const rawUrl = currentRowActionRawUrl(button, row);
+        if (!rawUrl || rawUrl === "#") {
+          return;
+        }
+        button.dataset.currentUrl = button.id === "imageFolderButton"
+          ? rawUrl
+          : urlWithListState(rawUrl, id);
+        if (button.tagName.toLowerCase() === "a") {
+          button.href = button.dataset.currentUrl;
+        }
+      });
+    }
+
     function hideContractContextMenu() {
       if (contractContextMenu) {
         contractContextMenu.hidden = true;
@@ -863,6 +907,12 @@
       }
       hideContractContextMenu();
       if (target.tagName.toLowerCase() === "a" && target.href && target.getAttribute("href") !== "#") {
+        const row = document.querySelector(".selectable-row.selected");
+        const rawUrl = currentRowActionRawUrl(target, row);
+        const id = row?.dataset.contractId || "";
+        if (rawUrl) {
+          target.href = urlWithListState(rawUrl, id);
+        }
         window.location.href = target.href;
         return;
       }
@@ -964,6 +1014,7 @@
           selectContractRow(row);
           if (restoreScroll === null) {
             row.scrollIntoView({ block: "center" });
+            refreshSelectedRowActionUrls();
           }
         }
       }
@@ -983,6 +1034,20 @@
         newContractButton.href = urlWithListState(newContractButton.getAttribute("href"));
       });
     }
+
+    document.querySelectorAll("a.row-action").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (isDisabled(button)) {
+          return;
+        }
+        const row = document.querySelector(".selectable-row.selected");
+        const id = row?.dataset.contractId || "";
+        const rawUrl = currentRowActionRawUrl(button, row);
+        if (rawUrl && rawUrl !== "#") {
+          button.href = urlWithListState(rawUrl, id);
+        }
+      });
+    });
 
     // 函数说明：优先从 cookie 读取当前 CSRF token，兼容登录后 token 轮换。
     function csrfToken() {
@@ -1106,7 +1171,8 @@
         });
         item.addEventListener("click", () => {
           selectContractRow(row);
-          row.scrollIntoView({ block: "center", behavior: "smooth" });
+          row.scrollIntoView({ block: "center" });
+          refreshSelectedRowActionUrls();
           hideSearchPreview();
         });
         searchPreview.appendChild(item);

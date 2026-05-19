@@ -23,6 +23,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.conf import settings
 from django.core import signing
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.files import File
 from django.db import transaction
 from django.db.models import Count, Max, Min, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
@@ -4899,6 +4900,7 @@ CONTRACT_IMPORT_COLUMNS = [
     ("storage_location_number", "位置编号"),
     ("archive_years", "归档时间（年）"),
     ("remark", "备注"),
+    ("contract_file_path", "上传文件路径"),
 ]
 CONTRACT_IMPORT_CREATE_COLUMNS = [
     (field, label)
@@ -4920,6 +4922,7 @@ CONTRACT_IMPORT_BUSINESS_MATCH_COLUMNS = [
     ("storage_location_number", "位置编号"),
     ("archive_years", "归档时间（年）"),
     ("remark", "备注"),
+    ("contract_file_path", "上传文件路径"),
 ]
 CONTRACT_IMPORT_UPDATE_FIELDS = {
     "default_match": [
@@ -4938,6 +4941,7 @@ CONTRACT_IMPORT_UPDATE_FIELDS = {
         "storage_location_number",
         "archive_years",
         "remark",
+        "contract_file_path",
     ],
     "business_match": [
         "storage_mode",
@@ -4946,6 +4950,7 @@ CONTRACT_IMPORT_UPDATE_FIELDS = {
         "storage_location_number",
         "archive_years",
         "remark",
+        "contract_file_path",
     ],
 }
 CONTRACT_IMPORT_PREVIEW_COLUMNS = [
@@ -4957,6 +4962,7 @@ CONTRACT_IMPORT_PREVIEW_COLUMNS = [
     "存档编号",
     UI_LABELS["responsible_person"],
     "归档时间",
+    "合同文件",
     UI_LABELS["status"],
     "错误",
 ]
@@ -4969,6 +4975,7 @@ INVOICE_IMPORT_PREVIEW_COLUMNS = [
     UI_LABELS["face_amount"],
     UI_LABELS["actual_amount"],
     UI_LABELS["remark"],
+    "附件",
     "错误",
 ]
 MAINTENANCE_IMPORT_PREVIEW_COLUMNS = [
@@ -4979,6 +4986,7 @@ MAINTENANCE_IMPORT_PREVIEW_COLUMNS = [
     "自动位置编号",
     "分册编号",
     UI_LABELS["remark"],
+    "附件",
     "错误",
 ]
 MAINTENANCE_IMPORT_SHEET_NAMES = {"记录", "项目记录"}
@@ -5007,6 +5015,12 @@ CONTRACT_IMPORT_HEADER_ALIASES = {
     "存储编号": "storage_location_number",
     "位置编号": "storage_location_number",
     "存储位置编号": "storage_location_number",
+    "合同文件路径": "contract_file_path",
+    "合同附件路径": "contract_file_path",
+    "文件路径": "contract_file_path",
+    "附件路径": "contract_file_path",
+    "上传文件路径": "contract_file_path",
+    "导入文件路径": "contract_file_path",
 }
 INVOICE_IMPORT_TYPES = {
     "开票": InvoiceRecord,
@@ -5078,6 +5092,79 @@ def normalize_import_value(field_name: str, value):
             return str(int(float(text)))
 
     return text
+
+
+def contract_file_paths_from_import(value) -> list[str]:
+    text = normalize_import_cell(value)
+    if not text:
+        return []
+    return [
+        item.strip().strip('"').strip("'")
+        for item in re.split(r"[;\n；]+", text)
+        if item.strip().strip('"').strip("'")
+    ]
+
+
+def contract_file_import_summary(value) -> str:
+    paths = contract_file_paths_from_import(value)
+    if not paths:
+        return ""
+    if len(paths) == 1:
+        return Path(paths[0]).name
+    return f"{len(paths)} 个文件"
+
+
+def contract_file_import_errors(value, label: str = "合同文件") -> list[str]:
+    errors = []
+    seen = set()
+    for raw_path in contract_file_paths_from_import(value):
+        if raw_path in seen:
+            continue
+        seen.add(raw_path)
+        source_path = Path(raw_path).expanduser()
+        if not source_path.exists():
+            errors.append(f"{label}不存在：{raw_path}")
+        elif not source_path.is_file():
+            errors.append(f"{label}路径不是文件：{raw_path}")
+    return errors
+
+
+def save_contract_files_from_import_paths(contract: Contract, value) -> list[ContractFile]:
+    saved_files = []
+    paths = contract_file_paths_from_import(value)
+    if not paths:
+        return saved_files
+    errors = contract_file_import_errors(value)
+    if errors:
+        raise RuntimeError("；".join(errors))
+    next_order = contract.files.count()
+    for index, raw_path in enumerate(paths):
+        source_path = Path(raw_path).expanduser()
+        with source_path.open("rb") as source_file:
+            item = ContractFile(
+                contract=contract,
+                original_name=source_path.name,
+                sort_order=next_order + index,
+            )
+            item.file.save(source_path.name, File(source_file), save=True)
+            saved_files.append(item)
+    return saved_files
+
+
+def save_record_files_from_import_paths(record, value) -> int:
+    paths = contract_file_paths_from_import(value)
+    if not paths:
+        return 0
+    errors = contract_file_import_errors(value, "附件")
+    if errors:
+        raise RuntimeError("；".join(errors))
+    saved_count = 0
+    for raw_path in paths:
+        source_path = Path(raw_path).expanduser()
+        with source_path.open("rb") as source_file:
+            if attach_record_file_version(record, File(source_file, name=source_path.name)):
+                saved_count += 1
+    return saved_count
 
 
 # 将 XLSX 单元格列号转换为数字序号。
@@ -5347,6 +5434,7 @@ def contract_form_data_from_instance(contract: Contract) -> dict:
         "responsible_person": contract.responsible_person,
         "archive_years": str(contract.archive_years),
         "remark": contract.remark,
+        "contract_file_path": "",
     }
 
 
@@ -5394,6 +5482,11 @@ def contract_import_result_preview_cells(item, import_mode, preview_contract, er
         {"value": archive_code_for_ui(preview_contract.archive_number_display)},
         {"value": preview_contract.responsible_person},
         {"value": preview_contract.archive_years},
+        {
+            "value": contract_file_import_summary(item.get("data", {}).get("contract_file_path")),
+            "css_class": "truncate-cell",
+            "title": item.get("data", {}).get("contract_file_path", ""),
+        },
         {"value": preview_contract.status, "css_class": f"status {preview_contract.status_class}"},
         {"value": "；".join(errors), "css_class": "truncate-cell error-cell", "title": "；".join(errors)},
     ]
@@ -5464,6 +5557,7 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
             form_data = data
 
         if import_mode in {"default_match", "business_match"} and existing_contract is None:
+            errors.extend(contract_file_import_errors(form_data.get("contract_file_path")))
             preview_contract = Contract(
                 contract_number=form_data.get("contract_number", ""),
                 contract_name=data.get("business_number") or form_data.get("contract_number", ""),
@@ -5509,6 +5603,7 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
         if not is_valid:
             for field_errors in form.errors.values():
                 errors.extend(str(error) for error in field_errors)
+        errors.extend(contract_file_import_errors(form_data.get("contract_file_path")))
         cleaned = form.cleaned_data
         folder = normalize_contract_number_part(form_data.get("original_contract_folder"), 3)
         inner_number = normalize_contract_number_part(form_data.get("original_contract_inner_number"), 5)
@@ -5861,6 +5956,11 @@ def parse_invoice_import_xlsx(uploaded_file):
             actual_amount_label: "actual_amount",
             "实际金额": "actual_amount",
             "备注": "remark",
+            "合同文件路径": "file_path",
+            "附件路径": "file_path",
+            "文件路径": "file_path",
+            "上传文件路径": "file_path",
+            "导入文件路径": "file_path",
         }
 
         def build_row(excel_row_number, values, header_map):
@@ -5878,6 +5978,7 @@ def parse_invoice_import_xlsx(uploaded_file):
                     "amount": normalize_import_cell(value_for("amount")),
                     "actual_amount": normalize_import_cell(value_for("actual_amount")),
                     "remark": normalize_import_cell(value_for("remark")),
+                    "file_path": normalize_import_cell(value_for("file_path")),
                 },
             }
 
@@ -5919,6 +6020,7 @@ def validate_invoice_import_rows(parsed_rows):
             errors.append("实际金额必须是数字。")
         if actual_amount is not None and actual_amount < 0:
             errors.append("实际金额不能小于 0。")
+        errors.extend(contract_file_import_errors(data.get("file_path"), "附件"))
         results.append(
             {
                 "row_number": item["row_number"],
@@ -5936,6 +6038,11 @@ def validate_invoice_import_rows(parsed_rows):
                     {"value": f"¥ {amount:.2f}" if amount is not None else data.get("amount", "")},
                     {"value": f"¥ {actual_amount:.2f}" if actual_amount is not None else data.get("actual_amount", "")},
                     {"value": data.get("remark", ""), "css_class": "truncate-cell", "title": data.get("remark", "")},
+                    {
+                        "value": contract_file_import_summary(data.get("file_path")),
+                        "css_class": "truncate-cell",
+                        "title": data.get("file_path", ""),
+                    },
                     {"value": "；".join(errors), "css_class": "truncate-cell error-cell", "title": "；".join(errors)},
                 ],
                 "errors": errors,
@@ -5969,6 +6076,11 @@ def parse_maintenance_import_xlsx(uploaded_file):
         "分册编号": "storage_location_number",
         "存储编号": "storage_location_number",
         "备注": "remark",
+        "合同文件路径": "file_path",
+        "附件路径": "file_path",
+        "文件路径": "file_path",
+        "上传文件路径": "file_path",
+        "导入文件路径": "file_path",
     }
 
     def build_row(excel_row_number, values, header_map):
@@ -5991,6 +6103,7 @@ def parse_maintenance_import_xlsx(uploaded_file):
                 "month": normalize_import_cell(value_for("month")),
                 "storage_location_number": normalize_record_volume_number(storage_location),
                 "remark": normalize_import_cell(value_for("remark")),
+                "file_path": normalize_import_cell(value_for("file_path")),
             },
         }
 
@@ -6036,6 +6149,7 @@ def validate_maintenance_import_rows(parsed_rows):
                 errors.append("当前记录位置规则无法自动生成位置编号，请在页面手动新增该记录。")
         if record_date is None:
             errors.append("日期格式不正确。")
+        errors.extend(contract_file_import_errors(data.get("file_path"), "附件"))
         data["month"] = normalize_maintenance_month(data.get("month"), record_date)
         data["date_number"] = date_number
         data["record_position_number"] = record_position
@@ -6057,6 +6171,11 @@ def validate_maintenance_import_rows(parsed_rows):
                     {"value": record_position},
                     {"value": storage_location},
                     {"value": data.get("remark", ""), "css_class": "truncate-cell", "title": data.get("remark", "")},
+                    {
+                        "value": contract_file_import_summary(data.get("file_path")),
+                        "css_class": "truncate-cell",
+                        "title": data.get("file_path", ""),
+                    },
                     {"value": "；".join(errors), "css_class": "truncate-cell error-cell", "title": "；".join(errors)},
                 ],
                 "errors": errors,
@@ -6132,6 +6251,7 @@ def contract_import_preview_context(
 def contract_import_template(request):
     headers = [label for _field, label in CONTRACT_IMPORT_CREATE_COLUMNS]
     comments = {
+        "上传文件路径": "可选。填写运行本系统的主机可访问的文件完整路径；多个文件可用分号或换行分隔。",
         "合同名称": "必填。填写要导入的合同名称。",
         "合同类型": "必填。填写维保、项目或其他系统支持的合同类型。",
         "保存模式": "可选。留空默认为文件夹；填写仅文档时，会忽略文件夹编号、位置编号和截止日期。",
@@ -6169,6 +6289,7 @@ def contract_import_template(request):
     })
     business_match_headers = [label for _field, label in CONTRACT_IMPORT_BUSINESS_MATCH_COLUMNS]
     business_match_comments = {
+        "上传文件路径": "可选。填写运行本系统的主机可访问的文件完整路径；多个文件可用分号或换行分隔。",
         "业务编号": "必填。填写已有业务编号，可带横线；该工作表不会修改业务编号本身。",
         "保存模式": "可选。留空默认为文件夹；填写仅文档时，会忽略文件夹编号、位置编号和截止日期。",
         "负责人": "可选。填写后修改已有合同负责人，留空则不改。",
@@ -6205,13 +6326,14 @@ def invoice_import_template(request):
     sheets = []
     for record_type in ("开票", "收票"):
         amount_label, actual_amount_label = INVOICE_IMPORT_SHEET_LABELS[record_type]
-        headers = ["业务编号", "日期", amount_label, actual_amount_label, "备注"]
+        headers = ["业务编号", "日期", amount_label, actual_amount_label, "备注", "上传文件路径"]
         comments = {
             "业务编号": "填写已有业务编号或合同名称，用于匹配合同。",
             "日期": "必填。日期格式：YYYY-MM-DD。",
             amount_label: "必填。填写数字金额。",
             actual_amount_label: "可选。未填时按 0 计算。",
             "备注": "可选。填写票据备注。",
+            "上传文件路径": "可选。填写运行本系统的主机可访问的文件完整路径；多个文件可用分号或换行分隔，会作为本行票据附件导入。",
         }
         sheets.append(
             {
@@ -6231,12 +6353,13 @@ def invoice_import_template(request):
 # 视图函数：下载项目记录导入 Excel 模板。
 @true_admin_required
 def record_import_template(request):
-    headers = ["业务编号", "日期", "分册编号", "备注"]
+    headers = ["业务编号", "日期", "分册编号", "备注", "上传文件路径"]
     comments = {
         "业务编号": "填写已有业务编号或合同名称，用于匹配合同。",
         "日期": "必填。日期格式：YYYY-MM-DD。",
         "分册编号": "填写 2 位分册编号，例如 01。位置编号会按当前记录位置规则自动分配，不能通过导入修改。",
         "备注": "可选。填写项目记录备注。",
+        "上传文件路径": "可选。填写运行本系统的主机可访问的文件完整路径；多个文件可用分号或换行分隔，会作为本行项目记录附件导入。",
     }
     response = HttpResponse(
         build_commented_import_template_xlsx(
@@ -6330,7 +6453,11 @@ def contract_import(request):
                             actual_amount=decimal_from_import_or_zero(data.get("actual_amount")),
                             remark=data.get("remark", ""),
                         )
-                        log_operation(request, "新增", contract, object_type="票据记录", object_name=str(record), object_id=str(record.pk), detail=f"Excel import row: {row['row_number']}", version_obj=record)
+                        imported_file_count = save_record_files_from_import_paths(record, data.get("file_path", ""))
+                        detail = f"Excel import row: {row['row_number']}"
+                        if imported_file_count:
+                            detail += f"; imported record files: {imported_file_count}"
+                        log_operation(request, "新增", contract, object_type="票据记录", object_name=str(record), object_id=str(record.pk), detail=detail, version_obj=record)
                     elif import_kind == "maintenance":
                         data = row["data"].copy()
                         contract = Contract.objects.get(pk=row["contract_id"], is_deleted=False)
@@ -6383,9 +6510,14 @@ def contract_import(request):
                                 remark=data.get("remark", ""),
                             )
                             log_action = "新增"
-                        log_operation(request, log_action, contract, object_type="项目记录", object_name=str(record), object_id=str(record.pk), detail=f"Excel import row: {row['row_number']}", version_obj=record)
+                        imported_file_count = save_record_files_from_import_paths(record, data.get("file_path", ""))
+                        detail = f"Excel import row: {row['row_number']}"
+                        if imported_file_count:
+                            detail += f"; imported record files: {imported_file_count}"
+                        log_operation(request, log_action, contract, object_type="项目记录", object_name=str(record), object_id=str(record.pk), detail=detail, version_obj=record)
                     else:
                         data = row["data"].copy()
+                        contract_file_path = data.get("contract_file_path", "")
                         existing_contract_id = row.get("existing_contract_id")
                         existing_contract = (
                             Contract.objects.get(pk=existing_contract_id, is_deleted=False)
@@ -6410,10 +6542,14 @@ def contract_import(request):
                             release_record_volume_sequences_for_contract(contract, app_setting)
                         else:
                             reserve_default_record_volume_sequence(contract)
+                        imported_file_count = len(save_contract_files_from_import_paths(contract, contract_file_path))
                         changed_contract_ids.add(contract.pk)
                         ensure_contract_image_folder(contract)
                         log_action = "修改" if existing_contract else "新增"
-                        log_operation(request, log_action, contract, detail=f"Excel import row: {row['row_number']}")
+                        detail = f"Excel import row: {row['row_number']}"
+                        if imported_file_count:
+                            detail += f"; imported contract files: {imported_file_count}"
+                        log_operation(request, log_action, contract, detail=detail)
                     created_count += 1
                 duplicate_messages = (
                     contract_import_duplicate_file_number_messages(changed_contract_ids)

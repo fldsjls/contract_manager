@@ -58,7 +58,7 @@
             {{ form.original_contract_inner_number.errors }}
             {{ form.storage_location_number.errors }}
           {% elif field.name == "contract_type" %}
-            <div class="responsible-archive-row">
+            <div class="responsible-archive-row shared-volume-row">
               <div class="paired-field">
                 <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
                 {{ field }}
@@ -67,6 +67,18 @@
                 <label class="field-label" for="{{ form.storage_mode.id_for_label }}">{{ form.storage_mode.label }}</label>
                 {{ form.storage_mode }}
               </div>
+              {% if shared_record_volume_types %}
+                <div class="paired-field" id="sharedVolumeFullField" hidden>
+                  <label class="field-label" for="sharedVolumeFullInput">共享分册</label>
+                  <label class="settings-title-switch shared-volume-switch">
+                    <span class="switch-control">
+                      <input id="sharedVolumeFullInput" name="shared_volume_full" type="checkbox" {% if shared_volume_full_checked %}checked{% endif %}>
+                      <span class="switch-track"></span>
+                    </span>
+                    <span>分册已满</span>
+                  </label>
+                </div>
+              {% endif %}
             </div>
             {{ form.storage_mode.errors }}
           {% elif field.name == "start_date" %}
@@ -138,6 +150,8 @@
     </div>
   </form>
 
+  {{ shared_record_volume_types|json_script:"sharedRecordVolumeTypesData" }}
+
   <!-- 编辑已有合同时选择文件会立即上传，新建合同时随合同保存。 -->
   <script>
     const contractFilesInput = document.querySelector("#contractFiles");
@@ -160,6 +174,23 @@
     const storageLocationStorageKey = "contract_last_location_number";
     const isContractEditPage = Boolean("{{ contract.id|default:'' }}");
     const reorderUrl = "{% if contract %}{% url 'contracts:contract_file_reorder' contract.id %}{% endif %}";
+    const sharedRecordVolumeTypes = JSON.parse(document.querySelector("#sharedRecordVolumeTypesData")?.textContent || "[]") || [];
+    const sharedVolumeFullField = document.querySelector("#sharedVolumeFullField");
+    const sharedVolumeFullInput = document.querySelector("#sharedVolumeFullInput");
+
+    function updateSharedVolumeFullField() {
+      if (!sharedVolumeFullField || !contractTypeInput) {
+        return;
+      }
+      const shouldShow = !isContractEditPage && sharedRecordVolumeTypes.includes(contractTypeInput.value);
+      sharedVolumeFullField.hidden = !shouldShow;
+      if (!shouldShow && sharedVolumeFullInput) {
+        sharedVolumeFullInput.checked = false;
+      }
+    }
+
+    contractTypeInput?.addEventListener("change", updateSharedVolumeFullField);
+    updateSharedVolumeFullField();
 
     if (responsiblePersonInput) {
       const legacyResponsiblePerson = localStorage.getItem(responsiblePersonStorageKey);

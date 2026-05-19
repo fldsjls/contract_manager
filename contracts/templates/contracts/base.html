@@ -238,6 +238,16 @@
     .local-style-settings {
       max-width: 950px;
     }
+    .settings-page .shared-volume-settings-table {
+      width: min(652px, 100%);
+    }
+    .settings-page .shared-volume-settings-table th,
+    .settings-page .shared-volume-settings-table td {
+      text-align: center;
+    }
+    .settings-page .shared-volume-settings-table input[type="checkbox"] {
+      margin: 0;
+    }
     .local-style-table-wrap {
       max-height: 360px;
       overflow: auto;
@@ -1744,6 +1754,51 @@
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 12px;
     }
+    .responsible-archive-row.shared-volume-row {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 180px;
+      align-items: start;
+    }
+    .responsible-archive-row.shared-volume-row:has(#sharedVolumeFullField[hidden]) {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+    .shared-volume-row [hidden] {
+      display: none;
+    }
+    .shared-volume-row .paired-field {
+      gap: 6px;
+    }
+    .shared-volume-row .field-label {
+      line-height: normal;
+    }
+    .shared-volume-row .shared-volume-switch {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+      min-height: 35px;
+      margin: 0;
+      color: #344054;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+    .shared-volume-row .shared-volume-switch .switch-control {
+      width: 48px;
+      height: 32px;
+      flex: 0 0 auto;
+    }
+    .shared-volume-row .shared-volume-switch .switch-track {
+      width: 34px;
+      height: 18px;
+    }
+    .shared-volume-row .shared-volume-switch .switch-track::after {
+      top: 3px;
+      left: 3px;
+      width: 12px;
+      height: 12px;
+    }
+    .shared-volume-row .shared-volume-switch input:checked + .switch-track::after {
+      transform: translateX(16px);
+    }
     .paired-field {
       display: grid;
       gap: 6px;
@@ -3040,7 +3095,7 @@
           <a href="{% url 'contracts:usage_docs' %}">使用文档</a>
         {% elif is_normal_mode %}
           <strong>普通用户</strong>
-          <a href="{% url 'contracts:logout' %}">退出普通用户</a>
+          <a href="{% url 'contracts:logout' %}">退出登录</a>
           <a href="{% url 'contracts:usage_docs' %}">使用文档</a>
         {% elif is_guest_mode %}
           <strong>游客模式</strong>

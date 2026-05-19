@@ -207,6 +207,28 @@
           </p>
         </div>
       </section>
+      {% if can_edit_shared_record_volume %}
+        <section class="panel shared-volume-settings-panel">
+          <h2 class="settings-compact-title">共享分册设置</h2>
+          <table class="data-table compact-table shared-volume-settings-table">
+            <thead>
+              <tr>
+                <th>合同类型</th>
+                <th>是否共享</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for checkbox in form.shared_record_volume_contract_types %}
+                <tr>
+                  <td>{{ checkbox.choice_label }}</td>
+                  <td>{{ checkbox.tag }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {{ form.shared_record_volume_contract_types.errors }}
+        </section>
+      {% endif %}
     </form>
     <section class="panel">
       <div class="local-style-settings">

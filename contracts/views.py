@@ -461,6 +461,7 @@ def usage_docs_for_request(request) -> list[dict]:
                 "默认编号是系统自动生成的 12 位合同基础编号，用于保证每份合同在数据库和文件目录中有稳定标识；新增和编辑合同页面中不可手动修改。",
                 "业务编号是面向日常业务使用的合同编号，由合同类型代码、年份后两位和 5 位文件编号组成，例如维保合同会显示为 W-26-00001；如果文件编号缺失，页面会临时回退显示默认编号。",
                 "新增合同默认文件编号由设置页控制：未开启反向生成时按当前最大文件编号 + 1 填充，开启“新增合同反向生成文件编号”后按当前最小文件编号 - 1 填充。",
+                "超级管理员可在设置页按合同类型开启共享分册；启用后，同类型新增合同默认复用当前共享 01 册实序，新增页勾选“分册已满”时才为该合同开启新的共享实序。",
                 "存档编号用于纸质或归档文件定位，合同文件存档编号由 3 位文件夹编号和 3 位位置编号组成，页面显示为“文件夹编号-位置编号”，例如 011-011。",
                 "项目记录文件编号在业务编号后继续拼接 4 位年月编号（年份后两位 + 月份两位）、6 位位置编号（柜号 2 位 + 栏目 2 位 + 排位 2 位）和 2 位分册编号，形成“业务编号-年月编号-位置编号-分册编号”的记录编号，用于区分同一合同下的不同记录文件。",
                 "查询和导入时，合同编号、业务编号、带横线业务编号、存档编号和合同名称都可以作为定位合同的线索；系统会先去掉横线和空格，再按内部编号匹配。",
@@ -1464,6 +1465,9 @@ def record_real_sequence_number(contract: Contract, volume_number: str, setting:
         )
         if sequence:
             return int(sequence or 0)
+    shared_sequence = latest_shared_record_volume_sequence(contract, volume, setting)
+    if shared_sequence:
+        return int(shared_sequence.real_sequence_number or 0)
     if volume_value == 1:
         return default_record_real_sequence_number(contract, setting)
     if volume_value > 1 and not setting.record_position_enable_insert_sort:
@@ -1710,6 +1714,55 @@ def default_record_real_sequence_number(contract: Contract, setting: AppSetting 
     if contract_uses_preceding_record_sequence(contract, setting):
         return previous_record_real_sequence_number(setting)
     return next_record_real_sequence_number(setting)
+
+
+def shared_record_volume_contract_types(setting: AppSetting | None = None) -> set[str]:
+    setting = setting or AppSetting.current()
+    valid_types = {value for value, _label in Contract.CONTRACT_TYPES}
+    return {
+        value
+        for value in re.split(r"[\n,;；、]+", str(setting.shared_record_volume_contract_types or ""))
+        if value in valid_types
+    }
+
+
+def contract_uses_shared_record_volume(contract: Contract, setting: AppSetting | None = None) -> bool:
+    return bool(contract.contract_type in shared_record_volume_contract_types(setting))
+
+
+def latest_shared_record_volume_sequence(
+    contract: Contract,
+    volume: str = "01",
+    setting: AppSetting | None = None,
+) -> MaintenanceRecordVolumeSequence | None:
+    if volume != "01" or not contract_uses_shared_record_volume(contract, setting):
+        return None
+    queryset = MaintenanceRecordVolumeSequence.objects.select_related("contract").filter(
+        contract__isnull=False,
+        contract__is_deleted=False,
+        contract__contract_type=contract.contract_type,
+        storage_location_number=volume,
+        is_reserved=False,
+    ).exclude(real_sequence_number=0)
+    if getattr(contract, "pk", None):
+        queryset = queryset.exclude(contract=contract)
+    return queryset.order_by("-created_at", "-id").first()
+
+
+def create_shared_record_volume_sequence(
+    contract: Contract,
+    volume: str,
+    shared_sequence: MaintenanceRecordVolumeSequence,
+    setting: AppSetting,
+) -> MaintenanceRecordVolumeSequence:
+    real_sequence = int(shared_sequence.real_sequence_number or 0)
+    shelf_position_number = shared_sequence.shelf_position_number or shelf_position_number_from_sequence(real_sequence, setting)
+    return MaintenanceRecordVolumeSequence.objects.create(
+        contract=contract,
+        storage_location_number=volume,
+        real_sequence_number=real_sequence,
+        shelf_position_number=shelf_position_number,
+    )
 
 
 def reusable_empty_record_position_count() -> int:
@@ -2055,6 +2108,7 @@ def shift_record_volume_sequences_after(real_sequence_number: int, setting: AppS
 def reserve_default_record_volume_sequence(
     contract: Contract,
     setting: AppSetting | None = None,
+    force_new_shared_sequence: bool = False,
 ) -> MaintenanceRecordVolumeSequence | None:
     setting = setting or AppSetting.current()
     if contract.is_document_only:
@@ -2076,6 +2130,10 @@ def reserve_default_record_volume_sequence(
             sequence.save(update_fields=["real_sequence_number", "shelf_position_number", "updated_at"])
             update_records_for_volume_sequence(sequence, setting)
         return sequence
+    if not force_new_shared_sequence:
+        shared_sequence = latest_shared_record_volume_sequence(contract, "01", setting)
+        if shared_sequence:
+            return create_shared_record_volume_sequence(contract, "01", shared_sequence, setting)
     if setting.record_position_force_empty_slot:
         empty_sequence = reconnect_empty_record_volume_sequence(contract, "01", setting)
         if empty_sequence:
@@ -2145,6 +2203,9 @@ def ensure_record_volume_sequence(
     ).first()
     if sequence:
         return sequence
+    shared_sequence = latest_shared_record_volume_sequence(contract, volume, setting)
+    if shared_sequence:
+        return create_shared_record_volume_sequence(contract, volume, shared_sequence, setting)
     if setting.record_position_force_empty_slot:
         empty_sequence = reconnect_empty_record_volume_sequence(contract, volume, setting)
         if empty_sequence:
@@ -2188,6 +2249,16 @@ def release_record_volume_sequences_for_contract(
         queryset = queryset.filter(storage_location_number__in=normalized_volumes)
     for sequence in queryset.order_by("real_sequence_number", "id"):
         volume = normalize_record_volume_number(sequence.storage_location_number)
+        is_shared_by_other_contract = MaintenanceRecordVolumeSequence.objects.filter(
+            contract__isnull=False,
+            contract__is_deleted=False,
+            real_sequence_number=sequence.real_sequence_number,
+            storage_location_number=volume,
+        ).exclude(pk=sequence.pk).exists()
+        if is_shared_by_other_contract:
+            sequence.delete()
+            released_count += 1
+            continue
         sequence.contract = None
         sequence.released_contract = contract
         sequence.storage_location_number = volume
@@ -6963,11 +7034,20 @@ def add_months(value: date, months: int) -> date:
 # 新增合同并保存随表单上传的合同文件。
 def contract_create(request):
     return_state = list_return_state(request)
+    setting = AppSetting.current()
+    shared_volume_types = [
+        value for value, _label in Contract.CONTRACT_TYPES if value in shared_record_volume_contract_types(setting)
+    ]
+    shared_volume_full_checked = request.POST.get("shared_volume_full") == "on"
     if request.method == "POST":
         form = ContractForm(request.POST, request.FILES)
         if form.is_valid():
             contract = form.save()
-            reserve_default_record_volume_sequence(contract)
+            reserve_default_record_volume_sequence(
+                contract,
+                setting,
+                force_new_shared_sequence=shared_volume_full_checked,
+            )
             ensure_contract_image_folder(contract)
             uploaded_count = len(save_contract_files_and_return(contract, request.FILES.getlist("files")))
             detail = f"uploaded contract files: {uploaded_count}" if uploaded_count else ""
@@ -6995,6 +7075,8 @@ def contract_create(request):
                 "title": "新增合同",
                 "contract_files": [],
                 "default_contract_number": default_contract_number(),
+                "shared_record_volume_types": shared_volume_types,
+                "shared_volume_full_checked": shared_volume_full_checked,
                 **return_state,
                 "cancel_url": return_state["return_url"],
                 "active_nav": "contracts",
@@ -7254,6 +7336,7 @@ def contract_update(request, pk: int):
                 "contract": contract,
                 "contract_files": contract.files.all(),
                 "default_contract_number": default_contract_number(),
+                "shared_record_volume_types": [],
                 "active_nav": "contracts",
                 "next_url": next_url,
                 "scroll_position": scroll_position,
@@ -7909,6 +7992,7 @@ def settings_view(request):
     host_ip = local_ip_address()
     can_edit_image_root_path = is_super_admin_mode(request)
     can_edit_record_position_generation = is_super_admin_mode(request)
+    can_edit_shared_record_volume = is_super_admin_mode(request)
     if request.method == "POST":
         old_record_position_setting_key = record_position_setting_key(setting)
         form = AppSettingForm(
@@ -7916,6 +8000,7 @@ def settings_view(request):
             instance=setting,
             allow_image_root_path_edit=can_edit_image_root_path,
             allow_record_position_generation_edit=can_edit_record_position_generation,
+            allow_shared_record_volume_edit=can_edit_shared_record_volume,
         )
         if form.is_valid():
             with transaction.atomic():
@@ -7942,6 +8027,7 @@ def settings_view(request):
             )},
             allow_image_root_path_edit=can_edit_image_root_path,
             allow_record_position_generation_edit=can_edit_record_position_generation,
+            allow_shared_record_volume_edit=can_edit_shared_record_volume,
         )
     return render(
         request,
@@ -7958,6 +8044,7 @@ def settings_view(request):
                 "empty_record_position_preview_rows": empty_record_position_preview_rows(setting),
                 "can_edit_image_root_path": can_edit_image_root_path,
                 "can_edit_record_position_generation": can_edit_record_position_generation,
+                "can_edit_shared_record_volume": can_edit_shared_record_volume,
                 "record_sequence_backfill_result": {
                     "created": request.GET.get("backfill_created", ""),
                     "existing": request.GET.get("backfill_existing", ""),

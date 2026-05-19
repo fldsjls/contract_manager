@@ -1,3 +1,5 @@
+import re
+
 from django import forms
 from django.utils import timezone
 
@@ -333,6 +335,11 @@ class AppSettingForm(forms.ModelForm):
             }
         ),
     )
+    shared_record_volume_contract_types = forms.MultipleChoiceField(
+        label="共享分册合同类型",
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+    )
 
     # 根据当前权限控制图片保存目录和记录位置生成参数是否允许编辑。
     def __init__(
@@ -340,9 +347,15 @@ class AppSettingForm(forms.ModelForm):
         *args,
         allow_image_root_path_edit: bool = True,
         allow_record_position_generation_edit: bool = True,
+        allow_shared_record_volume_edit: bool = True,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        self.fields["shared_record_volume_contract_types"].choices = Contract.CONTRACT_TYPES
+        shared_types = self.initial.get("shared_record_volume_contract_types")
+        if shared_types is None:
+            shared_types = getattr(self.instance, "shared_record_volume_contract_types", "")
+        self.initial["shared_record_volume_contract_types"] = self.parse_shared_record_volume_contract_types(shared_types)
         image_field = self.fields["image_root_path"]
         numeric_fields = [
             "record_position_column_count",
@@ -370,6 +383,10 @@ class AppSettingForm(forms.ModelForm):
                 field.disabled = True
                 field.widget.attrs["readonly"] = "readonly"
                 field.widget.attrs["title"] = "只有超级管理员可修改记录位置编号生成参数。"
+        if not allow_shared_record_volume_edit:
+            field = self.fields["shared_record_volume_contract_types"]
+            field.disabled = True
+            field.widget.attrs["title"] = "只有超级管理员可修改共享分册合同类型。"
 
     # 柜号在界面中统一显示为两位，保存时仍转为数字字段。
     def clean_record_position_cabinet_number(self):
@@ -409,6 +426,24 @@ class AppSettingForm(forms.ModelForm):
 
     def clean_record_position_start_file_number(self):
         return self.clean_record_position_slash_numbers("record_position_start_file_number", "起始界限点")
+
+    @staticmethod
+    def parse_shared_record_volume_contract_types(value) -> list[str]:
+        if isinstance(value, (list, tuple, set)):
+            values = value
+        else:
+            values = re.split(r"[\n,;；、]+", str(value or ""))
+        valid_values = {key for key, _label in Contract.CONTRACT_TYPES}
+        result = []
+        for item in values:
+            item = str(item or "").strip()
+            if item and item in valid_values and item not in result:
+                result.append(item)
+        return result
+
+    def clean_shared_record_volume_contract_types(self):
+        values = self.cleaned_data.get("shared_record_volume_contract_types") or []
+        return "\n".join(self.parse_shared_record_volume_contract_types(values))
 
     def clean_record_position_slash_numbers(self, field_name: str, label: str) -> str:
         value = str(self.cleaned_data.get(field_name) or "").strip()
@@ -499,6 +534,7 @@ class AppSettingForm(forms.ModelForm):
             "allow_partial_import_with_errors",
             "allow_force_contract_import_update",
             "reverse_contract_file_number_generation",
+            "shared_record_volume_contract_types",
             "record_position_cabinet_number",
             "record_position_end_cabinet_number",
             "record_position_column_count",

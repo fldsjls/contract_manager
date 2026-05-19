@@ -569,6 +569,7 @@ class AppSetting(models.Model):
     allow_partial_import_with_errors = models.BooleanField("Excel 导入存在错误时仍导入通过行", default=False)
     allow_force_contract_import_update = models.BooleanField("合同导入允许强行修改匹配行", default=False)
     reverse_contract_file_number_generation = models.BooleanField("新增合同反向生成文件编号", default=False)
+    shared_record_volume_contract_types = models.TextField("共享分册合同类型", blank=True)
     record_position_cabinet_number = models.PositiveSmallIntegerField("记录位置柜号", default=1)
     record_position_end_cabinet_number = models.PositiveSmallIntegerField("记录位置终止柜号", default=99)
     record_position_column_count = models.PositiveSmallIntegerField("记录位置栏目量", default=12)

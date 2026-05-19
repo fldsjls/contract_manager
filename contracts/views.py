@@ -462,6 +462,7 @@ def usage_docs_for_request(request) -> list[dict]:
                 "业务编号是面向日常业务使用的合同编号，由合同类型代码、年份后两位和 5 位文件编号组成，例如维保合同会显示为 W-26-00001；如果文件编号缺失，页面会临时回退显示默认编号。",
                 "新增合同默认文件编号由设置页控制：未开启反向生成时按当前最大文件编号 + 1 填充，开启“新增合同反向生成文件编号”后按当前最小文件编号 - 1 填充。",
                 "超级管理员可在设置页按合同类型开启共享分册；启用后，同类型新增合同默认复用当前共享 01 册实序，新增页勾选“分册已满”时才为该合同开启新的共享实序。",
+                "补历史预关联时，共享分册合同类型会按历史 01 册旧实序分组：同类型且旧实序相同的合同复用同一个新实序，旧实序不同则按原顺序开启新的共享实序。",
                 "存档编号用于纸质或归档文件定位，合同文件存档编号由 3 位文件夹编号和 3 位位置编号组成，页面显示为“文件夹编号-位置编号”，例如 011-011。",
                 "项目记录文件编号在业务编号后继续拼接 4 位年月编号（年份后两位 + 月份两位）、6 位位置编号（柜号 2 位 + 栏目 2 位 + 排位 2 位）和 2 位分册编号，形成“业务编号-年月编号-位置编号-分册编号”的记录编号，用于区分同一合同下的不同记录文件。",
                 "查询和导入时，合同编号、业务编号、带横线业务编号、存档编号和合同名称都可以作为定位合同的线索；系统会先去掉横线和空格，再按内部编号匹配。",
@@ -2452,9 +2453,12 @@ def apply_default_record_sequence_plan(
     real_sequence: int,
     setting: AppSetting,
     used_sequences: set[int] | None = None,
+    reserve_default_sequence: bool = True,
 ) -> tuple[bool, int]:
     used_sequences = used_sequences if used_sequences is not None else set()
-    real_sequence = reserve_backfill_real_sequence(real_sequence, used_sequences)
+    real_sequence = int(real_sequence or 0)
+    if reserve_default_sequence:
+        real_sequence = reserve_backfill_real_sequence(real_sequence, used_sequences)
     sequences = list(
         MaintenanceRecordVolumeSequence.objects.filter(contract=contract).order_by("storage_location_number", "id")
     )
@@ -2511,6 +2515,7 @@ def backfill_default_record_volume_sequences(setting: AppSetting | None = None) 
     missing_file_number_count = 0
     repaired_count = 0
     deleted_count = 0
+    shared_sequence_groups: dict[tuple[str, int], int] = {}
     contracts = sorted(
         Contract.objects.filter(is_deleted=False).exclude(storage_mode="仅文档"),
         key=lambda contract: (contract_record_file_number_value(contract), contract.id),
@@ -2540,15 +2545,49 @@ def backfill_default_record_volume_sequences(setting: AppSetting | None = None) 
             planned_sequence = sequence_plan.get(contract.pk)
             if planned_sequence is None:
                 continue
+            use_shared_sequence = False
+            shared_sequence = int(planned_sequence or 0)
+            if contract_uses_shared_record_volume(contract, setting):
+                historical_sequence = int(sequence.real_sequence_number or 0) if sequence else 0
+                shared_key = (contract.contract_type, historical_sequence)
+                if shared_key in shared_sequence_groups:
+                    use_shared_sequence = True
+                    shared_sequence = shared_sequence_groups[shared_key]
             if sequence:
                 existing_count += 1
-                _, repaired_items = apply_default_record_sequence_plan(contract, planned_sequence, setting, used_sequences)
+                _, repaired_items = apply_default_record_sequence_plan(
+                    contract,
+                    shared_sequence if use_shared_sequence else planned_sequence,
+                    setting,
+                    used_sequences,
+                    reserve_default_sequence=not use_shared_sequence,
+                )
                 repaired_count += repaired_items
+                if contract_uses_shared_record_volume(contract, setting) and not use_shared_sequence:
+                    refreshed_sequence = MaintenanceRecordVolumeSequence.objects.filter(
+                        contract=contract,
+                        storage_location_number="01",
+                    ).first()
+                    if refreshed_sequence:
+                        shared_sequence_groups[shared_key] = int(refreshed_sequence.real_sequence_number or 0)
                 continue
-            created, repaired_items = apply_default_record_sequence_plan(contract, planned_sequence, setting, used_sequences)
+            created, repaired_items = apply_default_record_sequence_plan(
+                contract,
+                shared_sequence if use_shared_sequence else planned_sequence,
+                setting,
+                used_sequences,
+                reserve_default_sequence=not use_shared_sequence,
+            )
             if created:
                 created_count += 1
                 repaired_count += repaired_items
+            if contract_uses_shared_record_volume(contract, setting) and not use_shared_sequence:
+                refreshed_sequence = MaintenanceRecordVolumeSequence.objects.filter(
+                    contract=contract,
+                    storage_location_number="01",
+                ).first()
+                if refreshed_sequence:
+                    shared_sequence_groups[shared_key] = int(refreshed_sequence.real_sequence_number or 0)
     return {
         "created_count": created_count,
         "existing_count": existing_count,

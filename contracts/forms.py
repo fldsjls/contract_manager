@@ -61,6 +61,9 @@ class ContractForm(forms.ModelForm):
         self.fields["original_contract_folder"].label = "文件夹编号"
         self.fields["original_contract_inner_number"].label = "文件编号"
         self.fields["storage_location_number"].label = "位置编号"
+        if self.instance and self.instance.pk:
+            self.fields["contract_type"].disabled = True
+            self.fields["contract_type"].widget.attrs["title"] = "编辑合同不能修改合同类型。"
         self.fields["storage_mode"].label = "保存模式"
         self.fields["archive_years"].label = "归档时间（年）"
         self.fields["original_contract_folder"].required = False
@@ -433,12 +436,15 @@ class AppSettingForm(forms.ModelForm):
             raise forms.ValidationError("存放栏目不能大于栏目量。")
         return number
 
+    # 校验多段栏目容量配置，支持用 / 分隔不同起始界限点。
     def clean_record_position_column_capacity(self):
         return self.clean_record_position_slash_numbers("record_position_column_capacity", "栏目存放数")
 
+    # 校验多段起始界限点，保证每段都能换算为正整数。
     def clean_record_position_start_file_number(self):
         return self.clean_record_position_slash_numbers("record_position_start_file_number", "起始界限点")
 
+    # 将勾选或文本输入的合同类型清洗为合法且不重复的列表。
     @staticmethod
     def parse_shared_record_volume_contract_types(value) -> list[str]:
         if isinstance(value, (list, tuple, set)):
@@ -453,14 +459,17 @@ class AppSettingForm(forms.ModelForm):
                 result.append(item)
         return result
 
+    # 保存共享分册合同类型时统一转为换行分隔文本。
     def clean_shared_record_volume_contract_types(self):
         values = self.cleaned_data.get("shared_record_volume_contract_types") or []
         return "\n".join(self.parse_shared_record_volume_contract_types(values))
 
+    # 保存指定日期合同类型时复用同一套类型清洗规则。
     def clean_specified_deadline_contract_types(self):
         values = self.cleaned_data.get("specified_deadline_contract_types") or []
         return "\n".join(self.parse_shared_record_volume_contract_types(values))
 
+    # 校验以 / 分隔的正整数配置，并用规范格式写回数据库。
     def clean_record_position_slash_numbers(self, field_name: str, label: str) -> str:
         value = str(self.cleaned_data.get(field_name) or "").strip()
         parts = [part.strip() for part in value.split("/") if part.strip()]
@@ -487,6 +496,7 @@ class AppSettingForm(forms.ModelForm):
                     break
         return cleaned_data
 
+    # 展开单个预留排位片段，支持实序、范围和三段坐标批量格式。
     @staticmethod
     def _expand_record_position_reserved_part(part: str) -> list[str]:
         if part.isdigit() and len(part) == 6:

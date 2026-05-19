@@ -5,9 +5,11 @@ from contracts.models import AppSetting, Contract
 from contracts.views import reserve_default_record_volume_sequence
 
 
+# 管理命令：为已有合同补齐默认项目记录分册实序。
 class Command(BaseCommand):
     help = "Backfill default record volume sequence reservations for active contracts."
 
+    # 注册 dry-run 参数，便于先查看需要补齐的合同数量。
     def add_arguments(self, parser):
         parser.add_argument(
             "--dry-run",
@@ -15,6 +17,7 @@ class Command(BaseCommand):
             help="Count contracts that need a default record volume sequence without creating rows.",
         )
 
+    # 执行补齐逻辑，非 dry-run 时在事务中批量创建缺失的分册实序。
     def handle(self, *args, **options):
         setting = AppSetting.current()
         dry_run = bool(options["dry_run"])

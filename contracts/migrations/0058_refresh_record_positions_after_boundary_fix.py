@@ -3,6 +3,7 @@
 from django.db import migrations
 
 
+# 解析用 / 分隔的正整数配置，空值时使用默认回退值。
 def slash_numbers(value, fallback):
     numbers = []
     for part in str(value or "").split("/"):
@@ -12,6 +13,7 @@ def slash_numbers(value, fallback):
     return numbers or [fallback]
 
 
+# 按起点、栏目数和方向计算向后推进后的柜号与栏目。
 def column_from_steps(column_steps, start_cabinet, start_column, column_count, direction):
     if direction == "increment":
         first_cabinet_columns = max(column_count - start_column + 1, 0)
@@ -26,6 +28,7 @@ def column_from_steps(column_steps, start_cabinet, start_column, column_count, d
     return start_cabinet + 1 + (remaining_steps // column_count), column_count - (remaining_steps % column_count)
 
 
+# 按起点、栏目数和方向计算起始界限点之前的柜号与栏目。
 def column_before_start(column_steps, start_cabinet, start_column, column_count, direction):
     if direction == "increment":
         first_cabinet_columns = max(start_column - 1, 0)
@@ -40,6 +43,7 @@ def column_before_start(column_steps, start_cabinet, start_column, column_count,
     return start_cabinet - 1 - (remaining_steps // column_count), (remaining_steps % column_count) + 1
 
 
+# 根据系统设置生成每个起始界限点对应的容量和锚点。
 def generation_tiers(setting):
     start_files = slash_numbers(getattr(setting, "record_position_start_file_number", "1"), 1)
     capacities = slash_numbers(getattr(setting, "record_position_column_capacity", "1"), 1)
@@ -74,6 +78,7 @@ def generation_tiers(setting):
     return tiers
 
 
+# 为实序编号选择对应的起始界限点分段。
 def tier_for_sequence(sequence_number, tiers):
     sequence_number = int(sequence_number or 0)
     for tier in tiers:
@@ -82,6 +87,7 @@ def tier_for_sequence(sequence_number, tiers):
     return tiers[-1] if tiers else None
 
 
+# 将实序编号换算为六位排位编号。
 def shelf_position_number_from_sequence(sequence_number, setting):
     sequence_number = int(sequence_number or 0)
     if not sequence_number:
@@ -109,6 +115,7 @@ def shelf_position_number_from_sequence(sequence_number, setting):
     return f"{max(cabinet, 1):02d}{column:02d}{rank:02d}"
 
 
+# 刷新分册实序和项目记录上的排位编号，修复界限点边界计算结果。
 def refresh_record_positions(apps, schema_editor):
     AppSetting = apps.get_model("contracts", "AppSetting")
     MaintenanceRecord = apps.get_model("contracts", "MaintenanceRecord")
@@ -126,6 +133,7 @@ def refresh_record_positions(apps, schema_editor):
             ).exclude(record_position_number=position_number).update(record_position_number=position_number)
 
 
+# 迁移类：执行一次性排位刷新数据迁移。
 class Migration(migrations.Migration):
 
     dependencies = [

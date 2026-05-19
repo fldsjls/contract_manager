@@ -566,7 +566,7 @@ def usage_docs_for_request(request) -> list[dict]:
             "items": [
                 "合同导入模板包含“导入合同”“业务匹配”“默认匹配”三张工作表：“导入合同”只新增合同，不再自动匹配已有合同。",
                 "“业务匹配”按已有业务编号修改负责人、文件夹编号、位置编号、归档时间和备注，不修改业务编号本身；空白单元格不会覆盖原值。",
-                "“默认匹配”按 12 位默认编号修改已有合同，除默认编号外可修改合同所有基础字段；空白单元格同样保留原值。",
+                "“默认匹配”按 12 位默认编号修改已有合同，但合同类型不允许通过导入修改；空白单元格同样保留原值。",
                 "同一合同同时出现在多个工作表时，系统按工作表顺序处理；当前模板顺序为“导入合同”“业务匹配”“默认匹配”，后执行的有效修改会覆盖先执行的同字段修改。",
                 "设置页的“Excel 导入存在错误时仍导入通过行”只会跳过错误行并导入通过行；未开启时，只要预览存在错误行就会阻止确认导入。",
                 "设置页的“合同导入允许强行修改匹配行”只作用于已经匹配到合同的业务匹配或默认匹配行；确认保存后系统会再次检测文件编号，若发现重复会回滚整次导入并弹窗提示。",
@@ -951,6 +951,7 @@ def center_windows_explorer_for_folder(folder: Path) -> None:
     if os.name != "nt":
         return
 
+    # 后台线程轮询资源管理器窗口，避免阻塞当前 Web 请求。
     def worker():
         try:
             import ctypes
@@ -966,6 +967,7 @@ def center_windows_explorer_for_folder(folder: Path) -> None:
         EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
         found_hwnds = []
 
+        # 枚举可见的资源管理器窗口，并收集标题匹配目标文件夹的窗口句柄。
         def enum_window(hwnd, _lparam):
             if not user32.IsWindowVisible(hwnd):
                 return True
@@ -1103,6 +1105,7 @@ def hydrate_contract_file_status(contracts: list[Contract]) -> None:
         contract.file_is_uploaded = bool(preview_file or legacy_file_available)
 
 
+# 为合同列表批量计算票据记录和项目记录数量，避免模板逐行查询。
 def hydrate_contract_record_counts(contracts: list[Contract]) -> None:
     contract_ids = [contract.pk for contract in contracts]
     maintenance_counts = {
@@ -1128,6 +1131,7 @@ def hydrate_contract_record_counts(contracts: list[Contract]) -> None:
         contract.money_record_count = invoice_counts.get(contract.pk, 0) + payment_counts.get(contract.pk, 0)
 
 
+# 为合同列表批量生成项目记录排位提示文本。
 def hydrate_contract_record_position_tooltips(contracts: list[Contract]) -> None:
     contract_ids = [contract.pk for contract in contracts]
     sequence_map = {
@@ -1501,6 +1505,7 @@ def record_position_column_from_steps(
     return start_cabinet + 1 + (remaining_steps // column_count), column_count - (remaining_steps % column_count)
 
 
+# 反向计算起始界限点之前的柜号和栏目，用于插入早于起点的实序编号。
 def record_position_column_before_start(
     column_steps: int,
     start_cabinet: int,
@@ -1521,6 +1526,7 @@ def record_position_column_before_start(
     return start_cabinet - 1 - (remaining_steps // column_count), (remaining_steps % column_count) + 1
 
 
+# 解析 / 分隔的排位配置，空值时返回默认正整数。
 def record_position_slash_numbers(value, fallback: int = 1) -> list[int]:
     numbers = []
     for part in str(value or "").split("/"):
@@ -1530,6 +1536,7 @@ def record_position_slash_numbers(value, fallback: int = 1) -> list[int]:
     return numbers or [fallback]
 
 
+# 根据系统设置生成分段排位规则，每段包含起始实序、容量和起始坐标。
 def record_position_generation_tiers(setting: AppSetting | None = None) -> list[dict]:
     setting = setting or AppSetting.current()
     start_files = record_position_slash_numbers(setting.record_position_start_file_number, 1)
@@ -1565,6 +1572,7 @@ def record_position_generation_tiers(setting: AppSetting | None = None) -> list[
     return tiers
 
 
+# 按实序编号定位所属排位分段。
 def record_position_tier_for_sequence(sequence_number: int, setting: AppSetting | None = None) -> dict | None:
     tiers = record_position_generation_tiers(setting)
     sequence_number = int(sequence_number or 0)
@@ -1574,6 +1582,7 @@ def record_position_tier_for_sequence(sequence_number: int, setting: AppSetting 
     return tiers[-1] if tiers else None
 
 
+# 将实序编号换算为四位柜号栏目编号。
 def record_position_number_from_sequence(sequence_number: int, setting: AppSetting | None = None) -> str:
     setting = setting or AppSetting.current()
     tier = record_position_tier_for_sequence(sequence_number, setting)
@@ -1608,6 +1617,7 @@ def record_position_number_from_sequence(sequence_number: int, setting: AppSetti
     return f"{max(cabinet, 1):02d}{column:02d}"
 
 
+# 将实序编号换算为六位柜号栏目排位编号。
 def shelf_position_number_from_sequence(sequence_number: int, setting: AppSetting | None = None) -> str:
     setting = setting or AppSetting.current()
     tier = record_position_tier_for_sequence(sequence_number, setting)
@@ -1659,10 +1669,12 @@ def record_sequence_baseline(setting: AppSetting | None = None) -> int:
     return max(record_position_generation_tiers(setting)[0]["start_file"] - 1, 0)
 
 
+# 获取最右侧分段的起始实序，用于判断需要前插的旧文件编号。
 def record_position_rightmost_start_file(setting: AppSetting | None = None) -> int:
     return max(int(record_position_generation_tiers(setting)[-1]["start_file"]), 1)
 
 
+# 读取已占用或预留分册中的最大实序编号。
 def max_record_real_sequence_number(fallback: int | None = None) -> int:
     if fallback is None:
         fallback = record_sequence_baseline()
@@ -1670,10 +1682,12 @@ def max_record_real_sequence_number(fallback: int | None = None) -> int:
     return max(int(max_sequence or 0), fallback)
 
 
+# 读取当前排位系统中已经占用到的最大实序。
 def max_record_position_occupied_sequence(fallback: int | None = None) -> int:
     return max_record_real_sequence_number(fallback)
 
 
+# 读取非预留分册中的最大实序编号，供追加新分册使用。
 def max_active_record_real_sequence_number(fallback: int | None = None) -> int:
     if fallback is None:
         fallback = record_sequence_baseline()
@@ -1685,6 +1699,7 @@ def max_active_record_real_sequence_number(fallback: int | None = None) -> int:
     return max(int(max_sequence or 0), fallback)
 
 
+# 读取当前最小实序编号，供起始界限点之前的合同继续向前插入。
 def min_record_real_sequence_number(fallback: int | None = None) -> int:
     if fallback is None:
         fallback = record_position_rightmost_start_file()
@@ -1696,22 +1711,26 @@ def min_record_real_sequence_number(fallback: int | None = None) -> int:
     return min(int(min_sequence or fallback), fallback)
 
 
+# 生成追加在末尾的新实序编号，并跳过已释放的空排位。
 def next_record_real_sequence_number(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
     return sequence_after_empty_record_positions(max_record_real_sequence_number(record_sequence_baseline(setting)) + 1)
 
 
+# 生成插入到起始界限点之前的新实序编号。
 def previous_record_real_sequence_number(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
     previous_sequence = min_record_real_sequence_number(record_position_rightmost_start_file(setting)) - 1
     return -1 if previous_sequence == 0 else previous_sequence
 
 
+# 判断合同文件编号是否早于最右侧起始界限点，需要使用前插实序。
 def contract_uses_preceding_record_sequence(contract: Contract, setting: AppSetting | None = None) -> bool:
     file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
     return bool(file_number and int(file_number) < record_position_rightmost_start_file(setting))
 
 
+# 为合同默认 01 分册选择新实序编号。
 def default_record_real_sequence_number(contract: Contract, setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
     if contract_uses_preceding_record_sequence(contract, setting):
@@ -1719,6 +1738,7 @@ def default_record_real_sequence_number(contract: Contract, setting: AppSetting 
     return next_record_real_sequence_number(setting)
 
 
+# 读取允许共享 01 分册实序的合同类型集合。
 def shared_record_volume_contract_types(setting: AppSetting | None = None) -> set[str]:
     setting = setting or AppSetting.current()
     valid_types = {value for value, _label in Contract.CONTRACT_TYPES}
@@ -1729,6 +1749,7 @@ def shared_record_volume_contract_types(setting: AppSetting | None = None) -> se
     }
 
 
+# 读取需要用起始日期和天数计算截止日期的合同类型集合。
 def specified_deadline_contract_types(setting: AppSetting | None = None) -> set[str]:
     setting = setting or AppSetting.current()
     valid_types = {value for value, _label in Contract.CONTRACT_TYPES}
@@ -1739,10 +1760,12 @@ def specified_deadline_contract_types(setting: AppSetting | None = None) -> set[
     }
 
 
+# 判断合同是否属于共享分册实序的合同类型。
 def contract_uses_shared_record_volume(contract: Contract, setting: AppSetting | None = None) -> bool:
     return bool(contract.contract_type in shared_record_volume_contract_types(setting))
 
 
+# 查找同类型合同最近使用的共享 01 分册实序。
 def latest_shared_record_volume_sequence(
     contract: Contract,
     volume: str = "01",
@@ -1762,6 +1785,7 @@ def latest_shared_record_volume_sequence(
     return queryset.order_by("-created_at", "-id").first()
 
 
+# 为当前合同复制共享分册实序，保持同类型项目的 01 册排位一致。
 def create_shared_record_volume_sequence(
     contract: Contract,
     volume: str,
@@ -1778,10 +1802,12 @@ def create_shared_record_volume_sequence(
     )
 
 
+# 统计当前可复用的空排位数量。
 def reusable_empty_record_position_count() -> int:
     return MaintenanceRecordVolumeSequence.objects.filter(contract__isnull=True).exclude(real_sequence_number=0).count()
 
 
+# 追加实序时跳过已经释放出来的空排位。
 def sequence_after_empty_record_positions(real_sequence_number: int) -> int:
     adjusted_sequence = int(real_sequence_number or 0)
     while MaintenanceRecordVolumeSequence.objects.filter(
@@ -1792,6 +1818,7 @@ def sequence_after_empty_record_positions(real_sequence_number: int) -> int:
     return adjusted_sequence
 
 
+# 计算剩余可用排位数量，并把可复用空排位计入余量。
 def record_position_remaining_count(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
     max_sequence = max_record_position_occupied_sequence()
@@ -1801,6 +1828,7 @@ def record_position_remaining_count(setting: AppSetting | None = None) -> int:
     return max(remaining_positions + reusable_empty_record_position_count(), 0)
 
 
+# 计算左侧起始分段在当前柜号范围内的总容量。
 def record_position_leftmost_total_capacity(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
     start_column = int(setting.record_position_start_column or 1)
@@ -1817,6 +1845,7 @@ def record_position_leftmost_total_capacity(setting: AppSetting | None = None) -
     return total_columns * capacity
 
 
+# 生成每个排位分段覆盖的实序范围。
 def record_position_sequence_ranges(setting: AppSetting | None = None) -> list[tuple[int, int]]:
     tiers = record_position_generation_tiers(setting)
     ranges = []
@@ -1832,20 +1861,24 @@ def record_position_sequence_ranges(setting: AppSetting | None = None) -> list[t
     return ranges
 
 
+# 计算所有分段加总后的排位容量。
 def record_position_total_capacity(setting: AppSetting | None = None) -> int:
     return sum(end_file - start_file + 1 for start_file, end_file in record_position_sequence_ranges(setting))
 
 
+# 计算当前柜号范围内最后一个可用实序编号。
 def record_position_last_sequence_number(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
     start_file = record_position_generation_tiers(setting)[0]["start_file"]
     return start_file + record_position_leftmost_total_capacity(setting) - 1
 
 
+# 判断实序编号是否超出当前排位容量。
 def exceeds_record_position_capacity(real_sequence_number: int, setting: AppSetting | None = None) -> bool:
     return int(real_sequence_number or 0) > record_position_last_sequence_number(setting)
 
 
+# 将预留输入值解析为实序编号，支持直接填写实序或六位排位。
 def sequence_number_from_reserved_position(position_text: str, setting: AppSetting) -> int | None:
     position_text = str(position_text or "").strip()
     if position_text.isdigit() and len(position_text) != 6 and int(position_text) > 0:
@@ -1853,6 +1886,7 @@ def sequence_number_from_reserved_position(position_text: str, setting: AppSetti
     return sequence_number_from_position(position_text, setting)
 
 
+# 将预留输入值转换为标准六位排位编号。
 def shelf_position_from_reserved_value(value: str, setting: AppSetting) -> str:
     text = str(value or "").strip()
     if text.isdigit() and len(text) == 6:
@@ -1861,11 +1895,13 @@ def shelf_position_from_reserved_value(value: str, setting: AppSetting) -> str:
     return shelf_position_number_from_sequence(sequence_number, setting) if sequence_number else ""
 
 
+# 在指定排位分段内把六位排位反推为实序编号。
 def sequence_number_from_position_for_tier(position_text: str, setting: AppSetting, tier: dict) -> int | None:
     after_sequence, before_sequence = sequence_number_candidates_from_position_for_tier(position_text, setting, tier)
     return after_sequence if after_sequence is not None else before_sequence
 
 
+# 在已生成的分段列表中查找实序编号所属分段。
 def record_position_tier_from_list(sequence_number: int, tiers: list[dict]) -> dict | None:
     sequence_number = int(sequence_number or 0)
     for tier in tiers:
@@ -1874,6 +1910,7 @@ def record_position_tier_from_list(sequence_number: int, tiers: list[dict]) -> d
     return tiers[-1] if tiers else None
 
 
+# 将六位排位编号反推为全局实序编号。
 def sequence_number_from_position(position_text: str, setting: AppSetting) -> int | None:
     tiers = record_position_generation_tiers(setting)
     for tier in tiers:
@@ -1887,6 +1924,7 @@ def sequence_number_from_position(position_text: str, setting: AppSetting) -> in
     return None
 
 
+# 同时计算排位在起始界限点之后和之前两种可能实序。
 def sequence_number_candidates_from_position_for_tier(
     position_text: str,
     setting: AppSetting,
@@ -1947,14 +1985,17 @@ def sequence_number_candidates_from_position_for_tier(
     return after_sequence, before_sequence
 
 
+# 手工输入排位时返回可匹配的实序编号。
 def manual_record_position_sequence_number(position_text: str, setting: AppSetting) -> int | None:
     return sequence_number_from_position(position_text, setting)
 
 
+# 判断手工输入的排位是否能落到当前规则中的有效实序。
 def manual_record_position_is_allowed(position_text: str, setting: AppSetting) -> bool:
     return manual_record_position_sequence_number(position_text, setting) is not None
 
 
+# 读取已经落地为预留空排位的排位编号。
 def locked_reserved_record_position_values() -> list[str]:
     return list(
         MaintenanceRecordVolumeSequence.objects.filter(is_reserved=True, contract__isnull=True)
@@ -1964,6 +2005,7 @@ def locked_reserved_record_position_values() -> list[str]:
     )
 
 
+# 合并等待预留、冲突预留和已锁定预留，避免重复丢失。
 def merged_reserved_record_position_values(waiting_values: list[str], conflict_values: list[str] | None = None) -> str:
     values = []
     seen = set()
@@ -1976,6 +2018,7 @@ def merged_reserved_record_position_values(waiting_values: list[str], conflict_v
     return ";".join(values)
 
 
+# 生成预留排位导出行，包含排位坐标、实序和占用状态。
 def reserved_record_position_export_rows(setting: AppSetting) -> list[list]:
     values = [item.strip() for item in str(setting.record_position_reserved_slots or "").split(";") if item.strip()]
     current_max_sequence = max_active_record_real_sequence_number()
@@ -2014,6 +2057,7 @@ def reserved_record_position_export_rows(setting: AppSetting) -> list[list]:
     return rows
 
 
+# 生成设置页展示的空排位预览数据。
 def empty_record_position_preview_rows(setting: AppSetting | None = None) -> list[dict]:
     setting = setting or AppSetting.current()
     rows = []
@@ -2038,6 +2082,7 @@ def empty_record_position_preview_rows(setting: AppSetting | None = None) -> lis
     return rows
 
 
+# 同步系统设置中的预留排位到分册实序表。
 def sync_reserved_record_positions(setting: AppSetting, remove_values: list[str] | None = None) -> int:
     raw_values = [item.strip() for item in str(setting.record_position_reserved_slots or "").split(";") if item.strip()]
     remove_values = [str(value or "").strip() for value in (remove_values or []) if str(value or "").strip()]
@@ -2102,6 +2147,7 @@ def sync_reserved_record_positions(setting: AppSetting, remove_values: list[str]
     return synced_count
 
 
+# 根据分册实序刷新分册自身和对应项目记录上的排位编号。
 def update_records_for_volume_sequence(sequence: MaintenanceRecordVolumeSequence, setting: AppSetting) -> int:
     position_number = shelf_position_number_from_sequence(sequence.real_sequence_number, setting)
     shelf_position_number = shelf_position_number_from_sequence(sequence.real_sequence_number, setting)
@@ -2116,6 +2162,7 @@ def update_records_for_volume_sequence(sequence: MaintenanceRecordVolumeSequence
     ).update(record_position_number=position_number)
 
 
+# 将最早的可复用空排位重新绑定到指定合同分册。
 def reconnect_empty_record_volume_sequence(
     contract: Contract,
     volume: str,
@@ -2138,6 +2185,7 @@ def reconnect_empty_record_volume_sequence(
     return empty_sequence
 
 
+# 插入实序时把后续分册整体后移，并同步记录排位。
 def shift_record_volume_sequences_after(real_sequence_number: int, setting: AppSetting) -> None:
     sequences = MaintenanceRecordVolumeSequence.objects.filter(
         real_sequence_number__gt=real_sequence_number,
@@ -2149,6 +2197,7 @@ def shift_record_volume_sequences_after(real_sequence_number: int, setting: AppS
         update_records_for_volume_sequence(sequence, setting)
 
 
+# 为合同的默认 01 分册创建或修复分册实序。
 def reserve_default_record_volume_sequence(
     contract: Contract,
     setting: AppSetting | None = None,
@@ -2196,6 +2245,7 @@ def reserve_default_record_volume_sequence(
     )
 
 
+# 默认分册实序变化后，按旧偏移修复同合同其他分册。
 def rebuild_record_volume_sequences_from_default(
     contract: Contract,
     setting: AppSetting | None = None,
@@ -2229,6 +2279,7 @@ def rebuild_record_volume_sequences_from_default(
     return True, repaired_count
 
 
+# 确保指定合同分册有一条实序记录，必要时创建、共享或复用空排位。
 def ensure_record_volume_sequence(
     contract: Contract,
     volume_number: str,
@@ -2281,6 +2332,7 @@ def ensure_record_volume_sequence(
     )
 
 
+# 合同删除或归档时释放分册实序，保留为可复用空排位。
 def release_record_volume_sequences_for_contract(
     contract: Contract,
     setting: AppSetting,
@@ -2313,6 +2365,7 @@ def release_record_volume_sequences_for_contract(
     return released_count
 
 
+# 从现有项目记录中找回分册原先使用的排位编号。
 def volume_restore_position_for_records(records: list[MaintenanceRecord]) -> str:
     for record in records:
         position_number = normalize_record_position_number(record.record_position_number)
@@ -2321,6 +2374,7 @@ def volume_restore_position_for_records(records: list[MaintenanceRecord]) -> str
     return "000000"
 
 
+# 查找某个合同分册曾经释放出来的空排位。
 def released_record_volume_sequence_for_volume(contract: Contract, volume_number: str) -> MaintenanceRecordVolumeSequence | None:
     volume = normalize_record_volume_number(volume_number)
     return (
@@ -2336,6 +2390,7 @@ def released_record_volume_sequence_for_volume(contract: Contract, volume_number
     )
 
 
+# 按原排位恢复单个分册实序，必要时返回需要用户确认的冲突信息。
 def restore_record_volume_sequence_for_position(
     contract: Contract,
     volume_number: str,
@@ -2376,6 +2431,7 @@ def restore_record_volume_sequence_for_position(
     return {"ok": True, "sequence": None, "mode": "none"}
 
 
+# 恢复一个合同下所有项目记录分册对应的实序关系。
 def restore_record_volume_sequences_for_contract(
     contract: Contract,
     setting: AppSetting,
@@ -2402,6 +2458,7 @@ def restore_record_volume_sequences_for_contract(
     return {"ok": not conflicts, "conflicts": conflicts, "restored_count": restored_count}
 
 
+# 提取会影响排位换算结果的设置项，用于比较设置是否变化。
 def record_position_setting_key(setting) -> tuple:
     return (
         int(getattr(setting, "record_position_cabinet_number", 1) or 1),
@@ -2424,12 +2481,14 @@ def refresh_record_positions_for_setting_change(old_setting_key: tuple, new_sett
     return changed_count
 
 
+# 取合同文件编号的整数值，仅文档合同不参与排位排序。
 def contract_record_file_number_value(contract: Contract) -> int:
     if contract.is_document_only:
         return 0
     return int(normalize_contract_number_part(contract.original_contract_inner_number, 5) or 0)
 
 
+# 为批量补齐分册实序预先规划每个合同的默认实序。
 def planned_default_record_sequences(contracts: list[Contract], setting: AppSetting) -> dict[int, int]:
     rightmost_sequence = record_position_rightmost_start_file(setting)
     append_sequence = record_sequence_baseline(setting) + 1
@@ -2458,6 +2517,7 @@ def planned_default_record_sequences(contracts: list[Contract], setting: AppSett
     return plan
 
 
+# 按前插和追加两类规则排列需要补齐分册实序的合同。
 def ordered_default_record_sequence_contracts(contracts: list[Contract], setting: AppSetting) -> list[Contract]:
     rightmost_sequence = record_position_rightmost_start_file(setting)
     numbered_contracts = [
@@ -2480,6 +2540,7 @@ def ordered_default_record_sequence_contracts(contracts: list[Contract], setting
     return ordered_contracts
 
 
+# 在批量修复中保留一个未被占用的实序编号。
 def reserve_backfill_real_sequence(real_sequence: int, used_sequences: set[int]) -> int:
     real_sequence = int(real_sequence or 0)
     while real_sequence == 0 or real_sequence in used_sequences:
@@ -2491,6 +2552,7 @@ def reserve_backfill_real_sequence(real_sequence: int, used_sequences: set[int])
     return real_sequence
 
 
+# 将规划出的默认实序写入合同，并按偏移修复其他分册。
 def apply_default_record_sequence_plan(
     contract: Contract,
     real_sequence: int,
@@ -2551,6 +2613,7 @@ def apply_default_record_sequence_plan(
     return created, repaired_count
 
 
+# 扫描所有有效合同，补齐或修复默认项目记录分册实序。
 def backfill_default_record_volume_sequences(setting: AppSetting | None = None) -> dict:
     setting = setting or AppSetting.current()
     created_count = 0
@@ -2707,6 +2770,7 @@ def maintenance_record_number(
     return f"{business_number}{normalized_date_number}{position_number}{volume_number}"
 
 
+# 规范项目记录导入中的月份文本，缺失时从记录日期推导。
 def normalize_maintenance_month(value, record_date=None) -> str:
     month = normalize_import_cell(value)
     if not month and record_date:
@@ -4216,6 +4280,7 @@ def contract_file_number_sort_value(contract: Contract) -> tuple[int, int, str]:
     return (1, 0, contract.display_contract_number)
 
 
+# 按用户选择的方向对合同列表业务编号进行原地排序。
 def sort_contracts_by_number(contracts: list[Contract], direction: str, explicit_sort: bool) -> None:
     # 默认列表仍按原始编号倒序；用户点击业务编号表头时按 5 位文件编号升降序切换。
     if explicit_sort:
@@ -4970,6 +5035,7 @@ def contract_records_export(request, pk: int):
     if start_date and end_date and start_date > end_date:
         start_date, end_date = end_date, start_date
 
+    # 套用导出日期范围，保持票据和项目记录使用同一组筛选条件。
     def filter_record_dates(queryset):
         if start_date:
             queryset = queryset.filter(record_date__gte=start_date)
@@ -5060,12 +5126,17 @@ CONTRACT_IMPORT_CREATE_COLUMNS = [
     for field, label in CONTRACT_IMPORT_COLUMNS
     if field != "original_contract_inner_number"
 ]
+CONTRACT_IMPORT_UPDATE_COLUMNS = [
+    (field, label)
+    for field, label in CONTRACT_IMPORT_COLUMNS
+    if field != "contract_type"
+]
 CONTRACT_IMPORT_CREATE_SHEET_NAME = "导入合同"
 CONTRACT_IMPORT_DEFAULT_MATCH_SHEET_NAME = "默认匹配"
 CONTRACT_IMPORT_BUSINESS_MATCH_SHEET_NAME = "业务匹配"
 CONTRACT_IMPORT_DEFAULT_MATCH_COLUMNS = [
     ("contract_number", "默认编号"),
-    *CONTRACT_IMPORT_COLUMNS,
+    *CONTRACT_IMPORT_UPDATE_COLUMNS,
 ]
 CONTRACT_IMPORT_BUSINESS_MATCH_COLUMNS = [
     ("business_number", "业务编号"),
@@ -5080,7 +5151,6 @@ CONTRACT_IMPORT_BUSINESS_MATCH_COLUMNS = [
 CONTRACT_IMPORT_UPDATE_FIELDS = {
     "default_match": [
         "contract_name",
-        "contract_type",
         "storage_mode",
         "party_name",
         "amount",
@@ -5247,6 +5317,7 @@ def normalize_import_value(field_name: str, value):
     return text
 
 
+# 将导入单元格中的多个文件路径拆成独立路径列表。
 def contract_file_paths_from_import(value) -> list[str]:
     text = normalize_import_cell(value)
     if not text:
@@ -5258,6 +5329,7 @@ def contract_file_paths_from_import(value) -> list[str]:
     ]
 
 
+# 生成导入预览中用于展示附件路径的简短摘要。
 def contract_file_import_summary(value) -> str:
     paths = contract_file_paths_from_import(value)
     if not paths:
@@ -5267,6 +5339,7 @@ def contract_file_import_summary(value) -> str:
     return f"{len(paths)} 个文件"
 
 
+# 校验导入文件路径是否存在且确实指向文件。
 def contract_file_import_errors(value, label: str = "合同文件") -> list[str]:
     errors = []
     seen = set()
@@ -5282,6 +5355,7 @@ def contract_file_import_errors(value, label: str = "合同文件") -> list[str]
     return errors
 
 
+# 按导入路径把合同附件复制进项目文件目录。
 def save_contract_files_from_import_paths(contract: Contract, value) -> list[ContractFile]:
     saved_files = []
     paths = contract_file_paths_from_import(value)
@@ -5304,6 +5378,7 @@ def save_contract_files_from_import_paths(contract: Contract, value) -> list[Con
     return saved_files
 
 
+# 按导入路径为票据或项目记录保存附件版本。
 def save_record_files_from_import_paths(record, value) -> int:
     paths = contract_file_paths_from_import(value)
     if not paths:
@@ -5416,10 +5491,12 @@ def parse_contract_import_xlsx_with_stdlib(uploaded_file):
     return next(iter(sheets.values()), [])
 
 
+# 规范导入文件中的归档编号为六位数字。
 def normalize_contract_archive_import_number(value) -> str:
     return normalize_contract_number_part(value, 6)
 
 
+# 从导入行中拆分或补齐归档编号相关字段。
 def apply_contract_archive_number_import(row_data: dict, prefer_parts: bool = False) -> dict:
     folder_number = normalize_contract_number_part(row_data.get("original_contract_folder"), 3)
     location_number = normalize_storage_location_number(row_data.get("storage_location_number"))
@@ -5605,6 +5682,7 @@ def apply_contract_import_updates(base_data: dict, row_data: dict, import_mode: 
     return data
 
 
+# 规范合同导入中的保存模式，并清理仅文档合同不需要的归档字段。
 def normalize_contract_import_storage_mode(data: dict) -> dict:
     mode = normalize_import_cell(data.get("storage_mode"))
     if not mode:
@@ -5645,6 +5723,7 @@ def contract_import_result_preview_cells(item, import_mode, preview_contract, er
     ]
 
 
+# 生成本次导入触发的文件编号重复提示。
 def contract_import_duplicate_file_number_messages(changed_contract_ids: set[int]) -> list[str]:
     groups = {}
     for contract in Contract.objects.filter(is_deleted=False):
@@ -5662,6 +5741,7 @@ def contract_import_duplicate_file_number_messages(changed_contract_ids: set[int
     return messages
 
 
+# 校验合同导入行，生成预览对象、错误信息和默认编号分配结果。
 def validate_contract_import_rows(parsed_rows, contract_numbers=None):
     create_count = sum(1 for item in parsed_rows if item.get("import_mode", "create") == "create")
     contract_numbers = contract_numbers or default_contract_numbers(max(create_count, 1))
@@ -5863,6 +5943,7 @@ def project_code_lookup_items() -> list[dict]:
     return items
 
 
+# 汇总记录整理页的可筛选、可排序行数据。
 def record_organizer_rows(
     keyword: str = "",
     sort: str = "created_at",
@@ -5954,6 +6035,7 @@ def record_organizer_rows(
     return rows
 
 
+# 渲染记录整理页，支持按合同类型、归档状态和附件状态筛选。
 @true_admin_required
 def record_organizer(request):
     archive_keyword = request.GET.get("archive_q", "").strip()
@@ -6017,6 +6099,7 @@ def record_organizer(request):
     return render(request, "contracts/record_organizer.html", context)
 
 
+# 导出记录整理页当前筛选条件下的记录明细。
 @true_admin_required
 def record_organizer_export(request):
     archive_keyword = request.GET.get("archive_q", "").strip()
@@ -6116,7 +6199,9 @@ def parse_invoice_import_xlsx(uploaded_file):
             "导入文件路径": "file_path",
         }
 
+        # 把票据导入工作表的一行转换为统一的预览数据结构。
         def build_row(excel_row_number, values, header_map):
+            # 按字段名安全读取当前 Excel 行中的单元格值。
             def value_for(field_name):
                 index = header_map.get(field_name)
                 return values[index] if index is not None and index < len(values) else ""
@@ -6236,7 +6321,9 @@ def parse_maintenance_import_xlsx(uploaded_file):
         "导入文件路径": "file_path",
     }
 
+    # 把项目记录导入工作表的一行转换为统一的预览数据结构。
     def build_row(excel_row_number, values, header_map):
+        # 按字段名安全读取当前 Excel 行中的单元格值。
         def value_for(field_name):
             index = header_map.get(field_name)
             return values[index] if index is not None and index < len(values) else ""
@@ -6422,10 +6509,10 @@ def contract_import_template(request):
     }
     default_match_headers = [label for _field, label in CONTRACT_IMPORT_DEFAULT_MATCH_COLUMNS]
     default_match_comments = comments.copy()
+    default_match_comments.pop("合同类型", None)
     default_match_comments.update({
         "默认编号": "必填。填写系统自动生成的 12 位默认编号，用于匹配已有合同。",
         "合同名称": "可选。填写后修改合同名称，留空则不改。",
-        "合同类型": "可选。填写后修改合同类型，留空则不改。",
         "保存模式": "可选。留空默认为文件夹；填写仅文档时，会忽略文件夹编号、位置编号和截止日期。",
         "甲方名称": "可选。填写后修改甲方名称，留空则不改。",
         "合同金额": "可选。填写后修改合同金额，留空则不改。",
@@ -6907,6 +6994,7 @@ def contract_invoice_status_update(request, pk: int):
     return JsonResponse({"ok": True, "invoice_status": contract.invoice_status})
 
 
+# 保存仅文档合同的完结状态和完结日期。
 @admin_required
 def contract_document_status_update(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
@@ -7382,7 +7470,9 @@ def contract_update(request, pk: int):
             )
             return redirect(edit_url)
 
-        form_data = apply_specified_deadline_to_post_data(request.POST, setting)
+        form_data = request.POST.copy()
+        form_data["contract_type"] = contract.contract_type
+        form_data = apply_specified_deadline_to_post_data(form_data, setting)
         form = ContractForm(form_data, request.FILES, instance=contract)
         if form.is_valid():
             changed_labels = [
@@ -7493,6 +7583,7 @@ def existing_maintenance_record_preview_rows(contract: Contract) -> list[dict]:
     ]
 
 
+# 生成记录新增页展示的已有票据记录预览行。
 def existing_money_record_preview_rows(contract: Contract) -> list[dict]:
     rows = [
         {
@@ -8035,6 +8126,7 @@ def operation_log_export(request):
     return response
 
 
+# 导出系统设置中的预留排位清单。
 @admin_required
 def settings_reserved_positions_export(request):
     setting = AppSetting.current()
@@ -8048,6 +8140,7 @@ def settings_reserved_positions_export(request):
     return response
 
 
+# 触发一次项目记录分册实序补齐，并把结果带回设置页。
 @admin_required
 def settings_backfill_record_volume_sequences(request):
     if request.method != "POST":
@@ -8083,6 +8176,7 @@ def usage_docs(request):
     )
 
 
+# 将合同类型设置拆成模板可直接渲染的勾选行。
 def app_setting_contract_type_rows(form: AppSettingForm, disabled: bool = False) -> list[dict]:
     shared_values = set(AppSettingForm.parse_shared_record_volume_contract_types(
         form["shared_record_volume_contract_types"].value()
@@ -8102,6 +8196,7 @@ def app_setting_contract_type_rows(form: AppSettingForm, disabled: bool = False)
     ]
 
 
+# 根据起止日期计算指定日期合同的合同天数。
 def specified_deadline_days_from_dates(start_date, end_date) -> str:
     if not start_date or not end_date:
         return ""
@@ -8109,6 +8204,7 @@ def specified_deadline_days_from_dates(start_date, end_date) -> str:
     return str(days) if days > 0 else ""
 
 
+# 将指定日期合同的天数字段换算回截止日期后再交给表单校验。
 def apply_specified_deadline_to_post_data(data, setting: AppSetting):
     post_data = data.copy()
     contract_type = post_data.get("contract_type", "")

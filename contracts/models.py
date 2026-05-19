@@ -203,10 +203,12 @@ class Contract(models.Model):
         # 文件编号缺失时，列表回退显示默认自动编号。
         return not normalize_contract_number_part(self.original_contract_inner_number, 5)
 
+    # 判断合同是否只保存文档信息、不参与实体文件夹归档。
     @property
     def is_document_only(self) -> bool:
         return self.storage_mode == "仅文档"
 
+    # 计算归档到期日，文件夹合同用截止日期，仅文档合同用完结日期加年限。
     @property
     def archive_due_date(self):
         if self.is_document_only:
@@ -215,6 +217,7 @@ class Contract(models.Model):
             return add_years(self.document_completed_date, int(self.archive_years or 0))
         return self.end_date
 
+    # 判断文件夹模式合同是否缺少文件夹编号或存放位置编号。
     @property
     def missing_storage_position(self) -> bool:
         if self.is_document_only:
@@ -223,12 +226,14 @@ class Contract(models.Model):
         storage_number = normalize_storage_location_number(self.storage_location_number)
         return not folder_number or folder_number == "000" or storage_number == "000"
 
+    # 为默认编号或缺少归档位置的合同返回列表高亮样式。
     @property
     def business_number_css_class(self) -> str:
         if self.uses_default_display_contract_number or self.missing_storage_position:
             return "default-contract-number"
         return ""
 
+    # 计算合同跨越的项目年数，用于归档编号和统计展示。
     @property
     def project_years(self) -> int:
         if not self.sign_date or not self.end_date:
@@ -250,6 +255,7 @@ class Contract(models.Model):
             return self.contract_number
         return f"{self.contract_number}   {display_number}"
 
+    # 组合文件夹编号和位置编号，生成真实归档编号。
     @property
     def archive_number(self) -> str:
         # 存档编号由文件夹编号 3 位和位置编号 3 位组成。
@@ -261,6 +267,7 @@ class Contract(models.Model):
         location_number = normalize_storage_location_number(self.storage_location_number)
         return f"{folder_number}{location_number}"
 
+    # 生成归档页展示用编号，缺失部分用 000 占位。
     @property
     def archive_number_display(self) -> str:
         # 归档页编辑中即使文件夹编号为空，也用 000 补齐显示。
@@ -295,6 +302,7 @@ class Contract(models.Model):
             return "即将到期"
         return "进行中"
 
+    # 将中文业务状态映射为模板使用的 CSS 类名。
     @property
     def status_class(self) -> str:
         # 把中文状态转换成页面样式类名。
@@ -504,12 +512,14 @@ class MaintenanceRecordVolumeSequence(models.Model):
     created_at = models.DateTimeField("创建时间", default=timezone.now)
     updated_at = models.DateTimeField("更新时间", auto_now=True)
 
+    # 元数据类：保持分册实序按真实排位顺序显示。
     class Meta:
         ordering = ["real_sequence_number", "contract_id", "storage_location_number"]
         unique_together = ("contract", "storage_location_number")
         verbose_name = "项目记录分册实序"
         verbose_name_plural = "项目记录分册实序"
 
+    # 返回分册实序的人类可读描述，空排位也保留排位信息。
     def __str__(self) -> str:
         contract_name = self.contract.contract_name if self.contract_id else "空排位"
         return f"{contract_name} - {self.storage_location_number or '空'} - {self.real_sequence_number} - {self.shelf_position_number}"
@@ -522,11 +532,13 @@ class InvoiceRecordFileVersion(models.Model):
     original_name = models.CharField("原文件名", max_length=255, blank=True)
     created_at = models.DateTimeField("上传时间", default=timezone.now)
 
+    # 元数据类：最新上传的开票附件版本排在最前。
     class Meta:
         ordering = ["-created_at", "-id"]
         verbose_name = "开票附件版本"
         verbose_name_plural = "开票附件版本"
 
+    # 返回附件原始文件名，缺失时退回存储路径。
     def __str__(self) -> str:
         return self.original_name or self.file.name
 
@@ -538,11 +550,13 @@ class PaymentRecordFileVersion(models.Model):
     original_name = models.CharField("原文件名", max_length=255, blank=True)
     created_at = models.DateTimeField("上传时间", default=timezone.now)
 
+    # 元数据类：最新上传的收票附件版本排在最前。
     class Meta:
         ordering = ["-created_at", "-id"]
         verbose_name = "收票附件版本"
         verbose_name_plural = "收票附件版本"
 
+    # 返回附件原始文件名，缺失时退回存储路径。
     def __str__(self) -> str:
         return self.original_name or self.file.name
 
@@ -554,11 +568,13 @@ class MaintenanceRecordFileVersion(models.Model):
     original_name = models.CharField("原文件名", max_length=255, blank=True)
     created_at = models.DateTimeField("上传时间", default=timezone.now)
 
+    # 元数据类：最新上传的项目记录附件版本排在最前。
     class Meta:
         ordering = ["-created_at", "-id"]
         verbose_name = "项目记录附件版本"
         verbose_name_plural = "项目记录附件版本"
 
+    # 返回附件原始文件名，缺失时退回存储路径。
     def __str__(self) -> str:
         return self.original_name or self.file.name
 
@@ -647,14 +663,17 @@ class OperationLog(models.Model):
     is_undone = models.BooleanField("是否已撤回", default=False)
     undone_at = models.DateTimeField("撤回时间", null=True, blank=True)
 
+    # 元数据类：操作日志按最新操作倒序显示。
     class Meta:
         ordering = ["-created_at", "-id"]
         verbose_name = "操作日志"
         verbose_name_plural = "操作日志"
 
+    # 后台列表中显示操作时间、用户和动作摘要。
     def __str__(self) -> str:
         return f"{self.created_at:%Y-%m-%d %H:%M} {self.username} {self.action}"
 
+    # 生成 Django 后台历史页链接，缺少对象信息时返回空字符串。
     @property
     def history_url(self) -> str:
         if not self.content_type_id or not self.object_pk:

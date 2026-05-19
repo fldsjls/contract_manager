@@ -184,7 +184,7 @@
                 <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
                 <td
                   class="{{ contract.business_number_css_class }}"
-                  title="{{ contract.display_contract_number|display_code }}{% if contract.archive_number %}   {{ contract.archive_number|archive_code }}{% endif %}"
+                  title="{{ contract.record_position_tooltip|default:contract.display_contract_number|display_code }}"
                 >{{ contract.display_contract_number|display_code }}</td>
                 <td>{{ contract.contract_type }}</td>
                 <td class="party" title="{{ contract.party_name }}">{{ contract.party_name }}</td>

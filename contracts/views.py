@@ -1123,6 +1123,26 @@ def hydrate_contract_record_counts(contracts: list[Contract]) -> None:
         contract.money_record_count = invoice_counts.get(contract.pk, 0) + payment_counts.get(contract.pk, 0)
 
 
+def hydrate_contract_record_position_tooltips(contracts: list[Contract]) -> None:
+    contract_ids = [contract.pk for contract in contracts]
+    sequence_map = {
+        item.contract_id: item
+        for item in MaintenanceRecordVolumeSequence.objects.filter(
+            contract_id__in=contract_ids,
+            storage_location_number="01",
+        )
+    }
+    setting = AppSetting.current()
+    for contract in contracts:
+        sequence = sequence_map.get(contract.pk)
+        if not sequence:
+            contract.record_position_tooltip = ""
+            continue
+        real_sequence = int(sequence.real_sequence_number or 0)
+        position_number = shelf_position_number_from_sequence(real_sequence, setting)
+        contract.record_position_tooltip = f"01册实序编号：{real_sequence}　位置编号：{position_number}"
+
+
 # 返回文件内容给预览页，避免局域网用户直接触发浏览器下载。
 # 按系统文件根目录配置返回文件预览或下载响应。
 def file_response_from_setting(file_field, download: bool = False):
@@ -1712,15 +1732,6 @@ def record_position_sequence_ranges(setting: AppSetting | None = None) -> list[t
     return ranges
 
 
-def record_sequence_from_file_number(file_number: str | int, setting: AppSetting | None = None) -> int:
-    file_value = int(normalize_contract_number_part(file_number, 5) or 0)
-    if not file_value:
-        return 0
-    tiers = record_position_generation_tiers(setting)
-    tier = next((item for item in tiers if file_value >= int(item["start_file"])), tiers[-1])
-    return int(tier["start_file"]) + (file_value - int(tier["start_file"]))
-
-
 def record_position_total_capacity(setting: AppSetting | None = None) -> int:
     return sum(end_file - start_file + 1 for start_file, end_file in record_position_sequence_ranges(setting))
 
@@ -1989,17 +2000,19 @@ def reserve_default_record_volume_sequence(
 ) -> MaintenanceRecordVolumeSequence | None:
     setting = setting or AppSetting.current()
     file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
-    real_sequence = record_sequence_from_file_number(file_number, setting)
-    if not real_sequence:
+    if not file_number:
         return None
     sequence = MaintenanceRecordVolumeSequence.objects.filter(
         contract=contract,
         storage_location_number="01",
     ).first()
     if sequence:
-        if int(sequence.real_sequence_number or 0) != real_sequence:
+        current_sequence = int(sequence.real_sequence_number or 0)
+        real_sequence = current_sequence or next_record_real_sequence_number(setting)
+        shelf_position_number = shelf_position_number_from_sequence(real_sequence, setting)
+        if current_sequence != real_sequence or sequence.shelf_position_number != shelf_position_number:
             sequence.real_sequence_number = real_sequence
-            sequence.shelf_position_number = shelf_position_number_from_sequence(real_sequence, setting)
+            sequence.shelf_position_number = shelf_position_number
             sequence.save(update_fields=["real_sequence_number", "shelf_position_number", "updated_at"])
             update_records_for_volume_sequence(sequence, setting)
         return sequence
@@ -2007,6 +2020,7 @@ def reserve_default_record_volume_sequence(
         empty_sequence = reconnect_empty_record_volume_sequence(contract, "01", setting)
         if empty_sequence:
             return empty_sequence
+    real_sequence = next_record_real_sequence_number(setting)
     if exceeds_record_position_capacity(real_sequence, setting):
         empty_sequence = reconnect_empty_record_volume_sequence(contract, "01", setting)
         if empty_sequence:
@@ -2233,6 +2247,100 @@ def refresh_record_positions_for_setting_change(old_setting_key: tuple, new_sett
     return changed_count
 
 
+def contract_record_file_number_value(contract: Contract) -> int:
+    return int(normalize_contract_number_part(contract.original_contract_inner_number, 5) or 0)
+
+
+def planned_default_record_sequences(contracts: list[Contract], setting: AppSetting) -> dict[int, int]:
+    critical_sequence = int(record_position_generation_tiers(setting)[0]["start_file"])
+    numbered_contracts = [
+        (contract_record_file_number_value(contract), contract)
+        for contract in contracts
+        if contract_record_file_number_value(contract)
+    ]
+    plan: dict[int, int] = {}
+
+    lower_sequence = critical_sequence - 1
+    for _file_number, contract in sorted(
+        (item for item in numbered_contracts if item[0] < critical_sequence),
+        key=lambda item: (-item[0], item[1].id),
+    ):
+        plan[contract.pk] = lower_sequence
+        lower_sequence -= 1
+
+    critical_contracts = sorted(
+        (item for item in numbered_contracts if item[0] == critical_sequence),
+        key=lambda item: item[1].id,
+    )
+    upper_sequence = critical_sequence
+    for _file_number, contract in critical_contracts:
+        plan[contract.pk] = upper_sequence
+        upper_sequence += 1
+    upper_sequence = max(upper_sequence, critical_sequence + 1)
+    for _file_number, contract in sorted(
+        (item for item in numbered_contracts if item[0] > critical_sequence),
+        key=lambda item: (item[0], item[1].id),
+    ):
+        plan[contract.pk] = upper_sequence
+        upper_sequence += 1
+
+    return plan
+
+
+def apply_default_record_sequence_plan(
+    contract: Contract,
+    real_sequence: int,
+    setting: AppSetting,
+) -> tuple[bool, int]:
+    sequences = list(
+        MaintenanceRecordVolumeSequence.objects.filter(contract=contract).order_by("storage_location_number", "id")
+    )
+    default_sequence = next((sequence for sequence in sequences if normalize_record_volume_number(sequence.storage_location_number) == "01"), None)
+    old_default_sequence = int(default_sequence.real_sequence_number or 0) if default_sequence else 0
+    repaired_count = 0
+    created = False
+
+    if default_sequence is None:
+        default_sequence = MaintenanceRecordVolumeSequence.objects.create(
+            contract=contract,
+            storage_location_number="01",
+            real_sequence_number=real_sequence,
+            shelf_position_number=shelf_position_number_from_sequence(real_sequence, setting),
+        )
+        created = True
+    else:
+        shelf_position_number = shelf_position_number_from_sequence(real_sequence, setting)
+        if int(default_sequence.real_sequence_number or 0) != real_sequence or default_sequence.shelf_position_number != shelf_position_number:
+            default_sequence.real_sequence_number = real_sequence
+            default_sequence.shelf_position_number = shelf_position_number
+            default_sequence.save(update_fields=["real_sequence_number", "shelf_position_number", "updated_at"])
+            update_records_for_volume_sequence(default_sequence, setting)
+            repaired_count += 1
+
+    new_default_sequence = int(default_sequence.real_sequence_number or 0)
+    for sequence in sequences:
+        if sequence.pk == default_sequence.pk:
+            continue
+        volume = normalize_record_volume_number(sequence.storage_location_number)
+        if not volume:
+            continue
+        if old_default_sequence:
+            offset = int(sequence.real_sequence_number or 0) - old_default_sequence
+        else:
+            offset = max(int(volume or 1) - 1, 0)
+        next_sequence = new_default_sequence + offset
+        shelf_position_number = shelf_position_number_from_sequence(next_sequence, setting)
+        if int(sequence.real_sequence_number or 0) == next_sequence and sequence.shelf_position_number == shelf_position_number:
+            continue
+        sequence.real_sequence_number = next_sequence
+        sequence.shelf_position_number = shelf_position_number
+        sequence.save(update_fields=["real_sequence_number", "shelf_position_number", "updated_at"])
+        update_records_for_volume_sequence(sequence, setting)
+        repaired_count += 1
+
+    return created, repaired_count
+
+
 def backfill_default_record_volume_sequences(setting: AppSetting | None = None) -> dict:
     setting = setting or AppSetting.current()
     created_count = 0
@@ -2242,11 +2350,9 @@ def backfill_default_record_volume_sequences(setting: AppSetting | None = None) 
     deleted_count = 0
     contracts = sorted(
         Contract.objects.filter(is_deleted=False),
-        key=lambda contract: (
-            int(normalize_contract_number_part(contract.original_contract_inner_number, 5) or 0),
-            contract.id,
-        ),
+        key=lambda contract: (contract_record_file_number_value(contract), contract.id),
     )
+    sequence_plan = planned_default_record_sequences(contracts, setting)
     with transaction.atomic():
         for contract in contracts:
             file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
@@ -2266,18 +2372,18 @@ def backfill_default_record_volume_sequences(setting: AppSetting | None = None) 
                 contract=contract,
                 storage_location_number="01",
             ).first()
+            planned_sequence = sequence_plan.get(contract.pk)
+            if planned_sequence is None:
+                continue
             if sequence:
                 existing_count += 1
-                before_sequence = int(sequence.real_sequence_number or 0)
-                _, repaired_volumes = rebuild_record_volume_sequences_from_default(contract, setting)
-                if before_sequence != record_sequence_from_file_number(file_number, setting):
-                    repaired_count += 1
-                repaired_count += repaired_volumes
+                _, repaired_items = apply_default_record_sequence_plan(contract, planned_sequence, setting)
+                repaired_count += repaired_items
                 continue
-            created, repaired_volumes = rebuild_record_volume_sequences_from_default(contract, setting)
+            created, repaired_items = apply_default_record_sequence_plan(contract, planned_sequence, setting)
             if created:
                 created_count += 1
-                repaired_count += repaired_volumes
+                repaired_count += repaired_items
     return {
         "created_count": created_count,
         "existing_count": existing_count,
@@ -4493,6 +4599,7 @@ def contract_list(request):
         contracts.sort(key=lambda item: item.payment_rate, reverse=direction == "desc")
     hydrate_contract_file_status(contracts)
     hydrate_contract_record_counts(contracts)
+    hydrate_contract_record_position_tooltips(contracts)
     query_params = request.GET.copy()
     query_params.pop("archive_q", None)
     query_params.pop("sort", None)

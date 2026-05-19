@@ -221,7 +221,7 @@ def period_month_params(period: str, value: date) -> str:
 
 # 取得单个合同统计的起始日期，缺省时使用系统起始日。
 def contract_stat_start_date(contract: Contract) -> date:
-    return contract.start_date or STAT_START_DATE
+    return contract.sign_date or STAT_START_DATE
 
 
 # 取得单个合同统计的起始月份。
@@ -2561,7 +2561,7 @@ def archive_pending_contracts() -> list[Contract]:
     contracts = Contract.objects.filter(
         Q(end_date__isnull=False) | Q(storage_mode="仅文档"),
         is_deleted=False,
-    ).order_by("end_date", "start_date", "id")
+    ).order_by("end_date", "sign_date", "id")
     return [contract for contract in contracts if contract.status == "待归档"]
 
 
@@ -2571,7 +2571,7 @@ def archive_contracts_for_page(sort: str = "end_date", direction: str = "asc", k
     contracts = Contract.objects.filter(
         Q(end_date__isnull=False) | Q(storage_mode="仅文档"),
         is_deleted=False,
-    ).order_by("end_date", "start_date", "id")
+    ).order_by("end_date", "sign_date", "id")
     items = [contract for contract in contracts if contract.status in {"待归档", "已归档"}]
     if keyword:
         items = [contract for contract in items if archive_lookup_matches(contract, keyword)]
@@ -2875,7 +2875,7 @@ def yearly_signed_contract_amounts(year: int) -> list[float]:
     units = yearly_units_until(year)
     totals_by_year = {unit: Decimal("0") for unit in units}
     for contract in Contract.objects.filter(is_deleted=False):
-        signed_year = (contract.sign_date or contract.start_date or contract.created_at).year
+        signed_year = (contract.sign_date or contract.created_at).year
         if STAT_START_YEAR <= signed_year <= units[-1]:
             totals_by_year[signed_year] += contract.amount
     return [float(totals_by_year[unit]) for unit in units]
@@ -2893,17 +2893,18 @@ def build_production_cumulative_rows(start_date=None, end_date=None) -> list[dic
     contracts = Contract.objects.filter(
         is_deleted=False,
         amount__gt=0,
-        start_date__isnull=False,
+        sign_date__isnull=False,
         end_date__isnull=False,
     )
     rows = []
     for unit in units:
         total = Decimal("0")
         for contract in contracts:
-            contract_days = max((contract.end_date - contract.start_date).days, 0)
-            if not contract_days or unit <= contract.start_date or unit > contract.end_date:
+            contract_start = contract_stat_start_date(contract)
+            contract_days = max((contract.end_date - contract_start).days, 0)
+            if not contract_days or unit <= contract_start or unit > contract.end_date:
                 continue
-            production_days = max((unit - contract.start_date).days, 0)
+            production_days = max((unit - contract_start).days, 0)
             total += (contract.amount / Decimal(contract_days)) * Decimal(production_days)
         rows.append({"label": unit.strftime(label_format), "amount": total})
     return rows
@@ -2911,10 +2912,11 @@ def build_production_cumulative_rows(start_date=None, end_date=None) -> list[dic
 
 # 计算单个合同在指定日期的累计完成产值。
 def contract_production_value_at(contract: Contract, target_date: date) -> Decimal:
-    contract_days = max((contract.end_date - contract.start_date).days, 0)
-    if not contract_days or target_date <= contract.start_date:
+    contract_start = contract_stat_start_date(contract)
+    contract_days = max((contract.end_date - contract_start).days, 0)
+    if not contract_days or target_date <= contract_start:
         return Decimal("0")
-    production_days = min(max((target_date - contract.start_date).days, 0), contract_days)
+    production_days = min(max((target_date - contract_start).days, 0), contract_days)
     return (contract.amount / Decimal(contract_days)) * Decimal(production_days)
 
 
@@ -3773,7 +3775,7 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
     contracts = Contract.objects.filter(
         is_deleted=False,
         amount__gt=0,
-        start_date__isnull=False,
+        sign_date__isnull=False,
         end_date__isnull=False,
     )
     message = ""
@@ -3783,7 +3785,7 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
         mode = "project"
         contracts = [contract for contract in contracts if contract_identity_matches(contract, project_code)]
         if not contracts:
-            message = "未找到该项目编号，或项目缺少合同金额、起始日期、截止日期。"
+            message = "未找到该项目编号，或项目缺少合同金额、签订日期、截止日期。"
     elif filter_mode:
         mode = "filter"
         valid_contract_types = {value for value, _ in Contract.CONTRACT_TYPES}
@@ -3810,7 +3812,7 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
 
     contracts = list(contracts)
     if project_mode and contracts:
-        effective_start_date = parsed_start_date or contracts[0].start_date
+        effective_start_date = parsed_start_date or contract_stat_start_date(contracts[0])
     elif filter_mode:
         effective_start_date = parsed_start_date or today
     else:
@@ -3821,7 +3823,8 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
     production_total = Decimal("0")
     is_single_day_cumulative = effective_start_date == effective_end_date
     for contract in contracts:
-        contract_days = max((contract.end_date - contract.start_date).days, 0)
+        contract_start = contract_stat_start_date(contract)
+        contract_days = max((contract.end_date - contract_start).days, 0)
         if not contract_days:
             continue
         if is_single_day_cumulative:
@@ -3829,11 +3832,11 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
                 continue
             start_value = Decimal("0")
             end_value = contract_production_value_at(contract, effective_end_date)
-            production_days = max((effective_end_date - contract.start_date).days, 0)
+            production_days = max((effective_end_date - contract_start).days, 0)
         else:
             if effective_start_date >= contract.end_date:
                 continue
-            range_start = max(contract.start_date, effective_start_date or contract.start_date)
+            range_start = max(contract_start, effective_start_date or contract_start)
             start_value = contract_production_value_at(contract, effective_start_date)
             end_value = contract_production_value_at(contract, effective_end_date)
             production_days = max((min(effective_end_date, contract.end_date) - range_start).days, 0)
@@ -4161,6 +4164,7 @@ def contracts_for_list_request(request):
         "responsible_person": "responsible_person",
         "amount": "amount",
         "invoice_status": "invoice_status",
+        "sign_date": "sign_date",
         "start_date": "start_date",
         "end_date": "end_date",
         "status": "end_date",
@@ -4621,6 +4625,7 @@ def contract_list(request):
         "responsible_person": "responsible_person",
         "amount": "amount",
         "invoice_status": "invoice_status",
+        "sign_date": "sign_date",
         "start_date": "start_date",
         "end_date": "end_date",
         "status": "end_date",
@@ -4738,7 +4743,7 @@ def contract_list_export(request):
         UI_LABELS["party_name"],
         UI_LABELS["contract_amount"],
         UI_LABELS["invoice_status"],
-        UI_LABELS["start_date"],
+        UI_LABELS["sign_date"],
         UI_LABELS["end_date"],
         UI_LABELS["responsible_person"],
         UI_LABELS["status"],
@@ -4758,7 +4763,7 @@ def contract_list_export(request):
                 contract.party_name,
                 float(contract.amount or 0),
                 contract.invoice_status,
-                contract.start_date.strftime("%Y-%m-%d") if contract.start_date else "",
+                contract.sign_date.strftime("%Y-%m-%d") if contract.sign_date else "",
                 contract.end_date.strftime("%Y-%m-%d") if contract.end_date else "",
                 contract.responsible_person or "",
                 contract.status,
@@ -5283,8 +5288,7 @@ def contract_import_display_number_from_data(data: dict) -> str:
     if not inner_number:
         return ""
     sign_date = parse_form_date(data.get("sign_date"))
-    start_date = parse_form_date(data.get("start_date"))
-    base_date = sign_date or start_date or timezone.localdate()
+    base_date = sign_date or timezone.localdate()
     type_code = Contract.CONTRACT_TYPE_CODES.get(data.get("contract_type"), "")
     return f"{type_code}{str(base_date.year)[-2:]}{inner_number}"
 
@@ -5487,7 +5491,7 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
         inner_number = normalize_contract_number_part(form_data.get("original_contract_inner_number"), 5)
         storage_location = normalize_storage_location_number(form_data.get("storage_location_number"))
         if inner_number and import_mode != "business_match":
-            base_date = cleaned.get("sign_date") or cleaned.get("start_date") or timezone.localdate()
+            base_date = cleaned.get("sign_date") or timezone.localdate()
             contract_type = cleaned.get("contract_type") or form_data.get("contract_type")
             display_number = f"{Contract.CONTRACT_TYPE_CODES.get(contract_type, '')}{str(base_date.year)[-2:]}{inner_number}"
             if display_number in display_numbers:
@@ -6766,7 +6770,7 @@ def contract_create(request):
                 "contract_type": "维保",
                 "sign_date": today,
                 "start_date": today,
-                "end_date": add_months(today, 1),
+                "end_date": add_months(today, 12) + timedelta(days=1),
             }
         )
     return render(

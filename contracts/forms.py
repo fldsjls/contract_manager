@@ -147,7 +147,7 @@ class ContractForm(forms.ModelForm):
             cleaned_data["storage_location_number"] = ""
             return cleaned_data
         if file_number and not self.skip_display_number_unique:
-            base_date = cleaned_data.get("sign_date") or cleaned_data.get("start_date") or timezone.localdate()
+            base_date = cleaned_data.get("sign_date") or timezone.localdate()
             display_contract_number = (
                 f"{file_number}"
             )

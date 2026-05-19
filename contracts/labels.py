@@ -10,6 +10,7 @@ UI_LABELS = {
     "party_name": "甲方名称",
     "contract_amount": "合同金额",
     "invoice_status": "是否开票",
+    "sign_date": "签订日期",
     "start_date": "开始日期",
     "end_date": "截止日期",
     "responsible_person": "负责人",

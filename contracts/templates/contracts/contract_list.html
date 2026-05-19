@@ -147,7 +147,7 @@
               <th><a class="sort-link {% if show_sort_indicator and sort == 'party_name' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=party_name&direction={% if show_sort_indicator and sort == 'party_name' and direction == 'desc' %}asc{% else %}desc{% endif %}">{{ labels.party_name }}</a></th>
               <th><a class="sort-link {% if show_sort_indicator and sort == 'amount' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=amount&direction={% if show_sort_indicator and sort == 'amount' and direction == 'desc' %}asc{% else %}desc{% endif %}">{{ labels.contract_amount }}</a></th>
               <th><a class="sort-link {% if show_sort_indicator and sort == 'invoice_status' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=invoice_status&direction={% if show_sort_indicator and sort == 'invoice_status' and direction == 'desc' %}asc{% else %}desc{% endif %}">{{ labels.invoice_status }}</a></th>
-              <th><a class="sort-link {% if show_sort_indicator and sort == 'start_date' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=start_date&direction={% if show_sort_indicator and sort == 'start_date' and direction == 'desc' %}asc{% else %}desc{% endif %}">{{ labels.start_date }}</a></th>
+              <th><a class="sort-link {% if show_sort_indicator and sort == 'sign_date' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=sign_date&direction={% if show_sort_indicator and sort == 'sign_date' and direction == 'desc' %}asc{% else %}desc{% endif %}">{{ labels.sign_date }}</a></th>
               <th><a class="sort-link {% if show_sort_indicator and sort == 'end_date' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=end_date&direction={% if show_sort_indicator and sort == 'end_date' and direction == 'desc' %}asc{% else %}desc{% endif %}">{{ labels.end_date }}</a></th>
               <th><a class="sort-link {% if show_sort_indicator and sort == 'responsible_person' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=responsible_person&direction={% if show_sort_indicator and sort == 'responsible_person' and direction == 'desc' %}asc{% else %}desc{% endif %}">{{ labels.responsible_person }}</a></th>
               <th><a class="sort-link {% if show_sort_indicator and sort == 'status' %}active {{ direction }}{% endif %}" href="?{% if query_base %}{{ query_base }}&{% endif %}sort=status&direction={% if show_sort_indicator and sort == 'status' and direction == 'desc' %}asc{% else %}desc{% endif %}">{{ labels.status }}</a></th>
@@ -163,6 +163,7 @@
                 data-contract-number="{{ contract.display_contract_number }}"
                 data-archive-number="{{ contract.archive_number_display }}"
                 data-contract-type="{{ contract.contract_type }}"
+                data-sign-date="{{ contract.sign_date|date:'Y-m-d' }}"
                 data-start-date="{{ contract.start_date|date:'Y-m-d' }}"
                 data-end-date="{{ contract.end_date|date:'Y-m-d' }}"
                 data-has-file-number="{% if contract.original_contract_inner_number %}true{% else %}false{% endif %}"
@@ -204,7 +205,7 @@
                     <span class="invoice-status {% if contract.invoice_status == '开收据' %}invoice-receipt{% endif %}">{{ contract.invoice_status }}</span>
                   {% endif %}
                 </td>
-                <td>{{ contract.start_date|date:"Y-m-d" }}</td>
+                <td>{{ contract.sign_date|date:"Y-m-d" }}</td>
                 <td>{{ contract.end_date|date:"Y-m-d" }}</td>
                 <td>
                   {% if can_manage %}
@@ -816,7 +817,7 @@
       }
       if (contractExportButton) {
         selectedRecordExportUrl = contractExportButton.dataset.recordUrlTemplate.replace("/0/", `/${id}/`);
-        selectedRecordExportStartDate = row.dataset.startDate || "";
+        selectedRecordExportStartDate = row.dataset.signDate || "";
         selectedRecordExportEndDate = row.dataset.endDate || "";
         contractExportButton.href = selectedRecordExportUrl;
         contractExportButton.dataset.recordExportUrl = selectedRecordExportUrl;

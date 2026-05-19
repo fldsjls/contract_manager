@@ -186,7 +186,7 @@ class Contract(models.Model):
         # 合同显示编号由类型 1 位、年份 2 位和文件编号 5 位组成。
         if self.uses_default_display_contract_number:
             return self.contract_number
-        year = str((self.sign_date or self.start_date or self.created_at).year)
+        year = str((self.sign_date or self.created_at).year)
         file_number = normalize_contract_number_part(self.original_contract_inner_number, 5)
         type_code = self.CONTRACT_TYPE_CODES.get(self.contract_type, "")
         return f"{type_code}{year[-2:]}{file_number}"
@@ -204,7 +204,7 @@ class Contract(models.Model):
     @property
     def archive_due_date(self):
         if self.is_document_only:
-            return add_years(self.start_date, int(self.archive_years or 0)) if self.start_date else None
+            return add_years(self.sign_date, int(self.archive_years or 0)) if self.sign_date else None
         return self.end_date
 
     @property
@@ -223,9 +223,9 @@ class Contract(models.Model):
 
     @property
     def project_years(self) -> int:
-        if not self.start_date or not self.end_date:
+        if not self.sign_date or not self.end_date:
             return 0
-        return max(self.end_date.year - self.start_date.year + 1, 1)
+        return max(self.end_date.year - self.sign_date.year + 1, 1)
 
     # 函数说明：封装可复用的业务处理。
     @property

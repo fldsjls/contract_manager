@@ -247,7 +247,7 @@
         if (documentOnly) {
           endDateInput.value = "";
         } else {
-          defaultEndDateFromStart(!endDateInput.value);
+          defaultEndDateFromSign(!endDateInput.value);
         }
       }
     }
@@ -262,7 +262,7 @@
       });
     }
 
-    function addMonthsToDateString(value, months) {
+    function addYearsAndDaysToDateString(value, years, days) {
       if (!value) {
         return "";
       }
@@ -271,28 +271,29 @@
         return "";
       }
       const sourceDay = parts[2];
-      const target = new Date(parts[0], parts[1] - 1 + months, 1);
+      const target = new Date(parts[0] + years, parts[1] - 1, 1);
       const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
       target.setDate(Math.min(sourceDay, lastDay));
+      target.setDate(target.getDate() + days);
       const year = target.getFullYear();
       const month = String(target.getMonth() + 1).padStart(2, "0");
       const day = String(target.getDate()).padStart(2, "0");
       return `${year}-${month}-${day}`;
     }
 
-    function defaultEndDateFromStart(force = false) {
-      if (!startDateInput || !endDateInput || !startDateInput.value) {
+    function defaultEndDateFromSign(force = false) {
+      if (!signDateInput || !endDateInput || !signDateInput.value) {
         return;
       }
       if (!force && endDateTouched) {
         return;
       }
-      endDateInput.value = addMonthsToDateString(startDateInput.value, 1);
+      endDateInput.value = addYearsAndDaysToDateString(signDateInput.value, 1, 1);
     }
 
-    if (startDateInput) {
-      startDateInput.addEventListener("change", () => defaultEndDateFromStart());
-      defaultEndDateFromStart(!endDateInput?.value);
+    if (signDateInput) {
+      signDateInput.addEventListener("change", () => defaultEndDateFromSign());
+      defaultEndDateFromSign(!endDateInput?.value);
     }
 
     if (amountInput) {
@@ -435,7 +436,6 @@
     if (copySignDateButton && signDateInput && startDateInput) {
       copySignDateButton.addEventListener("click", () => {
         startDateInput.value = signDateInput.value;
-        defaultEndDateFromStart(!endDateTouched);
       });
     }
 

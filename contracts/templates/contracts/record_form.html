@@ -259,8 +259,9 @@
         forwardDirection = recordPositionSettings.direction;
         cabinetStep = 1;
       } else {
-        columnSteps = Math.floor((-offset - 1) / capacity) + 1;
-        rank = capacity - ((-offset - 1) % capacity);
+        const distanceBeforeStart = startFile - sequenceNumber;
+        columnSteps = Math.floor((distanceBeforeStart - 1) / capacity) + 1;
+        rank = capacity - ((distanceBeforeStart - 1) % capacity);
         forwardDirection = recordPositionSettings.direction === "increment" ? "decrement" : "increment";
         cabinetStep = -1;
       }

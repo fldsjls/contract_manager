@@ -1596,7 +1596,8 @@ def record_position_number_from_sequence(sequence_number: int, setting: AppSetti
             setting.record_position_direction,
         )
     else:
-        column_steps = ((-sequence_offset - 1) // capacity) + 1
+        distance_before_start = start_file - sequence_number
+        column_steps = ((distance_before_start - 1) // capacity) + 1
         cabinet, column = record_position_column_before_start(
             column_steps,
             start_cabinet,
@@ -1630,8 +1631,9 @@ def shelf_position_number_from_sequence(sequence_number: int, setting: AppSettin
             setting.record_position_direction,
         )
     else:
-        column_steps = ((-sequence_offset - 1) // capacity) + 1
-        rank = capacity - ((-sequence_offset - 1) % capacity)
+        distance_before_start = start_file - sequence_number
+        column_steps = ((distance_before_start - 1) // capacity) + 1
+        rank = capacity - ((distance_before_start - 1) % capacity)
         cabinet, column = record_position_column_before_start(
             column_steps,
             start_cabinet,
@@ -1848,8 +1850,7 @@ def sequence_number_from_reserved_position(position_text: str, setting: AppSetti
     position_text = str(position_text or "").strip()
     if position_text.isdigit() and len(position_text) != 6 and int(position_text) > 0:
         return int(position_text)
-    tiers = record_position_generation_tiers(setting)
-    return sequence_number_from_position_for_tier(position_text, setting, tiers[0])
+    return sequence_number_from_position(position_text, setting)
 
 
 def shelf_position_from_reserved_value(value: str, setting: AppSetting) -> str:
@@ -1863,6 +1864,27 @@ def shelf_position_from_reserved_value(value: str, setting: AppSetting) -> str:
 def sequence_number_from_position_for_tier(position_text: str, setting: AppSetting, tier: dict) -> int | None:
     after_sequence, before_sequence = sequence_number_candidates_from_position_for_tier(position_text, setting, tier)
     return after_sequence if after_sequence is not None else before_sequence
+
+
+def record_position_tier_from_list(sequence_number: int, tiers: list[dict]) -> dict | None:
+    sequence_number = int(sequence_number or 0)
+    for tier in tiers:
+        if sequence_number >= int(tier["start_file"]):
+            return tier
+    return tiers[-1] if tiers else None
+
+
+def sequence_number_from_position(position_text: str, setting: AppSetting) -> int | None:
+    tiers = record_position_generation_tiers(setting)
+    for tier in tiers:
+        after_sequence, before_sequence = sequence_number_candidates_from_position_for_tier(position_text, setting, tier)
+        for candidate in (after_sequence, before_sequence):
+            if candidate is None:
+                continue
+            candidate_tier = record_position_tier_from_list(candidate, tiers)
+            if candidate_tier and int(candidate_tier["start_file"]) == int(tier["start_file"]):
+                return candidate
+    return None
 
 
 def sequence_number_candidates_from_position_for_tier(
@@ -1921,19 +1943,12 @@ def sequence_number_candidates_from_position_for_tier(
         else:
             before_steps = None
     if before_steps is not None and before_steps >= 1:
-        before_sequence = start_file - ((before_steps - 1) * capacity + (capacity - rank)) - 2
+        before_sequence = start_file - ((before_steps - 1) * capacity + (capacity - rank + 1))
     return after_sequence, before_sequence
 
 
 def manual_record_position_sequence_number(position_text: str, setting: AppSetting) -> int | None:
-    tiers = sorted(record_position_generation_tiers(setting), key=lambda item: item["start_file"])
-    for tier in tiers:
-        after_sequence, before_sequence = sequence_number_candidates_from_position_for_tier(position_text, setting, tier)
-        if after_sequence is not None and after_sequence >= tier["start_file"]:
-            continue
-        if before_sequence is not None and before_sequence < tier["start_file"]:
-            return before_sequence
-    return None
+    return sequence_number_from_position(position_text, setting)
 
 
 def manual_record_position_is_allowed(position_text: str, setting: AppSetting) -> bool:

@@ -483,9 +483,9 @@ def usage_docs_for_request(request) -> list[dict]:
                 "设置页的剩余排位数会按不同起始界限点分段计算：从最右侧较小界限点开始，每段统计到左侧下一界限点前一位；最左侧界限点仍按柜号范围、栏目量、栏目存放数和存放逻辑计算完整容量，最后扣除已占用实序并加上可复用空排位。",
                 "设置页的“补历史预关联”会跳过没有文件编号的合同，不生成 01 册预关联、实序编号或位置编号，并把这些合同计入“无文件编号”数量。",
                 "剩余排位数为 0 时，新增项目记录页面会把保存按钮置灰，避免继续写入超出范围的位置。",
-                "排位预留值按 6 位实际位置填写，多个值用英文分号分隔，例如 011205;020101；当该排位换算出的实序编号大于当前最大实序编号时，它只作为等待值保存在设置中，不进入空排位池。",
+                "排位预留值可按 6 位实际位置或实序编号填写，多个值用英文分号分隔，例如 011205;3433；当该排位换算出的实序编号大于当前最大实序编号时，它只作为等待值保存在设置中，不进入空排位池。",
                 "当排位预留值换算出的实序编号不大于当前最大实序编号时，它会进入空排位池，效果等同于合同归档后释放的空排位；已进入空排位池的值会被锁定保存，即使从输入框删除也会重新显示，只有仍在等待中的值可以真正删除。",
-                "排位预留值支持批量输入，格式为“柜号范围,栏目范围,排位范围”，例如 01-03,03-04,01-10 表示 01 至 03 柜、03 至 04 栏、01 至 10 排位全部预留；保存后会展开成单独条目显示，也可以在设置页导出 Excel 快速核对。",
+                "排位预留值支持批量输入，格式为“实序编号-实序编号”或“柜号范围,栏目范围,排位范围”，例如 3433-3362 或 01-03,03-04,01-10；保存后会展开成单独条目显示，也可以在设置页导出 Excel 快速核对。",
                 "如果需要移除预留值，在值前添加 - 号即可反向删除，单条写法如 -011205，批量写法如 -01-03,03-04,01-10；删除后保存，系统会从等待值、冲突值或已锁定空排位中移除对应条目。",
                 "合同归档后，该合同已占用的项目记录分册映射会清空合同和分册绑定，保留实序编号和排位作为可复用空排位；当新增记录已到终止柜号且存在可复用空排位时，系统会优先取第一个空排位重新绑定当前合同分册；开启强制空排位后，即使未到终止柜号，也会优先使用第一个空排位。",
                 "删除某分册最后一条项目记录时，不会自动释放该分册的实序映射；该分册再次新增记录时仍沿用原来的实序编号和排位，避免普通删除造成后续档案位置反复变化。",
@@ -1845,8 +1845,19 @@ def exceeds_record_position_capacity(real_sequence_number: int, setting: AppSett
 
 
 def sequence_number_from_reserved_position(position_text: str, setting: AppSetting) -> int | None:
+    position_text = str(position_text or "").strip()
+    if position_text.isdigit() and len(position_text) != 6 and int(position_text) > 0:
+        return int(position_text)
     tiers = record_position_generation_tiers(setting)
     return sequence_number_from_position_for_tier(position_text, setting, tiers[0])
+
+
+def shelf_position_from_reserved_value(value: str, setting: AppSetting) -> str:
+    text = str(value or "").strip()
+    if text.isdigit() and len(text) == 6:
+        return text
+    sequence_number = sequence_number_from_reserved_position(text, setting)
+    return shelf_position_number_from_sequence(sequence_number, setting) if sequence_number else ""
 
 
 def sequence_number_from_position_for_tier(position_text: str, setting: AppSetting, tier: dict) -> int | None:
@@ -1960,9 +1971,10 @@ def reserved_record_position_export_rows(setting: AppSetting) -> list[list]:
             continue
         seen.add(value)
         sequence_number = sequence_number_from_reserved_position(value, setting)
-        cabinet = value[:2] if len(value) >= 2 else ""
-        column = value[2:4] if len(value) >= 4 else ""
-        rank = value[4:6] if len(value) >= 6 else ""
+        shelf_position = shelf_position_from_reserved_value(value, setting)
+        cabinet = shelf_position[:2] if len(shelf_position) >= 2 else ""
+        column = shelf_position[2:4] if len(shelf_position) >= 4 else ""
+        rank = shelf_position[4:6] if len(shelf_position) >= 6 else ""
         status = "格式无效"
         bound_contract = ""
         bound_volume = ""
@@ -1983,7 +1995,7 @@ def reserved_record_position_export_rows(setting: AppSetting) -> list[list]:
                 status = "等待中"
             else:
                 status = "可进入空排位"
-        rows.append([value, cabinet, column, rank, sequence_number or "", status, bound_contract, bound_volume])
+        rows.append([shelf_position or value, cabinet, column, rank, sequence_number or "", status, bound_contract, bound_volume])
     return rows
 
 
@@ -2015,13 +2027,23 @@ def sync_reserved_record_positions(setting: AppSetting, remove_values: list[str]
     raw_values = [item.strip() for item in str(setting.record_position_reserved_slots or "").split(";") if item.strip()]
     remove_values = [str(value or "").strip() for value in (remove_values or []) if str(value or "").strip()]
     remove_set = set(remove_values)
+    remove_sequence_set = {
+        sequence_number
+        for sequence_number in (
+            sequence_number_from_reserved_position(value, setting)
+            for value in remove_values
+        )
+        if sequence_number
+    }
     reserved_sequences = {}
     for value in raw_values:
-        if value in remove_set:
-            continue
         sequence_number = sequence_number_from_reserved_position(value, setting)
+        if value in remove_set or sequence_number in remove_sequence_set:
+            continue
         if sequence_number:
-            reserved_sequences[sequence_number] = value
+            shelf_position = shelf_position_from_reserved_value(value, setting)
+            if shelf_position:
+                reserved_sequences[sequence_number] = shelf_position
     current_max_sequence = max_active_record_real_sequence_number()
     conflict_values = []
     locked_sequences = {
@@ -2039,14 +2061,10 @@ def sync_reserved_record_positions(setting: AppSetting, remove_values: list[str]
         contract__isnull=True,
         real_sequence_number__gt=current_max_sequence,
     ).delete()
-    remove_sequences = [
-        sequence_number_from_reserved_position(value, setting)
-        for value in remove_values
-    ]
     MaintenanceRecordVolumeSequence.objects.filter(
         is_reserved=True,
         contract__isnull=True,
-        real_sequence_number__in=[value for value in remove_sequences if value],
+        real_sequence_number__in=list(remove_sequence_set),
     ).delete()
     synced_count = 0
     for sequence_number in sorted(locked_sequences):

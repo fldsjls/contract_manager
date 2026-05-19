@@ -300,9 +300,10 @@
       text-align: center;
     }
     .empty-position-preview {
+      --empty-position-preview-width: 460px;
       position: relative;
-      flex: 0 0 360px;
-      width: 360px;
+      flex: 0 0 var(--empty-position-preview-width);
+      width: var(--empty-position-preview-width);
       height: 288px;
       overflow: hidden;
       align-self: flex-start;
@@ -323,7 +324,7 @@
       transition: box-shadow 260ms ease, transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
     }
     .empty-position-preview.is-open .empty-position-preview-toggle {
-      transform: translateX(-236px);
+      transform: translateX(calc((var(--empty-position-preview-width) - 124px) * -1));
       box-shadow: 0 4px 10px rgba(16, 24, 40, 0.10);
     }
     .empty-position-preview-toggle::before {
@@ -423,16 +424,42 @@
       background: #eef2f7;
       font-weight: 600;
     }
+    .sortable-preview-table th.sortable-column {
+      cursor: pointer;
+      user-select: none;
+    }
+    .sortable-preview-table th.sortable-column:focus-visible {
+      outline: 2px solid #2563eb;
+      outline-offset: -2px;
+    }
+    .sortable-preview-table th.sortable-column::after {
+      content: "";
+      display: inline-block;
+      width: 0;
+      height: 0;
+      margin-left: 6px;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      vertical-align: middle;
+    }
+    .sortable-preview-table th.sort-asc::after {
+      border-bottom: 5px solid #475467;
+      transform: translateY(-2px);
+    }
+    .sortable-preview-table th.sort-desc::after {
+      border-top: 5px solid #475467;
+      transform: translateY(2px);
+    }
     .empty-position-preview-table th:nth-child(1),
-    .empty-position-preview-table td:nth-child(1) { width: 17%; }
+    .empty-position-preview-table td:nth-child(1) { width: 16%; }
     .empty-position-preview-table th:nth-child(2),
-    .empty-position-preview-table td:nth-child(2) { width: 23%; }
+    .empty-position-preview-table td:nth-child(2) { width: 20%; }
     .empty-position-preview-table th:nth-child(3),
     .empty-position-preview-table td:nth-child(3) { width: 14%; }
     .empty-position-preview-table th:nth-child(4),
-    .empty-position-preview-table td:nth-child(4) { width: 24%; }
+    .empty-position-preview-table td:nth-child(4) { width: 25%; }
     .empty-position-preview-table th:nth-child(5),
-    .empty-position-preview-table td:nth-child(5) { width: 22%; }
+    .empty-position-preview-table td:nth-child(5) { width: 25%; }
     .empty-position-preview-empty {
       height: 100%;
       display: grid;
@@ -3110,6 +3137,94 @@
     </aside>
     <!-- 子模板内容会渲染到右侧主内容区。 -->
     <main class="page">
+      <script>
+        window.initSortablePreviewTable = function initSortablePreviewTable(tableTarget) {
+          const table = typeof tableTarget === "string" ? document.querySelector(tableTarget) : tableTarget;
+          if (!table || table.dataset.sortablePreviewInitialized === "true") {
+            return;
+          }
+          const tbody = table.tBodies[0];
+          const headerRow = table.tHead?.rows[0];
+          if (!tbody || !headerRow) {
+            return;
+          }
+          const headers = Array.from(headerRow.cells);
+          if (!headers.length) {
+            return;
+          }
+
+          table.dataset.sortablePreviewInitialized = "true";
+          table.classList.add("sortable-preview-table");
+          Array.from(tbody.rows).forEach((row, index) => {
+            row.dataset.sortOriginalIndex = row.dataset.sortOriginalIndex || String(index);
+          });
+
+          let sortedColumn = -1;
+          let sortDirection = "";
+
+          const cellText = (row, columnIndex) => (row.cells[columnIndex]?.textContent || "").trim();
+          const numericValue = (text) => {
+            const compact = text.replace(/,/g, "").trim();
+            const candidate = compact.replace(/^[^\w\d+-]+/, "").replace(/[^\d.]+$/, "");
+            return /^[+-]?\d+(\.\d+)?$/.test(candidate) ? Number(candidate) : null;
+          };
+          const compareRows = (left, right, columnIndex) => {
+            const leftText = cellText(left, columnIndex);
+            const rightText = cellText(right, columnIndex);
+            if (!leftText && rightText) {
+              return 1;
+            }
+            if (leftText && !rightText) {
+              return -1;
+            }
+            if (!leftText && !rightText) {
+              return 0;
+            }
+            const leftNumber = numericValue(leftText);
+            const rightNumber = numericValue(rightText);
+            if (leftNumber !== null && rightNumber !== null) {
+              return leftNumber - rightNumber;
+            }
+            return leftText.localeCompare(rightText, "zh-Hans-CN", { numeric: true, sensitivity: "base" });
+          };
+          const updateHeaderState = (activeHeader, direction) => {
+            headers.forEach((header) => {
+              header.classList.remove("sort-asc", "sort-desc");
+              header.setAttribute("aria-sort", "none");
+            });
+            activeHeader.classList.add(direction === "asc" ? "sort-asc" : "sort-desc");
+            activeHeader.setAttribute("aria-sort", direction === "asc" ? "ascending" : "descending");
+          };
+          const sortByColumn = (columnIndex) => {
+            const direction = sortedColumn === columnIndex && sortDirection === "asc" ? "desc" : "asc";
+            sortedColumn = columnIndex;
+            sortDirection = direction;
+            updateHeaderState(headers[columnIndex], direction);
+            const directionMultiplier = direction === "asc" ? 1 : -1;
+            const sortedRows = Array.from(tbody.rows).sort((left, right) => {
+              const comparison = compareRows(left, right, columnIndex);
+              if (comparison !== 0) {
+                return comparison * directionMultiplier;
+              }
+              return Number(left.dataset.sortOriginalIndex || 0) - Number(right.dataset.sortOriginalIndex || 0);
+            });
+            sortedRows.forEach((row) => tbody.appendChild(row));
+          };
+
+          headers.forEach((header, columnIndex) => {
+            header.classList.add("sortable-column");
+            header.tabIndex = 0;
+            header.setAttribute("aria-sort", "none");
+            header.addEventListener("click", () => sortByColumn(columnIndex));
+            header.addEventListener("keydown", (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                sortByColumn(columnIndex);
+              }
+            });
+          });
+        };
+      </script>
       {% block content %}{% endblock %}
     </main>
   </div>

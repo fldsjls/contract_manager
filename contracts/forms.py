@@ -491,9 +491,17 @@ class AppSettingForm(forms.ModelForm):
     def _expand_record_position_reserved_part(part: str) -> list[str]:
         if part.isdigit() and len(part) == 6:
             return [part]
+        if part.isdigit() and int(part) > 0:
+            return [str(int(part))]
+        if "," not in part and "-" in part:
+            bounds = [item.strip() for item in part.split("-")]
+            if len(bounds) == 2 and all(item.isdigit() and int(item) > 0 for item in bounds):
+                start, end = (int(bounds[0]), int(bounds[1]))
+                step = 1 if start <= end else -1
+                return [str(value) for value in range(start, end + step, step)]
         ranges = [item.strip() for item in part.split(",")]
         if len(ranges) != 3:
-            raise forms.ValidationError("预留排位可填写 6 位数字，或按 柜号范围,栏目范围,排位范围 批量填写。")
+            raise forms.ValidationError("预留排位可填写 6 位排位、实序编号、实序编号范围，或按 柜号范围,栏目范围,排位范围 批量填写。")
         expanded_ranges = []
         for value in ranges:
             bounds = [item.strip() for item in value.split("-")]
@@ -509,7 +517,7 @@ class AppSettingForm(forms.ModelForm):
                     values.append(f"{cabinet:02d}{column:02d}{rank:02d}")
         return values
 
-    # 预留排位支持单个 6 位值或 柜号范围,栏目范围,排位范围 批量值，多个值用英文分号隔开。
+    # 预留排位支持 6 位排位、实序编号、实序编号范围或 柜号范围,栏目范围,排位范围 批量值。
     def clean_record_position_reserved_slots(self):
         value = str(self.cleaned_data.get("record_position_reserved_slots") or "").strip()
         self.removed_record_position_reserved_slots = ""

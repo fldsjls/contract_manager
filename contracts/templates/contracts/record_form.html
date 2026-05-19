@@ -491,6 +491,7 @@
     const existingRecordPreview = document.querySelector("#existingRecordPreview");
     const previewToggleButton = document.querySelector("#previewToggleButton");
     const previewToggleLabel = previewToggleButton?.querySelector("[data-preview-toggle-label]");
+    window.initSortablePreviewTable?.("#existingRecordPreview .existing-record-preview-table");
 
     function setRaisedPreviewHeight() {
       if (!existingRecordPreview) {

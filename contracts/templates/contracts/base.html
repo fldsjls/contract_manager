@@ -522,6 +522,24 @@
       background: #fff;
       font-family: inherit;
     }
+    input:disabled,
+    select:disabled,
+    textarea:disabled,
+    input[aria-disabled="true"],
+    select[aria-disabled="true"],
+    textarea[aria-disabled="true"] {
+      border-color: #d5dbe6;
+      background: #f1f3f6;
+      color: #98a2b3;
+      cursor: not-allowed;
+      opacity: 1;
+    }
+    input:disabled::placeholder,
+    textarea:disabled::placeholder,
+    input[aria-disabled="true"]::placeholder,
+    textarea[aria-disabled="true"]::placeholder {
+      color: #98a2b3;
+    }
     input[type="checkbox"] {
       width: auto;
       padding: 0;
@@ -1606,7 +1624,8 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .inline-invoice-status {
+    .inline-invoice-status,
+    .inline-document-status {
       width: 100%;
       min-width: 0;
       padding: 4px 5px;
@@ -1620,7 +1639,9 @@
       text-align-last: center;
     }
     .inline-invoice-status:hover,
-    .inline-invoice-status:focus {
+    .inline-invoice-status:focus,
+    .inline-document-status:hover,
+    .inline-document-status:focus {
       border-color: #b9c3d1;
       background-color: #fff;
     }
@@ -1629,11 +1650,33 @@
       color: #ca8a04;
       font-weight: 700;
     }
+    .inline-invoice-status option[value="开收据"] {
+      color: #ca8a04;
+      font-weight: 700;
+    }
     .inline-invoice-status.invoice-pending {
       color: #15803d;
       font-weight: 700;
     }
+    .inline-invoice-status option[value="待开票"],
+    .inline-document-status option[value="进行中"] {
+      color: #15803d;
+      font-weight: 700;
+    }
     .inline-invoice-status.invoice-done {
+      color: #dc2626;
+      font-weight: 700;
+    }
+    .inline-invoice-status option[value="票已结"],
+    .inline-document-status option[value="已完结"] {
+      color: #dc2626;
+      font-weight: 700;
+    }
+    .inline-document-status.document-active {
+      color: #15803d;
+      font-weight: 700;
+    }
+    .inline-document-status.document-completed {
       color: #dc2626;
       font-weight: 700;
     }

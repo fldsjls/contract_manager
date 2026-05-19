@@ -47,6 +47,7 @@ urlpatterns = [
     path("contracts/<int:pk>/remark/", views.contract_remark_update, name="contract_remark_update"),
     path("contracts/<int:pk>/responsible-person/", views.contract_responsible_person_update, name="contract_responsible_person_update"),
     path("contracts/<int:pk>/invoice-status/", views.contract_invoice_status_update, name="contract_invoice_status_update"),
+    path("contracts/<int:pk>/document-status/", views.contract_document_status_update, name="contract_document_status_update"),
     path("contracts/<int:pk>/stats-data/", views.contract_stats_data, name="contract_stats_data"),
     path("contracts/<int:pk>/stats-export/", views.contract_stats_export, name="contract_stats_export"),
     path("contracts/<int:pk>/maintenance-data/", views.maintenance_record_data, name="maintenance_record_data"),

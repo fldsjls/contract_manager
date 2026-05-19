@@ -71,10 +71,7 @@
             {{ form.storage_mode.errors }}
           {% elif field.name == "start_date" %}
             <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
-            <div class="field-control-row">
-              {{ field }}
-              <button class="button icon-button" id="copySignDate" type="button" title="复制签订日期">⇦</button>
-            </div>
+            {{ field }}
           {% else %}
             <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
             {{ field }}
@@ -156,7 +153,6 @@
     const contractInnerNumberInput = document.querySelector("#id_original_contract_inner_number");
     const storageLocationNumberInput = document.querySelector("#id_storage_location_number");
     const responsiblePersonInput = document.querySelector("#id_responsible_person");
-    const copySignDateButton = document.querySelector("#copySignDate");
     const defaultContractNumber = "{{ default_contract_number }}";
     const responsiblePersonStorageKey = "contract_last_responsible_person";
     const responsiblePersonHistoryKey = "contract_responsible_person_history";
@@ -288,11 +284,27 @@
       if (!force && endDateTouched) {
         return;
       }
-      endDateInput.value = addYearsAndDaysToDateString(signDateInput.value, 1, 1);
+      endDateInput.value = addYearsAndDaysToDateString(signDateInput.value, 1, -1);
+    }
+
+    function syncStartDateFromSign() {
+      if (!signDateInput || !startDateInput) {
+        return;
+      }
+      startDateInput.value = signDateInput.value;
+    }
+
+    function updateDatesFromSign() {
+      syncStartDateFromSign();
+      defaultEndDateFromSign();
     }
 
     if (signDateInput) {
-      signDateInput.addEventListener("change", () => defaultEndDateFromSign());
+      signDateInput.addEventListener("input", updateDatesFromSign);
+      signDateInput.addEventListener("change", updateDatesFromSign);
+      if (!isContractEditPage || !startDateInput?.value) {
+        syncStartDateFromSign();
+      }
       defaultEndDateFromSign(!endDateInput?.value);
     }
 
@@ -432,12 +444,6 @@
     }
 
     applyStorageMode();
-
-    if (copySignDateButton && signDateInput && startDateInput) {
-      copySignDateButton.addEventListener("click", () => {
-        startDateInput.value = signDateInput.value;
-      });
-    }
 
     // 函数说明：处理页面交互和数据展示逻辑。
     function appendFileRow(fileData, pendingText = "") {

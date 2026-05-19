@@ -184,7 +184,7 @@
                 <td>{{ forloop.counter }}</td>
                 <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
                 <td
-                  class="{{ contract.business_number_css_class }} {% if contract.storage_mode == '仅文档' or contract.storage_mode == '仅存档' %}document-only-business-number{% endif %}"
+                  class="{{ contract.business_number_css_class }} {% if contract.storage_mode == '仅文档' %}document-only-business-number{% endif %}"
                   title="{{ contract.record_position_tooltip|default:contract.display_contract_number|display_code }}"
                 >{{ contract.display_contract_number|display_code }}</td>
                 <td>{{ contract.contract_type }}</td>
@@ -220,7 +220,21 @@
                     {{ contract.responsible_person|default:"" }}
                   {% endif %}
                 </td>
-                <td><span class="status {{ contract.status_class }}">{{ contract.status }}</span></td>
+                <td>
+                  {% if can_manage and contract.is_document_only and not contract.is_archived and contract.status != "待归档" %}
+                    <select
+                      class="inline-document-status {% if contract.document_status == '已完结' %}document-completed{% else %}document-active{% endif %}"
+                      data-update-url="{% url 'contracts:contract_document_status_update' contract.id %}"
+                      aria-label="修改{{ labels.status }}"
+                    >
+                      {% for value, label in document_status_choices %}
+                        <option value="{{ value }}" {% if contract.document_status == value %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  {% else %}
+                    <span class="status {{ contract.status_class }}">{{ contract.status }}</span>
+                  {% endif %}
+                </td>
                 <td>{% if contract.file_is_uploaded %}已上传{% else %}<span class="file-missing">未上传</span>{% endif %}</td>
               </tr>
             {% endfor %}
@@ -966,7 +980,7 @@
 
     if (table) {
       table.addEventListener("click", (event) => {
-        if (event.target.closest(".inline-invoice-status")) {
+        if (event.target.closest(".inline-invoice-status, .inline-document-status")) {
           return;
         }
         const row = event.target.closest(".selectable-row");
@@ -1117,6 +1131,60 @@
           select.value = previousValue;
           updateInvoiceStatusColor();
           alert(error.message || "是否开票更新失败，请稍后重试。");
+        } finally {
+          select.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll(".inline-document-status").forEach((select) => {
+      function updateDocumentStatusColor() {
+        select.classList.remove("document-active", "document-completed");
+        if (select.value === "已完结") {
+          select.classList.add("document-completed");
+        } else {
+          select.classList.add("document-active");
+        }
+      }
+
+      let previousValue = select.value;
+      updateDocumentStatusColor();
+      select.addEventListener("focus", () => {
+        previousValue = select.value;
+      });
+      select.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+      select.addEventListener("change", async () => {
+        const nextValue = select.value;
+        const formData = new FormData();
+        formData.append("document_status", nextValue);
+        select.disabled = true;
+        try {
+          const response = await fetch(select.dataset.updateUrl, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "X-CSRFToken": csrfToken(),
+              "X-Requested-With": "XMLHttpRequest",
+            },
+            body: formData,
+          });
+          const contentType = response.headers.get("content-type") || "";
+          const data = contentType.includes("application/json") ? await response.json() : {};
+          if (!response.ok) {
+            throw new Error(data.error || "更新失败");
+          }
+          if (!data.ok) {
+            throw new Error(data.error || "更新失败");
+          }
+          previousValue = data.document_status;
+          select.value = data.document_status;
+          updateDocumentStatusColor();
+        } catch (error) {
+          select.value = previousValue;
+          updateDocumentStatusColor();
+          alert(error.message || "状态更新失败，请稍后重试。");
         } finally {
           select.disabled = false;
         }

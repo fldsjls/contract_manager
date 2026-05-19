@@ -3797,7 +3797,7 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
         if filter_responsible_person:
             contracts = contracts.filter(responsible_person__icontains=filter_responsible_person)
 
-        status_choices = {"进行中", "即将到期", "已到期", "待归档", "已归档"}
+        status_choices = {"进行中", "即将到期", "已到期", "已完结", "待归档", "已归档"}
         contracts = list(contracts)
         if keyword:
             contracts = [contract for contract in contracts if production_keyword_matches(contract, keyword)]
@@ -4022,7 +4022,7 @@ def dashboard(request):
             "production_search_contracts": production_search_contracts,
             "contract_type_choices": Contract.CONTRACT_TYPES,
             "invoice_status_choices": Contract.INVOICE_STATUS,
-            "status_choices": ["进行中", "即将到期", "已到期", "待归档", "已归档"],
+            "status_choices": ["进行中", "即将到期", "已到期", "已完结", "待归档", "已归档"],
             "expiring_contracts": expiring_contract_queryset(),
             "archive_pending_contracts": archive_pending_contracts(),
             "recent_contracts": recent_contracts,
@@ -4190,7 +4190,7 @@ def contracts_for_list_request(request):
     if filter_responsible_person:
         contracts = contracts.filter(responsible_person__icontains=filter_responsible_person)
 
-    status_choices = {"进行中", "即将到期", "已到期", "待归档", "已归档"}
+    status_choices = {"进行中", "即将到期", "已到期", "已完结", "待归档", "已归档"}
 
     if sort in sort_fields and sort != "contract_number":
         prefix = "-" if direction == "desc" else ""
@@ -4643,7 +4643,7 @@ def contract_list(request):
         )
     valid_contract_types = {value for value, _ in Contract.CONTRACT_TYPES}
     valid_invoice_statuses = {value for value, _ in Contract.INVOICE_STATUS}
-    status_choices = ["进行中", "即将到期", "已到期", "待归档", "已归档"]
+    status_choices = ["进行中", "即将到期", "已到期", "已完结", "待归档", "已归档"]
     if filter_contract_type in valid_contract_types:
         contracts = contracts.filter(contract_type=filter_contract_type)
     else:
@@ -4716,6 +4716,7 @@ def contract_list(request):
             "responsible_person_filter": filter_responsible_person,
             "contract_type_choices": Contract.CONTRACT_TYPES,
             "invoice_status_choices": Contract.INVOICE_STATUS,
+            "document_status_choices": Contract.DOCUMENT_STATUS,
             "status_choices": status_choices,
             "has_filters": bool(filter_contract_type or filter_invoice_status or filter_status or filter_responsible_person),
             "query_base": query_params.urlencode(),
@@ -6580,6 +6581,44 @@ def contract_invoice_status_update(request, pk: int):
     return JsonResponse({"ok": True, "invoice_status": contract.invoice_status})
 
 
+@admin_required
+def contract_document_status_update(request, pk: int):
+    contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    if request.method != "POST":
+        return JsonResponse({"error": "只允许保存仅文档状态。"}, status=405)
+    if not contract.is_document_only:
+        return JsonResponse({"error": "只有仅文档项目可以手动修改状态。"}, status=400)
+    document_status = request.POST.get("document_status", "").strip()
+    valid_statuses = {value for value, _ in Contract.DOCUMENT_STATUS}
+    if document_status not in valid_statuses:
+        return JsonResponse({"error": "仅文档状态不正确。"}, status=400)
+
+    changed_fields = []
+    if contract.document_status != document_status:
+        contract.document_status = document_status
+        changed_fields.append("document_status")
+    if document_status == "已完结":
+        if not contract.document_completed_date:
+            contract.document_completed_date = timezone.localdate()
+            changed_fields.append("document_completed_date")
+    elif contract.document_completed_date:
+        contract.document_completed_date = None
+        changed_fields.append("document_completed_date")
+
+    if changed_fields:
+        contract.save(update_fields=[*changed_fields, "updated_at"])
+        log_operation(request, "修改", contract, detail=f"document status: {document_status}")
+    return JsonResponse(
+        {
+            "ok": True,
+            "document_status": contract.document_status,
+            "document_completed_date": contract.document_completed_date.isoformat() if contract.document_completed_date else "",
+            "status": contract.status,
+            "status_class": contract.status_class,
+        }
+    )
+
+
 RECORD_MODEL_MAP = {
     "invoice": InvoiceRecord,
     "payment": PaymentRecord,
@@ -6770,7 +6809,7 @@ def contract_create(request):
                 "contract_type": "维保",
                 "sign_date": today,
                 "start_date": today,
-                "end_date": add_months(today, 12) + timedelta(days=1),
+                "end_date": add_months(today, 12) - timedelta(days=1),
             }
         )
     return render(

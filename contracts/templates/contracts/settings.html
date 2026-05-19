@@ -186,47 +186,45 @@
         </div>
       </section>
 
-      <!-- 图片保存位置独立成块，文件上传始终保存到项目 media 目录。 -->
-      <section class="panel">
-        <div style="max-width: 950px;">
-          <label class="field-label" for="{{ form.image_root_path.id_for_label }}">图片保存目录</label>
-          {{ form.image_root_path }}
-          {{ form.image_root_path.errors }}
-          <p style="color: #667085; line-height: 1.8;">
-            说明：新增合同时会在该位置下按 <code>contracts/合同类型/默认合同编号</code> 自动创建文件夹，合同列表中的“图片查看”会打开对应文件夹。
-          </p>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div style="max-width: 950px;">
-          <h2 class="settings-compact-title">文件保存目录</h2>
-          <p style="color: #667085; line-height: 1.8;">
-            合同文件、结算文件、票据附件和项目记录附件统一保存到项目 <code>media</code> 文件夹，
-            路径格式为 <code>media/contracts/合同类型/默认合同编号/文件类型/文件名</code>。
-          </p>
-        </div>
-      </section>
       {% if can_edit_shared_record_volume %}
         <section class="panel shared-volume-settings-panel">
-          <h2 class="settings-compact-title">共享分册设置</h2>
+          <h2 class="settings-compact-title">合同设置</h2>
           <table class="data-table compact-table shared-volume-settings-table">
             <thead>
               <tr>
                 <th>合同类型</th>
                 <th>是否共享</th>
+                <th>指定日期</th>
               </tr>
             </thead>
             <tbody>
-              {% for checkbox in form.shared_record_volume_contract_types %}
+              {% for row in contract_type_setting_rows %}
                 <tr>
-                  <td>{{ checkbox.choice_label }}</td>
-                  <td>{{ checkbox.tag }}</td>
+                  <td>{{ row.label }}</td>
+                  <td>
+                    <input
+                      name="shared_record_volume_contract_types"
+                      type="checkbox"
+                      value="{{ row.value }}"
+                      {% if row.shared_checked %}checked{% endif %}
+                      {% if row.disabled %}disabled{% endif %}
+                    >
+                  </td>
+                  <td>
+                    <input
+                      name="specified_deadline_contract_types"
+                      type="checkbox"
+                      value="{{ row.value }}"
+                      {% if row.specified_checked %}checked{% endif %}
+                      {% if row.disabled %}disabled{% endif %}
+                    >
+                  </td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
           {{ form.shared_record_volume_contract_types.errors }}
+          {{ form.specified_deadline_contract_types.errors }}
         </section>
       {% endif %}
     </form>
@@ -264,6 +262,28 @@
         {% csrf_token %}
       </form>
     {% endif %}
+
+    <!-- 图片保存位置独立成块，文件上传始终保存到项目 media 目录。 -->
+    <section class="panel">
+      <div style="max-width: 950px;">
+        <label class="field-label" for="{{ form.image_root_path.id_for_label }}">图片保存目录</label>
+        {{ form.image_root_path }}
+        {{ form.image_root_path.errors }}
+        <p style="color: #667085; line-height: 1.8;">
+          说明：新增合同时会在该位置下按 <code>contracts/合同类型/默认合同编号</code> 自动创建文件夹，合同列表中的“图片查看”会打开对应文件夹。
+        </p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div style="max-width: 950px;">
+        <h2 class="settings-compact-title">文件保存目录</h2>
+        <p style="color: #667085; line-height: 1.8;">
+          合同文件、结算文件、票据附件和项目记录附件统一保存到项目 <code>media</code> 文件夹，
+          路径格式为 <code>media/contracts/合同类型/默认合同编号/文件类型/文件名</code>。
+        </p>
+      </div>
+    </section>
 
     <!-- 局域网访问说明，供同一网络内其他用户打开系统。 -->
     <section class="panel">

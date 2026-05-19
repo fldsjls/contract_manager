@@ -340,6 +340,11 @@ class AppSettingForm(forms.ModelForm):
         required=False,
         widget=forms.CheckboxSelectMultiple,
     )
+    specified_deadline_contract_types = forms.MultipleChoiceField(
+        label="指定日期合同类型",
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+    )
 
     # 根据当前权限控制图片保存目录和记录位置生成参数是否允许编辑。
     def __init__(
@@ -352,11 +357,17 @@ class AppSettingForm(forms.ModelForm):
     ):
         super().__init__(*args, **kwargs)
         self.fields["shared_record_volume_contract_types"].choices = Contract.CONTRACT_TYPES
+        self.fields["specified_deadline_contract_types"].choices = Contract.CONTRACT_TYPES
         shared_types = self.initial.get("shared_record_volume_contract_types")
         if shared_types is None:
             shared_types = getattr(self.instance, "shared_record_volume_contract_types", "")
         self.initial["shared_record_volume_contract_types"] = self.parse_shared_record_volume_contract_types(shared_types)
+        specified_types = self.initial.get("specified_deadline_contract_types")
+        if specified_types is None:
+            specified_types = getattr(self.instance, "specified_deadline_contract_types", "")
+        self.initial["specified_deadline_contract_types"] = self.parse_shared_record_volume_contract_types(specified_types)
         image_field = self.fields["image_root_path"]
+        image_field.widget.attrs["form"] = "settingsForm"
         numeric_fields = [
             "record_position_column_count",
         ]
@@ -384,9 +395,10 @@ class AppSettingForm(forms.ModelForm):
                 field.widget.attrs["readonly"] = "readonly"
                 field.widget.attrs["title"] = "只有超级管理员可修改记录位置编号生成参数。"
         if not allow_shared_record_volume_edit:
-            field = self.fields["shared_record_volume_contract_types"]
-            field.disabled = True
-            field.widget.attrs["title"] = "只有超级管理员可修改共享分册合同类型。"
+            for field_name in ("shared_record_volume_contract_types", "specified_deadline_contract_types"):
+                field = self.fields[field_name]
+                field.disabled = True
+                field.widget.attrs["title"] = "只有超级管理员可修改合同类型特性。"
 
     # 柜号在界面中统一显示为两位，保存时仍转为数字字段。
     def clean_record_position_cabinet_number(self):
@@ -443,6 +455,10 @@ class AppSettingForm(forms.ModelForm):
 
     def clean_shared_record_volume_contract_types(self):
         values = self.cleaned_data.get("shared_record_volume_contract_types") or []
+        return "\n".join(self.parse_shared_record_volume_contract_types(values))
+
+    def clean_specified_deadline_contract_types(self):
+        values = self.cleaned_data.get("specified_deadline_contract_types") or []
         return "\n".join(self.parse_shared_record_volume_contract_types(values))
 
     def clean_record_position_slash_numbers(self, field_name: str, label: str) -> str:
@@ -535,6 +551,7 @@ class AppSettingForm(forms.ModelForm):
             "allow_force_contract_import_update",
             "reverse_contract_file_number_generation",
             "shared_record_volume_contract_types",
+            "specified_deadline_contract_types",
             "record_position_cabinet_number",
             "record_position_end_cabinet_number",
             "record_position_column_count",

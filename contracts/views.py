@@ -1727,6 +1727,16 @@ def shared_record_volume_contract_types(setting: AppSetting | None = None) -> se
     }
 
 
+def specified_deadline_contract_types(setting: AppSetting | None = None) -> set[str]:
+    setting = setting or AppSetting.current()
+    valid_types = {value for value, _label in Contract.CONTRACT_TYPES}
+    return {
+        value
+        for value in re.split(r"[\n,;；、]+", str(setting.specified_deadline_contract_types or ""))
+        if value in valid_types
+    }
+
+
 def contract_uses_shared_record_volume(contract: Contract, setting: AppSetting | None = None) -> bool:
     return bool(contract.contract_type in shared_record_volume_contract_types(setting))
 
@@ -7077,9 +7087,13 @@ def contract_create(request):
     shared_volume_types = [
         value for value, _label in Contract.CONTRACT_TYPES if value in shared_record_volume_contract_types(setting)
     ]
+    specified_deadline_types = [
+        value for value, _label in Contract.CONTRACT_TYPES if value in specified_deadline_contract_types(setting)
+    ]
     shared_volume_full_checked = request.POST.get("shared_volume_full") == "on"
     if request.method == "POST":
-        form = ContractForm(request.POST, request.FILES)
+        form_data = apply_specified_deadline_to_post_data(request.POST, setting)
+        form = ContractForm(form_data, request.FILES)
         if form.is_valid():
             contract = form.save()
             reserve_default_record_volume_sequence(
@@ -7115,6 +7129,8 @@ def contract_create(request):
                 "contract_files": [],
                 "default_contract_number": default_contract_number(),
                 "shared_record_volume_types": shared_volume_types,
+                "specified_deadline_types": specified_deadline_types,
+                "specified_deadline_days_value": request.POST.get("specified_deadline_days", ""),
                 "shared_volume_full_checked": shared_volume_full_checked,
                 **return_state,
                 "cancel_url": return_state["return_url"],
@@ -7313,6 +7329,10 @@ def contract_file_reorder(request, pk: int):
 # 编辑合同基础信息，并处理批量删除合同文件。
 def contract_update(request, pk: int):
     contract = get_object_or_404(Contract, pk=pk, is_deleted=False)
+    setting = AppSetting.current()
+    specified_deadline_types = [
+        value for value, _label in Contract.CONTRACT_TYPES if value in specified_deadline_contract_types(setting)
+    ]
     old_file = contract.file
     next_url = request.POST.get("next") or request.GET.get("next") or ""
     scroll_position = request.POST.get("scroll") or request.GET.get("scroll") or ""
@@ -7329,7 +7349,8 @@ def contract_update(request, pk: int):
             )
             return redirect(edit_url)
 
-        form = ContractForm(request.POST, request.FILES, instance=contract)
+        form_data = apply_specified_deadline_to_post_data(request.POST, setting)
+        form = ContractForm(form_data, request.FILES, instance=contract)
         if form.is_valid():
             changed_labels = [
                 str(form.fields[field_name].label or field_name)
@@ -7376,6 +7397,11 @@ def contract_update(request, pk: int):
                 "contract_files": contract.files.all(),
                 "default_contract_number": default_contract_number(),
                 "shared_record_volume_types": [],
+                "specified_deadline_types": specified_deadline_types,
+                "specified_deadline_days_value": request.POST.get(
+                    "specified_deadline_days",
+                    specified_deadline_days_from_dates(contract.start_date, contract.end_date),
+                ),
                 "active_nav": "contracts",
                 "next_url": next_url,
                 "scroll_position": scroll_position,
@@ -8024,6 +8050,48 @@ def usage_docs(request):
     )
 
 
+def app_setting_contract_type_rows(form: AppSettingForm, disabled: bool = False) -> list[dict]:
+    shared_values = set(AppSettingForm.parse_shared_record_volume_contract_types(
+        form["shared_record_volume_contract_types"].value()
+    ))
+    specified_values = set(AppSettingForm.parse_shared_record_volume_contract_types(
+        form["specified_deadline_contract_types"].value()
+    ))
+    return [
+        {
+            "value": value,
+            "label": label,
+            "shared_checked": value in shared_values,
+            "specified_checked": value in specified_values,
+            "disabled": disabled,
+        }
+        for value, label in Contract.CONTRACT_TYPES
+    ]
+
+
+def specified_deadline_days_from_dates(start_date, end_date) -> str:
+    if not start_date or not end_date:
+        return ""
+    days = (end_date - start_date).days + 1
+    return str(days) if days > 0 else ""
+
+
+def apply_specified_deadline_to_post_data(data, setting: AppSetting):
+    post_data = data.copy()
+    contract_type = post_data.get("contract_type", "")
+    if contract_type not in specified_deadline_contract_types(setting):
+        return post_data
+    start_date = parse_form_date(post_data.get("start_date"))
+    days_text = str(post_data.get("specified_deadline_days", "") or "").strip()
+    if not start_date or not days_text.isdigit():
+        return post_data
+    days = int(days_text)
+    if days < 1:
+        return post_data
+    post_data["end_date"] = (start_date + timedelta(days=days - 1)).isoformat()
+    return post_data
+
+
 # 视图函数：渲染系统设置页面并保存配置。
 @admin_required
 def settings_view(request):
@@ -8084,6 +8152,10 @@ def settings_view(request):
                 "can_edit_image_root_path": can_edit_image_root_path,
                 "can_edit_record_position_generation": can_edit_record_position_generation,
                 "can_edit_shared_record_volume": can_edit_shared_record_volume,
+                "contract_type_setting_rows": app_setting_contract_type_rows(
+                    form,
+                    disabled=not can_edit_shared_record_volume,
+                ),
                 "record_sequence_backfill_result": {
                     "created": request.GET.get("backfill_created", ""),
                     "existing": request.GET.get("backfill_existing", ""),

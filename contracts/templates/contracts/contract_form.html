@@ -84,6 +84,25 @@
           {% elif field.name == "start_date" %}
             <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
             {{ field }}
+          {% elif field.name == "end_date" %}
+            <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            <div class="field-control-row specified-deadline-row">
+              <input
+                class="form-control"
+                id="specifiedDeadlineDays"
+                name="specified_deadline_days"
+                type="number"
+                min="1"
+                step="1"
+                inputmode="numeric"
+                placeholder="最晚时间（天）"
+                title="最晚时间（天）"
+                value="{{ specified_deadline_days_value|default:'' }}"
+                style="flex: 0 0 128px;"
+                hidden
+              >
+              {{ field }}
+            </div>
           {% else %}
             <label class="field-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
             {{ field }}
@@ -151,6 +170,7 @@
   </form>
 
   {{ shared_record_volume_types|json_script:"sharedRecordVolumeTypesData" }}
+  {{ specified_deadline_types|json_script:"specifiedDeadlineTypesData" }}
 
   <!-- 编辑已有合同时选择文件会立即上传，新建合同时随合同保存。 -->
   <script>
@@ -175,8 +195,10 @@
     const isContractEditPage = Boolean("{{ contract.id|default:'' }}");
     const reorderUrl = "{% if contract %}{% url 'contracts:contract_file_reorder' contract.id %}{% endif %}";
     const sharedRecordVolumeTypes = JSON.parse(document.querySelector("#sharedRecordVolumeTypesData")?.textContent || "[]") || [];
+    const specifiedDeadlineTypes = JSON.parse(document.querySelector("#specifiedDeadlineTypesData")?.textContent || "[]") || [];
     const sharedVolumeFullField = document.querySelector("#sharedVolumeFullField");
     const sharedVolumeFullInput = document.querySelector("#sharedVolumeFullInput");
+    const specifiedDeadlineDaysInput = document.querySelector("#specifiedDeadlineDays");
 
     function updateSharedVolumeFullField() {
       if (!sharedVolumeFullField || !contractTypeInput) {
@@ -255,6 +277,14 @@
       return storageModeInput?.value === "仅文档";
     }
 
+    function isSpecifiedDeadlineMode() {
+      return Boolean(
+        contractTypeInput
+        && specifiedDeadlineTypes.includes(contractTypeInput.value)
+        && !isDocumentOnlyMode()
+      );
+    }
+
     function applyStorageMode() {
       const documentOnly = isDocumentOnlyMode();
       [contractFolderInput, storageLocationNumberInput].forEach((input) => {
@@ -277,6 +307,7 @@
           defaultEndDateFromSign(!endDateInput.value);
         }
       }
+      updateSpecifiedDeadlineField();
     }
 
     storageModeInput?.addEventListener("change", applyStorageMode);
@@ -308,7 +339,41 @@
       return `${year}-${month}-${day}`;
     }
 
+    function addDaysToDateString(value, days) {
+      if (!value || !Number.isInteger(days) || days < 1) {
+        return "";
+      }
+      const parts = value.split("-").map((part) => Number.parseInt(part, 10));
+      if (parts.length !== 3 || parts.some(Number.isNaN)) {
+        return "";
+      }
+      const target = new Date(parts[0], parts[1] - 1, parts[2]);
+      target.setDate(target.getDate() + days - 1);
+      const year = target.getFullYear();
+      const month = String(target.getMonth() + 1).padStart(2, "0");
+      const day = String(target.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    function defaultEndDateFromSpecifiedDeadline(force = false) {
+      if (!isSpecifiedDeadlineMode()) {
+        return false;
+      }
+      if (!startDateInput || !endDateInput || !specifiedDeadlineDaysInput) {
+        return true;
+      }
+      if (!force && endDateTouched) {
+        return true;
+      }
+      const days = Number.parseInt(specifiedDeadlineDaysInput.value || "", 10);
+      endDateInput.value = addDaysToDateString(startDateInput.value, days);
+      return true;
+    }
+
     function defaultEndDateFromSign(force = false) {
+      if (defaultEndDateFromSpecifiedDeadline(force)) {
+        return;
+      }
       if (!signDateInput || !endDateInput || !signDateInput.value) {
         return;
       }
@@ -316,6 +381,25 @@
         return;
       }
       endDateInput.value = addYearsAndDaysToDateString(signDateInput.value, 1, -1);
+    }
+
+    function updateSpecifiedDeadlineField() {
+      if (!specifiedDeadlineDaysInput || !endDateInput) {
+        return;
+      }
+      const enabled = isSpecifiedDeadlineMode();
+      specifiedDeadlineDaysInput.hidden = !enabled;
+      specifiedDeadlineDaysInput.disabled = !enabled;
+      specifiedDeadlineDaysInput.required = enabled;
+      endDateInput.readOnly = enabled;
+      endDateInput.toggleAttribute("aria-readonly", enabled);
+      if (enabled) {
+        endDateTouched = false;
+        defaultEndDateFromSpecifiedDeadline(true);
+      } else if (!isDocumentOnlyMode()) {
+        specifiedDeadlineDaysInput.value = "";
+        defaultEndDateFromSign(true);
+      }
     }
 
     function syncStartDateFromSign() {
@@ -330,6 +414,12 @@
       defaultEndDateFromSign();
     }
 
+    contractTypeInput?.addEventListener("change", updateSpecifiedDeadlineField);
+    startDateInput?.addEventListener("input", () => defaultEndDateFromSpecifiedDeadline(true));
+    startDateInput?.addEventListener("change", () => defaultEndDateFromSpecifiedDeadline(true));
+    specifiedDeadlineDaysInput?.addEventListener("input", () => defaultEndDateFromSpecifiedDeadline(true));
+    specifiedDeadlineDaysInput?.addEventListener("change", () => defaultEndDateFromSpecifiedDeadline(true));
+
     if (signDateInput) {
       signDateInput.addEventListener("input", updateDatesFromSign);
       signDateInput.addEventListener("change", updateDatesFromSign);
@@ -338,6 +428,7 @@
       }
       defaultEndDateFromSign(!endDateInput?.value);
     }
+    updateSpecifiedDeadlineField();
 
     if (amountInput) {
       amountInput.addEventListener("keydown", (event) => {

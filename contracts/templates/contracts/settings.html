@@ -55,6 +55,8 @@
               当前账号可切换插入重排序和强制空排位；柜号、栏目、起始界限点、排位预留值和存放逻辑仅超级管理员可修改。
             </p>
           {% endif %}
+          <div class="record-position-settings-layout">
+            <div class="record-position-fields">
           <div class="record-position-grid">
             <div class="form-row">
               <label class="field-label">柜号</label>
@@ -121,6 +123,55 @@
               {% endif %}
             </div>
           {% endif %}
+            </div>
+            <section class="empty-position-preview" id="emptyPositionPreview">
+              <button class="button empty-position-preview-toggle" type="button" id="emptyPositionPreviewToggle" aria-expanded="false">
+                <span data-empty-preview-toggle-label>展开预览</span>
+              </button>
+              <div class="empty-position-preview-panel">
+                <div class="empty-position-preview-header">
+                  <div>
+                    <h2>空排位预览</h2>
+                    <span>共 {{ empty_record_position_preview_rows|length }} 条</span>
+                  </div>
+                  <select id="emptyPositionPreviewFilter" aria-label="筛选空排位">
+                    <option value="all">全部空排位</option>
+                    <option value="reusable">可复用空排位</option>
+                    <option value="reserved">预留空排位</option>
+                  </select>
+                </div>
+                <div class="empty-position-preview-scroll">
+                  {% if empty_record_position_preview_rows %}
+                    <table class="empty-position-preview-table">
+                      <thead>
+                        <tr>
+                          <th>实序</th>
+                          <th>排位</th>
+                          <th>分册</th>
+                          <th>状态</th>
+                          <th>来源</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for row in empty_record_position_preview_rows %}
+                          <tr data-empty-position-kind="{{ row.kind }}">
+                            <td>{{ row.real_sequence_number }}</td>
+                            <td>{{ row.shelf_position_number }}</td>
+                            <td>{{ row.storage_location_number|default:"" }}</td>
+                            <td>{{ row.status }}</td>
+                            <td title="{{ row.source_contract }}">{{ row.source_contract|default:"" }}</td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                    <div class="empty empty-position-preview-empty" id="emptyPositionPreviewFilterEmpty" hidden>暂无符合筛选的空排位</div>
+                  {% else %}
+                    <div class="empty empty-position-preview-empty">暂无空排位</div>
+                  {% endif %}
+                </div>
+              </div>
+            </section>
+          </div>
         </div>
       </section>
 
@@ -146,6 +197,35 @@
         </div>
       </section>
     </form>
+    <section class="panel">
+      <div class="local-style-settings">
+        <div class="field-control-row" style="align-items: center; justify-content: space-between; gap: 12px;">
+          <h2 class="settings-compact-title" style="margin: 0;">本地显示颜色</h2>
+          <button class="button compact" id="localStyleResetAll" type="button">全部恢复默认</button>
+        </div>
+        <div class="local-style-table-wrap">
+          <table class="local-style-table">
+            <thead>
+              <tr>
+                <th>属性</th>
+                <th>CSS</th>
+                <th>默认颜色</th>
+                <th>颜色选择</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="localStyleColorRows">
+              <tr class="local-style-empty-row">
+                <td colspan="5">正在读取 CSS 颜色项...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="color: #667085; line-height: 1.8;">
+          已读取 <span id="localStyleColorCount">0</span> 个颜色项。颜色保存到当前浏览器本地，只影响本机当前浏览器的显示；换电脑、换浏览器或清理站点数据后会恢复默认。
+        </p>
+      </div>
+    </section>
     {% if can_edit_record_position_generation %}
       <form id="backfillRecordVolumeSequencesForm" method="post" action="{% url 'contracts:settings_backfill_record_volume_sequences' %}">
         {% csrf_token %}
@@ -281,6 +361,249 @@
         input?.addEventListener("change", refreshRecordPositionRemainingCount);
       });
       refreshRecordPositionRemainingCount();
+
+      const emptyPositionPreview = document.querySelector("#emptyPositionPreview");
+      const emptyPositionPreviewToggle = document.querySelector("#emptyPositionPreviewToggle");
+      const emptyPositionPreviewToggleLabel = emptyPositionPreviewToggle?.querySelector("[data-empty-preview-toggle-label]");
+      const emptyPositionPreviewFilter = document.querySelector("#emptyPositionPreviewFilter");
+      const emptyPositionPreviewFilterEmpty = document.querySelector("#emptyPositionPreviewFilterEmpty");
+
+      emptyPositionPreviewToggle?.addEventListener("click", () => {
+        const shouldOpen = !emptyPositionPreview?.classList.contains("is-open");
+        emptyPositionPreview?.classList.add("is-animating");
+        const isOpen = emptyPositionPreview?.classList.toggle("is-open", shouldOpen) || false;
+        emptyPositionPreviewToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        if (emptyPositionPreviewToggleLabel) {
+          emptyPositionPreviewToggleLabel.textContent = isOpen ? "\u6536\u8d77\u9884\u89c8" : "\u5c55\u5f00\u9884\u89c8";
+        }
+        window.setTimeout(() => {
+          emptyPositionPreview?.classList.remove("is-animating");
+        }, 620);
+      });
+
+      function refreshEmptyPositionPreviewFilter() {
+        const selectedKind = emptyPositionPreviewFilter?.value || "all";
+        let visibleCount = 0;
+        document.querySelectorAll("[data-empty-position-kind]").forEach((row) => {
+          const isVisible = selectedKind === "all" || row.dataset.emptyPositionKind === selectedKind;
+          row.hidden = !isVisible;
+          if (isVisible) {
+            visibleCount += 1;
+          }
+        });
+        if (emptyPositionPreviewFilterEmpty) {
+          emptyPositionPreviewFilterEmpty.hidden = visibleCount !== 0;
+        }
+      }
+
+      emptyPositionPreviewFilter?.addEventListener("change", refreshEmptyPositionPreviewFilter);
+      refreshEmptyPositionPreviewFilter();
+
+      const localStyleRows = document.querySelector("#localStyleColorRows");
+      const localStyleCount = document.querySelector("#localStyleColorCount");
+      const localStyleResetAll = document.querySelector("#localStyleResetAll");
+      const localStyleStorageKey = window.localCssColorOverrideStorageKey || "contractLocalCssColorOverrides";
+      const localStyleColorProperties = [
+        "color",
+        "background-color",
+        "border-color",
+        "border-top-color",
+        "border-right-color",
+        "border-bottom-color",
+        "border-left-color",
+        "outline-color",
+        "text-decoration-color",
+        "caret-color",
+        "accent-color",
+        "column-rule-color",
+        "fill",
+        "stroke",
+      ];
+      const localStylePropertyLabels = {
+        "color": "文字颜色",
+        "background-color": "背景颜色",
+        "border-color": "边框颜色",
+        "border-top-color": "上边框颜色",
+        "border-right-color": "右边框颜色",
+        "border-bottom-color": "下边框颜色",
+        "border-left-color": "左边框颜色",
+        "outline-color": "轮廓颜色",
+        "text-decoration-color": "文字装饰颜色",
+        "caret-color": "光标颜色",
+        "accent-color": "控件强调色",
+        "column-rule-color": "分栏线颜色",
+        "fill": "填充颜色",
+        "stroke": "描边颜色",
+      };
+
+      function normalizeLocalStyleColor(value) {
+        const text = String(value || "").trim();
+        if (!text || text.includes("var(") || text === "transparent" || text === "currentcolor" || text === "inherit") {
+          return "";
+        }
+        const hex = text.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+        if (hex) {
+          const digits = hex[1];
+          return digits.length === 3
+            ? `#${digits[0]}${digits[0]}${digits[1]}${digits[1]}${digits[2]}${digits[2]}`.toLowerCase()
+            : `#${digits}`.toLowerCase();
+        }
+        const rgb = text.match(/^rgba?\(([^)]+)\)$/i);
+        if (!rgb) {
+          return "";
+        }
+        const parts = rgb[1].split(",").map((part) => part.trim());
+        if (parts.length < 3 || (parts.length >= 4 && Number.parseFloat(parts[3]) !== 1)) {
+          return "";
+        }
+        const channels = parts.slice(0, 3).map((part) => {
+          const number = Number.parseFloat(part);
+          return Number.isFinite(number) ? Math.max(0, Math.min(255, Math.round(number))) : -1;
+        });
+        if (channels.some((channel) => channel < 0)) {
+          return "";
+        }
+        return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+      }
+
+      function readLocalStyleOverrides() {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(localStyleStorageKey) || "{}");
+          return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+        } catch (error) {
+          return {};
+        }
+      }
+
+      function writeLocalStyleOverrides(overrides) {
+        try {
+          localStorage.setItem(localStyleStorageKey, JSON.stringify(overrides));
+        } catch (error) {}
+        window.applyLocalCssColorOverrides?.();
+      }
+
+      function localStyleId(item) {
+        return `${item.media || ""}||${item.selector}||${item.property}`;
+      }
+
+      function collectLocalStyleColorItems() {
+        const items = new Map();
+        function visitRules(rules, media = "") {
+          Array.from(rules || []).forEach((rule) => {
+            if (rule.type === 1 && rule.selectorText && rule.style) {
+              localStyleColorProperties.forEach((property) => {
+                const defaultColor = normalizeLocalStyleColor(rule.style.getPropertyValue(property));
+                if (!defaultColor) {
+                  return;
+                }
+                const item = {
+                  media,
+                  selector: rule.selectorText,
+                  property,
+                  defaultColor,
+                };
+                items.set(localStyleId(item), item);
+              });
+            } else if (rule.cssRules) {
+              const condition = rule.conditionText || "";
+              visitRules(rule.cssRules, condition ? (media ? `${media} and ${condition}` : condition) : media);
+            }
+          });
+        }
+        Array.from(document.styleSheets || []).forEach((sheet) => {
+          try {
+            if (sheet.ownerNode?.id === "localCssColorOverridesStyle") {
+              return;
+            }
+            visitRules(sheet.cssRules);
+          } catch (error) {}
+        });
+        return Array.from(items.values()).sort((left, right) => {
+          const leftText = `${left.selector} ${left.property}`;
+          const rightText = `${right.selector} ${right.property}`;
+          return leftText.localeCompare(rightText, "zh-Hans-CN");
+        });
+      }
+
+      function renderLocalStyleColorRows() {
+        if (!localStyleRows) {
+          return;
+        }
+        const overrides = readLocalStyleOverrides();
+        const items = collectLocalStyleColorItems();
+        localStyleRows.replaceChildren();
+        if (localStyleCount) {
+          localStyleCount.textContent = String(items.length);
+        }
+        if (!items.length) {
+          const row = document.createElement("tr");
+          row.className = "local-style-empty-row";
+          const cell = document.createElement("td");
+          cell.colSpan = 5;
+          cell.textContent = "未读取到可用的 CSS 颜色项";
+          row.appendChild(cell);
+          localStyleRows.appendChild(row);
+          return;
+        }
+        items.forEach((item) => {
+          const id = localStyleId(item);
+          const saved = overrides[id]?.value;
+          const currentColor = /^#[0-9a-fA-F]{6}$/.test(saved || "") ? saved : item.defaultColor;
+          const row = document.createElement("tr");
+          const propertyCell = document.createElement("td");
+          propertyCell.textContent = localStylePropertyLabels[item.property] || item.property;
+          propertyCell.title = item.property;
+          const cssCell = document.createElement("td");
+          const code = document.createElement("code");
+          code.textContent = `${item.media ? `@media ${item.media} ` : ""}${item.selector} { ${item.property} }`;
+          code.title = code.textContent;
+          cssCell.appendChild(code);
+          const defaultCell = document.createElement("td");
+          const defaultCode = document.createElement("code");
+          defaultCode.textContent = item.defaultColor;
+          defaultCell.appendChild(defaultCode);
+          const inputCell = document.createElement("td");
+          const input = document.createElement("input");
+          input.className = "local-style-color-control";
+          input.type = "color";
+          input.value = currentColor;
+          input.setAttribute("aria-label", code.textContent);
+          input.addEventListener("input", () => {
+            const nextOverrides = readLocalStyleOverrides();
+            nextOverrides[id] = {
+              media: item.media,
+              selector: item.selector,
+              property: item.property,
+              value: input.value,
+            };
+            writeLocalStyleOverrides(nextOverrides);
+          });
+          inputCell.appendChild(input);
+          const actionCell = document.createElement("td");
+          const resetButton = document.createElement("button");
+          resetButton.className = "button compact";
+          resetButton.type = "button";
+          resetButton.textContent = "恢复默认";
+          resetButton.addEventListener("click", () => {
+            const nextOverrides = readLocalStyleOverrides();
+            delete nextOverrides[id];
+            input.value = item.defaultColor;
+            writeLocalStyleOverrides(nextOverrides);
+          });
+          actionCell.appendChild(resetButton);
+          row.append(propertyCell, cssCell, defaultCell, inputCell, actionCell);
+          localStyleRows.appendChild(row);
+        });
+      }
+
+      localStyleResetAll?.addEventListener("click", () => {
+        writeLocalStyleOverrides({});
+        try {
+          localStorage.removeItem("documentOnlyBusinessNumberColor");
+        } catch (error) {}
+        renderLocalStyleColorRows();
+      });
+      renderLocalStyleColorRows();
 
       const importTemplateModalButton = document.querySelector("#importTemplateModalButton");
       const importTemplateModal = document.querySelector("#importTemplateModal");

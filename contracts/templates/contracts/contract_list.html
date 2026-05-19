@@ -183,7 +183,7 @@
                 <td>{{ forloop.counter }}</td>
                 <td class="name" title="{{ contract.contract_name }}">{{ contract.contract_name }}</td>
                 <td
-                  class="{{ contract.business_number_css_class }}"
+                  class="{{ contract.business_number_css_class }} {% if contract.storage_mode == '仅文档' or contract.storage_mode == '仅存档' %}document-only-business-number{% endif %}"
                   title="{{ contract.record_position_tooltip|default:contract.display_contract_number|display_code }}"
                 >{{ contract.display_contract_number|display_code }}</td>
                 <td>{{ contract.contract_type }}</td>

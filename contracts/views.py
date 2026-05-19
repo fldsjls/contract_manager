@@ -1889,6 +1889,30 @@ def reserved_record_position_export_rows(setting: AppSetting) -> list[list]:
     return rows
 
 
+def empty_record_position_preview_rows(setting: AppSetting | None = None) -> list[dict]:
+    setting = setting or AppSetting.current()
+    rows = []
+    sequences = (
+        MaintenanceRecordVolumeSequence.objects.select_related("released_contract")
+        .filter(contract__isnull=True)
+        .exclude(real_sequence_number=0)
+        .order_by("real_sequence_number", "id")[:300]
+    )
+    for sequence in sequences:
+        shelf_position = sequence.shelf_position_number or shelf_position_number_from_sequence(sequence.real_sequence_number, setting)
+        rows.append(
+            {
+                "real_sequence_number": sequence.real_sequence_number,
+                "shelf_position_number": shelf_position,
+                "storage_location_number": sequence.storage_location_number or "",
+                "status": "预留空排位" if sequence.is_reserved else "可复用空排位",
+                "kind": "reserved" if sequence.is_reserved else "reusable",
+                "source_contract": sequence.released_contract.display_contract_number if sequence.released_contract_id else "",
+            }
+        )
+    return rows
+
+
 def sync_reserved_record_positions(setting: AppSetting, remove_values: list[str] | None = None) -> int:
     raw_values = [item.strip() for item in str(setting.record_position_reserved_slots or "").split(";") if item.strip()]
     remove_values = [str(value or "").strip() for value in (remove_values or []) if str(value or "").strip()]
@@ -7715,6 +7739,7 @@ def settings_view(request):
                 "record_position_remaining_count": record_position_remaining_count(setting),
                 "record_position_max_sequence": max_record_position_occupied_sequence(),
                 "record_position_reusable_empty_count": reusable_empty_record_position_count(),
+                "empty_record_position_preview_rows": empty_record_position_preview_rows(setting),
                 "can_edit_image_root_path": can_edit_image_root_path,
                 "can_edit_record_position_generation": can_edit_record_position_generation,
                 "record_sequence_backfill_result": {

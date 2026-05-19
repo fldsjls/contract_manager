@@ -131,7 +131,6 @@ class ContractForm(forms.ModelForm):
         # 截止日期用于状态、归档和产值计算，所有合同都必须填写。
         cleaned_data = super().clean()
         storage_mode = cleaned_data.get("storage_mode")
-        contract_type = cleaned_data.get("contract_type")
         end_date = cleaned_data.get("end_date")
         if storage_mode == "仅文档":
             cleaned_data["original_contract_folder"] = ""
@@ -147,21 +146,19 @@ class ContractForm(forms.ModelForm):
             cleaned_data["storage_location_number"] = ""
             return cleaned_data
         if file_number and not self.skip_display_number_unique:
-            base_date = cleaned_data.get("sign_date") or timezone.localdate()
-            display_contract_number = (
-                f"{file_number}"
-            )
-            display_contract_number = f"{Contract.CONTRACT_TYPE_CODES.get(contract_type, '')}{str(base_date.year)[-2:]}{file_number}"
             candidates = Contract.objects.filter(
                 original_contract_inner_number__gt="",
                 is_deleted=False,
             )
             if self.instance and self.instance.pk:
                 candidates = candidates.exclude(pk=self.instance.pk)
-            if any(contract.display_contract_number == display_contract_number for contract in candidates):
+            if any(
+                normalize_contract_number_part(contract.original_contract_inner_number, 5) == file_number
+                for contract in candidates
+            ):
                 self.add_error(
                     "original_contract_inner_number",
-                    f"显示合同编号 {display_contract_number} 已存在，不能重复。",
+                    f"文件编号 {file_number} 已存在，不能重复。",
                 )
         return cleaned_data
 
@@ -501,6 +498,7 @@ class AppSettingForm(forms.ModelForm):
         fields = [
             "allow_partial_import_with_errors",
             "allow_force_contract_import_update",
+            "reverse_contract_file_number_generation",
             "record_position_cabinet_number",
             "record_position_end_cabinet_number",
             "record_position_column_count",

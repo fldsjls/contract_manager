@@ -24,7 +24,7 @@ from django.conf import settings
 from django.core import signing
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count, Max, Q, Sum
+from django.db.models import Count, Max, Min, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -459,6 +459,7 @@ def usage_docs_for_request(request) -> list[dict]:
             "items": [
                 "默认编号是系统自动生成的 12 位合同基础编号，用于保证每份合同在数据库和文件目录中有稳定标识；新增和编辑合同页面中不可手动修改。",
                 "业务编号是面向日常业务使用的合同编号，由合同类型代码、年份后两位和 5 位文件编号组成，例如维保合同会显示为 W-26-00001；如果文件编号缺失，页面会临时回退显示默认编号。",
+                "新增合同默认文件编号由设置页控制：未开启反向生成时按当前最大文件编号 + 1 填充，开启“新增合同反向生成文件编号”后按当前最小文件编号 - 1 填充。",
                 "存档编号用于纸质或归档文件定位，合同文件存档编号由 3 位文件夹编号和 3 位位置编号组成，页面显示为“文件夹编号-位置编号”，例如 011-011。",
                 "项目记录文件编号在业务编号后继续拼接 4 位年月编号（年份后两位 + 月份两位）、6 位位置编号（柜号 2 位 + 栏目 2 位 + 排位 2 位）和 2 位分册编号，形成“业务编号-年月编号-位置编号-分册编号”的记录编号，用于区分同一合同下的不同记录文件。",
                 "查询和导入时，合同编号、业务编号、带横线业务编号、存档编号和合同名称都可以作为定位合同的线索；系统会先去掉横线和空格，再按内部编号匹配。",
@@ -469,8 +470,9 @@ def usage_docs_for_request(request) -> list[dict]:
             "title": "项目记录实序编号与位置生成",
             "items": [
                 "实序编号是项目记录分册的内部排位依据，不显示在记录编号中；系统按“合同-分册-实序编号-排位”保存对应关系，避免同一分册下多条记录重复保存同一实序位置。",
-                "实序编号已经与合同文件编号分离：文件编号只影响业务编号和记录编号前缀，不参与新增实序编号排序，也不会重算已有实序编号、位置编号或已占用排位。",
-                "首次生成实序编号时，系统把设置页最左侧起始界限点减 1 视为初始最大实序编号；因此第一份合同 01 册会生成“起始界限点 - 1 + 1”，之后新增合同或追加分册按当前最大实序编号 + 1 继续递增。",
+                "实序编号通常与合同文件编号分离：文件编号主要影响业务编号和记录编号前缀；已有实序编号、位置编号或已占用排位不会因为后来修改文件编号而重算。",
+                "首次生成实序编号时，系统把设置页最左侧起始界限点减 1 视为初始最大实序编号；文件编号不小于最右侧起始界限点的合同，01 册按当前最大实序编号 + 1 继续递增。",
+                "当合同文件编号小于设置页最右侧起始界限点时，01 册实序编号按当前最小实序编号 - 1 向前补位；设置页“补历史预关联”也按同样规则为这些合同补到最右侧界限点之前。",
                 "未开启插入重排序时，新增 02 册及后续分册会追加到当前最大实序编号之后，适合把新记录放到现有档案末尾。",
                 "开启插入重排序时，新分册按“上一分册实序编号 + 1”插入，并把该位置之后的排位整体后移 1；因此 02 册不会跳过 01 册直接生成，03 册也会接在 02 册之后。",
                 "正常生成实序编号时，系统会把已生效的空排位视为档案柜中真实空出的位置：只有目标实序编号正好落到空排位上时，才会向后顺延到下一个可用排位；目标前方的空排位不会额外影响当前目标编号。",
@@ -564,7 +566,7 @@ def usage_docs_for_request(request) -> list[dict]:
                 "“默认匹配”按 12 位默认编号修改已有合同，除默认编号外可修改合同所有基础字段；空白单元格同样保留原值。",
                 "同一合同同时出现在多个工作表时，系统按工作表顺序处理；当前模板顺序为“导入合同”“业务匹配”“默认匹配”，后执行的有效修改会覆盖先执行的同字段修改。",
                 "设置页的“Excel 导入存在错误时仍导入通过行”只会跳过错误行并导入通过行；未开启时，只要预览存在错误行就会阻止确认导入。",
-                "设置页的“合同导入允许强行修改匹配行”只作用于已经匹配到合同的业务匹配或默认匹配行；确认保存后系统会再次检测业务编号，若发现重复会回滚整次导入并弹窗提示。",
+                "设置页的“合同导入允许强行修改匹配行”只作用于已经匹配到合同的业务匹配或默认匹配行；确认保存后系统会再次检测文件编号，若发现重复会回滚整次导入并弹窗提示。",
                 "导入模板中的编号列会按文本格式生成，用于保留 02222 这类前导 0；如果 Excel 手动修改格式导致前导 0 消失，系统导入时仍会按字段宽度自动补齐。",
                 "导入页右侧可通过业务编号、合同名称或甲方名称查找项目；项目名称可能重复，应以业务编号作为最终导入依据。",
                 "代码里的 code 通常表示可展示或复制的业务编号/存档编号；number 保留既有编号语义，可能是合同编号，也可能是未加横线的业务编号，页面会用 display_code 和 archive_code 转成带横线的可读格式。",
@@ -1462,7 +1464,7 @@ def record_real_sequence_number(contract: Contract, volume_number: str, setting:
         if sequence:
             return int(sequence or 0)
     if volume_value == 1:
-        return next_record_real_sequence_number(setting)
+        return default_record_real_sequence_number(contract, setting)
     if volume_value > 1 and not setting.record_position_enable_insert_sort:
         return next_record_real_sequence_number(setting)
     previous_volume = f"{volume_value - 1:02d}"
@@ -1563,9 +1565,7 @@ def record_position_tier_for_sequence(sequence_number: int, setting: AppSetting 
     for tier in tiers:
         if sequence_number >= tier["start_file"]:
             return tier
-    if len(tiers) == 1:
-        return tiers[0]
-    return None
+    return tiers[-1] if tiers else None
 
 
 def record_position_number_from_sequence(sequence_number: int, setting: AppSetting | None = None) -> str:
@@ -1651,6 +1651,10 @@ def record_sequence_baseline(setting: AppSetting | None = None) -> int:
     return max(record_position_generation_tiers(setting)[0]["start_file"] - 1, 0)
 
 
+def record_position_rightmost_start_file(setting: AppSetting | None = None) -> int:
+    return max(int(record_position_generation_tiers(setting)[-1]["start_file"]), 1)
+
+
 def max_record_real_sequence_number(fallback: int | None = None) -> int:
     if fallback is None:
         fallback = record_sequence_baseline()
@@ -1673,9 +1677,38 @@ def max_active_record_real_sequence_number(fallback: int | None = None) -> int:
     return max(int(max_sequence or 0), fallback)
 
 
+def min_record_real_sequence_number(fallback: int | None = None) -> int:
+    if fallback is None:
+        fallback = record_position_rightmost_start_file()
+    min_sequence = (
+        MaintenanceRecordVolumeSequence.objects.exclude(real_sequence_number=0)
+        .aggregate(min_sequence=Min("real_sequence_number"))
+        .get("min_sequence")
+    )
+    return min(int(min_sequence or fallback), fallback)
+
+
 def next_record_real_sequence_number(setting: AppSetting | None = None) -> int:
     setting = setting or AppSetting.current()
     return sequence_after_empty_record_positions(max_record_real_sequence_number(record_sequence_baseline(setting)) + 1)
+
+
+def previous_record_real_sequence_number(setting: AppSetting | None = None) -> int:
+    setting = setting or AppSetting.current()
+    previous_sequence = min_record_real_sequence_number(record_position_rightmost_start_file(setting)) - 1
+    return -1 if previous_sequence == 0 else previous_sequence
+
+
+def contract_uses_preceding_record_sequence(contract: Contract, setting: AppSetting | None = None) -> bool:
+    file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
+    return bool(file_number and int(file_number) < record_position_rightmost_start_file(setting))
+
+
+def default_record_real_sequence_number(contract: Contract, setting: AppSetting | None = None) -> int:
+    setting = setting or AppSetting.current()
+    if contract_uses_preceding_record_sequence(contract, setting):
+        return previous_record_real_sequence_number(setting)
+    return next_record_real_sequence_number(setting)
 
 
 def reusable_empty_record_position_count() -> int:
@@ -2034,7 +2067,7 @@ def reserve_default_record_volume_sequence(
     ).first()
     if sequence:
         current_sequence = int(sequence.real_sequence_number or 0)
-        real_sequence = current_sequence or next_record_real_sequence_number(setting)
+        real_sequence = current_sequence or default_record_real_sequence_number(contract, setting)
         shelf_position_number = shelf_position_number_from_sequence(real_sequence, setting)
         if current_sequence != real_sequence or sequence.shelf_position_number != shelf_position_number:
             sequence.real_sequence_number = real_sequence
@@ -2046,7 +2079,7 @@ def reserve_default_record_volume_sequence(
         empty_sequence = reconnect_empty_record_volume_sequence(contract, "01", setting)
         if empty_sequence:
             return empty_sequence
-    real_sequence = next_record_real_sequence_number(setting)
+    real_sequence = default_record_real_sequence_number(contract, setting)
     if exceeds_record_position_capacity(real_sequence, setting):
         empty_sequence = reconnect_empty_record_volume_sequence(contract, "01", setting)
         if empty_sequence:
@@ -2116,7 +2149,7 @@ def ensure_record_volume_sequence(
         if empty_sequence:
             return empty_sequence
     if volume_value == 1:
-        real_sequence = next_record_real_sequence_number(setting)
+        real_sequence = default_record_real_sequence_number(contract, setting)
     elif setting.record_position_enable_insert_sort:
         previous_volume = f"{volume_value - 1:02d}"
         previous_sequence = ensure_record_volume_sequence(contract, previous_volume, setting)
@@ -2282,7 +2315,8 @@ def contract_record_file_number_value(contract: Contract) -> int:
 
 
 def planned_default_record_sequences(contracts: list[Contract], setting: AppSetting) -> dict[int, int]:
-    critical_sequence = int(record_position_generation_tiers(setting)[0]["start_file"])
+    rightmost_sequence = record_position_rightmost_start_file(setting)
+    append_sequence = record_sequence_baseline(setting) + 1
     numbered_contracts = [
         (contract_record_file_number_value(contract), contract)
         for contract in contracts
@@ -2290,53 +2324,38 @@ def planned_default_record_sequences(contracts: list[Contract], setting: AppSett
     ]
     plan: dict[int, int] = {}
 
-    lower_sequence = critical_sequence - 1
+    lower_sequence = previous_record_real_sequence_number(setting)
     for _file_number, contract in sorted(
-        (item for item in numbered_contracts if item[0] < critical_sequence),
+        (item for item in numbered_contracts if item[0] < rightmost_sequence),
         key=lambda item: (-item[0], item[1].id),
     ):
         plan[contract.pk] = lower_sequence
         lower_sequence -= 1
 
-    critical_contracts = sorted(
-        (item for item in numbered_contracts if item[0] == critical_sequence),
-        key=lambda item: item[1].id,
-    )
-    upper_sequence = critical_sequence
-    for _file_number, contract in critical_contracts:
-        plan[contract.pk] = upper_sequence
-        upper_sequence += 1
-    upper_sequence = max(upper_sequence, critical_sequence + 1)
     for _file_number, contract in sorted(
-        (item for item in numbered_contracts if item[0] > critical_sequence),
+        (item for item in numbered_contracts if item[0] >= rightmost_sequence),
         key=lambda item: (item[0], item[1].id),
     ):
-        plan[contract.pk] = upper_sequence
-        upper_sequence += 1
+        plan[contract.pk] = append_sequence
+        append_sequence += 1
 
     return plan
 
 
 def ordered_default_record_sequence_contracts(contracts: list[Contract], setting: AppSetting) -> list[Contract]:
-    critical_sequence = int(record_position_generation_tiers(setting)[0]["start_file"])
+    rightmost_sequence = record_position_rightmost_start_file(setting)
     numbered_contracts = [
         (contract_record_file_number_value(contract), contract)
         for contract in contracts
         if contract_record_file_number_value(contract)
     ]
     ordered_items = sorted(
-        (item for item in numbered_contracts if item[0] < critical_sequence),
+        (item for item in numbered_contracts if item[0] < rightmost_sequence),
         key=lambda item: (-item[0], item[1].id),
     )
     ordered_items.extend(
         sorted(
-            (item for item in numbered_contracts if item[0] == critical_sequence),
-            key=lambda item: item[1].id,
-        )
-    )
-    ordered_items.extend(
-        sorted(
-            (item for item in numbered_contracts if item[0] > critical_sequence),
+            (item for item in numbered_contracts if item[0] >= rightmost_sequence),
             key=lambda item: (item[0], item[1].id),
         )
     )
@@ -2347,8 +2366,11 @@ def ordered_default_record_sequence_contracts(contracts: list[Contract], setting
 
 def reserve_backfill_real_sequence(real_sequence: int, used_sequences: set[int]) -> int:
     real_sequence = int(real_sequence or 0)
-    if real_sequence <= 0 or real_sequence in used_sequences:
-        real_sequence = max(used_sequences or {0}) + 1
+    while real_sequence == 0 or real_sequence in used_sequences:
+        if real_sequence < 0:
+            real_sequence -= 1
+        else:
+            real_sequence = max((value for value in used_sequences if value > 0), default=0) + 1
     used_sequences.add(real_sequence)
     return real_sequence
 
@@ -5377,10 +5399,10 @@ def contract_import_result_preview_cells(item, import_mode, preview_contract, er
     ]
 
 
-def contract_import_duplicate_business_number_messages(changed_contract_ids: set[int]) -> list[str]:
+def contract_import_duplicate_file_number_messages(changed_contract_ids: set[int]) -> list[str]:
     groups = {}
     for contract in Contract.objects.filter(is_deleted=False):
-        key = contract.display_contract_number
+        key = normalize_contract_number_part(contract.original_contract_inner_number, 5)
         if key:
             groups.setdefault(key, []).append(contract)
     messages = []
@@ -5390,7 +5412,7 @@ def contract_import_duplicate_business_number_messages(changed_contract_ids: set
         if not changed_contract_ids or not any(contract.pk in changed_contract_ids for contract in contracts):
             continue
         names = "、".join(f"{contract.contract_name}（默认编号 {contract.contract_number}）" for contract in contracts[:5])
-        messages.append(f"业务编号 {display_code_for_ui(number)} 重复：{names}")
+        messages.append(f"文件编号 {number} 重复：{names}")
     return messages
 
 
@@ -5400,7 +5422,7 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
     next_file_number = max_contract_file_number()
     business_lookup = contract_business_import_lookup()
     results = []
-    display_numbers = {}
+    file_numbers = {}
     create_index = 0
     for index, item in enumerate(parsed_rows):
         import_mode = item.get("import_mode", "create")
@@ -5491,14 +5513,18 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
         folder = normalize_contract_number_part(form_data.get("original_contract_folder"), 3)
         inner_number = normalize_contract_number_part(form_data.get("original_contract_inner_number"), 5)
         storage_location = normalize_storage_location_number(form_data.get("storage_location_number"))
-        if inner_number and import_mode != "business_match":
-            base_date = cleaned.get("sign_date") or timezone.localdate()
-            contract_type = cleaned.get("contract_type") or form_data.get("contract_type")
-            display_number = f"{Contract.CONTRACT_TYPE_CODES.get(contract_type, '')}{str(base_date.year)[-2:]}{inner_number}"
-            if display_number in display_numbers:
-                errors.append(f"显示合同编号 {display_number} 与第 {display_numbers[display_number]} 行重复。")
+        if inner_number:
+            current_contract_id = existing_contract.pk if existing_contract else None
+            previous_file_number = file_numbers.get(inner_number)
+            if previous_file_number and not (
+                current_contract_id and previous_file_number["contract_id"] == current_contract_id
+            ):
+                errors.append(f"文件编号 {inner_number} 与第 {previous_file_number['row_number']} 行重复。")
             else:
-                display_numbers[display_number] = item["row_number"]
+                file_numbers[inner_number] = {
+                    "row_number": item["row_number"],
+                    "contract_id": current_contract_id,
+                }
         preview_contract = Contract(
             contract_number=form_data.get("contract_number", ""),
             contract_name=cleaned.get("contract_name") or form_data.get("contract_name", ""),
@@ -6390,12 +6416,12 @@ def contract_import(request):
                         log_operation(request, log_action, contract, detail=f"Excel import row: {row['row_number']}")
                     created_count += 1
                 duplicate_messages = (
-                    contract_import_duplicate_business_number_messages(changed_contract_ids)
+                    contract_import_duplicate_file_number_messages(changed_contract_ids)
                     if import_kind == "contract" and changed_contract_ids
                     else []
                 )
                 if duplicate_messages:
-                    raise RuntimeError("业务编号重复，本次导入已退回：" + "；".join(duplicate_messages))
+                    raise RuntimeError("文件编号重复，本次导入已退回：" + "；".join(duplicate_messages))
         except RuntimeError as exc:
             context = contract_import_preview_context(
                 request,
@@ -6481,11 +6507,22 @@ def contract_import(request):
 
 # 计算新增合同时建议使用的下一个文件编号。
 def next_contract_inner_number() -> str:
+    reverse_generation = AppSetting.current().reverse_contract_file_number_generation
+    min_number = None
     max_number = 0
     for value in Contract.objects.filter(is_deleted=False).values_list("original_contract_inner_number", flat=True):
         normalized = normalize_contract_number_part(value, 5)
         if normalized:
-            max_number = max(max_number, int(normalized))
+            number = int(normalized)
+            min_number = number if min_number is None else min(min_number, number)
+            max_number = max(max_number, number)
+    if reverse_generation:
+        if min_number is None:
+            return "00001"
+        previous_number = min_number - 1
+        if previous_number < 0:
+            return ""
+        return f"{previous_number:05d}"
     if max_number >= 99999:
         return ""
     return f"{max_number + 1:05d}"

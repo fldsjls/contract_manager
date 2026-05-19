@@ -239,8 +239,8 @@
         }))
         .sort((left, right) => right.startFile - left.startFile);
       let tier = normalizedTiers.find((item) => sequenceNumber >= item.startFile);
-      if (!tier && normalizedTiers.length === 1) {
-        tier = normalizedTiers[0];
+      if (!tier && normalizedTiers.length) {
+        tier = normalizedTiers[normalizedTiers.length - 1];
       }
       if (!tier) {
         return "";

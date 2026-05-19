@@ -32,6 +32,17 @@
       </section>
 
       <section class="panel">
+        <h2 class="settings-compact-title">合同编号设置</h2>
+        <label style="display: flex; gap: 10px; align-items: center;">
+          {{ form.reverse_contract_file_number_generation }}
+          <span>新增合同反向生成文件编号</span>
+        </label>
+        <p style="color: #667085;">
+          开启后，新增合同默认文件编号按当前最小文件编号 - 1 填充；关闭后，仍按当前最大文件编号 + 1 填充。
+        </p>
+      </section>
+
+      <section class="panel">
         <div class="record-position-settings">
           <div class="settings-title-row">
             <h2 class="settings-compact-title">记录位置编号生成</h2>

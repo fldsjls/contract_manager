@@ -1999,6 +1999,8 @@ def reserve_default_record_volume_sequence(
     setting: AppSetting | None = None,
 ) -> MaintenanceRecordVolumeSequence | None:
     setting = setting or AppSetting.current()
+    if contract.is_document_only:
+        return None
     file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
     if not file_number:
         return None
@@ -2073,6 +2075,8 @@ def ensure_record_volume_sequence(
     setting: AppSetting | None = None,
 ) -> MaintenanceRecordVolumeSequence | None:
     setting = setting or AppSetting.current()
+    if contract.is_document_only:
+        return None
     volume = normalize_record_volume_number(volume_number)
     if not volume:
         return None
@@ -2248,6 +2252,8 @@ def refresh_record_positions_for_setting_change(old_setting_key: tuple, new_sett
 
 
 def contract_record_file_number_value(contract: Contract) -> int:
+    if contract.is_document_only:
+        return 0
     return int(normalize_contract_number_part(contract.original_contract_inner_number, 5) or 0)
 
 
@@ -2287,11 +2293,50 @@ def planned_default_record_sequences(contracts: list[Contract], setting: AppSett
     return plan
 
 
+def ordered_default_record_sequence_contracts(contracts: list[Contract], setting: AppSetting) -> list[Contract]:
+    critical_sequence = int(record_position_generation_tiers(setting)[0]["start_file"])
+    numbered_contracts = [
+        (contract_record_file_number_value(contract), contract)
+        for contract in contracts
+        if contract_record_file_number_value(contract)
+    ]
+    ordered_items = sorted(
+        (item for item in numbered_contracts if item[0] < critical_sequence),
+        key=lambda item: (-item[0], item[1].id),
+    )
+    ordered_items.extend(
+        sorted(
+            (item for item in numbered_contracts if item[0] == critical_sequence),
+            key=lambda item: item[1].id,
+        )
+    )
+    ordered_items.extend(
+        sorted(
+            (item for item in numbered_contracts if item[0] > critical_sequence),
+            key=lambda item: (item[0], item[1].id),
+        )
+    )
+    ordered_contracts = [contract for _file_number, contract in ordered_items]
+    ordered_contracts.extend(contract for contract in contracts if not contract_record_file_number_value(contract))
+    return ordered_contracts
+
+
+def reserve_backfill_real_sequence(real_sequence: int, used_sequences: set[int]) -> int:
+    real_sequence = int(real_sequence or 0)
+    if real_sequence <= 0 or real_sequence in used_sequences:
+        real_sequence = max(used_sequences or {0}) + 1
+    used_sequences.add(real_sequence)
+    return real_sequence
+
+
 def apply_default_record_sequence_plan(
     contract: Contract,
     real_sequence: int,
     setting: AppSetting,
+    used_sequences: set[int] | None = None,
 ) -> tuple[bool, int]:
+    used_sequences = used_sequences if used_sequences is not None else set()
+    real_sequence = reserve_backfill_real_sequence(real_sequence, used_sequences)
     sequences = list(
         MaintenanceRecordVolumeSequence.objects.filter(contract=contract).order_by("storage_location_number", "id")
     )
@@ -2328,7 +2373,7 @@ def apply_default_record_sequence_plan(
             offset = int(sequence.real_sequence_number or 0) - old_default_sequence
         else:
             offset = max(int(volume or 1) - 1, 0)
-        next_sequence = new_default_sequence + offset
+        next_sequence = reserve_backfill_real_sequence(new_default_sequence + offset, used_sequences)
         shelf_position_number = shelf_position_number_from_sequence(next_sequence, setting)
         if int(sequence.real_sequence_number or 0) == next_sequence and sequence.shelf_position_number == shelf_position_number:
             continue
@@ -2349,12 +2394,14 @@ def backfill_default_record_volume_sequences(setting: AppSetting | None = None) 
     repaired_count = 0
     deleted_count = 0
     contracts = sorted(
-        Contract.objects.filter(is_deleted=False),
+        Contract.objects.filter(is_deleted=False).exclude(storage_mode="仅文档"),
         key=lambda contract: (contract_record_file_number_value(contract), contract.id),
     )
     sequence_plan = planned_default_record_sequences(contracts, setting)
+    ordered_contracts = ordered_default_record_sequence_contracts(contracts, setting)
+    used_sequences: set[int] = set()
     with transaction.atomic():
-        for contract in contracts:
+        for contract in ordered_contracts:
             file_number = normalize_contract_number_part(contract.original_contract_inner_number, 5)
             if not file_number:
                 missing_file_number_count += 1
@@ -2377,10 +2424,10 @@ def backfill_default_record_volume_sequences(setting: AppSetting | None = None) 
                 continue
             if sequence:
                 existing_count += 1
-                _, repaired_items = apply_default_record_sequence_plan(contract, planned_sequence, setting)
+                _, repaired_items = apply_default_record_sequence_plan(contract, planned_sequence, setting, used_sequences)
                 repaired_count += repaired_items
                 continue
-            created, repaired_items = apply_default_record_sequence_plan(contract, planned_sequence, setting)
+            created, repaired_items = apply_default_record_sequence_plan(contract, planned_sequence, setting, used_sequences)
             if created:
                 created_count += 1
                 repaired_count += repaired_items
@@ -2487,14 +2534,20 @@ def expiring_contract_queryset():
 # 查询已经到达归档期限的合同，和即将到期项目一样按截止日期排序。
 # 筛选已经到期但尚未归档的合同。
 def archive_pending_contracts() -> list[Contract]:
-    contracts = Contract.objects.filter(is_deleted=False, end_date__isnull=False).order_by("end_date")
+    contracts = Contract.objects.filter(
+        Q(end_date__isnull=False) | Q(storage_mode="仅文档"),
+        is_deleted=False,
+    ).order_by("end_date", "start_date", "id")
     return [contract for contract in contracts if contract.status == "待归档"]
 
 
 # 查询归档页合同：默认按截止日期升序，可按页面表头切换排序。
 # 获取归档页面展示的合同列表。
 def archive_contracts_for_page(sort: str = "end_date", direction: str = "asc", keyword: str = "") -> list[Contract]:
-    contracts = Contract.objects.filter(is_deleted=False, end_date__isnull=False).order_by("end_date", "id")
+    contracts = Contract.objects.filter(
+        Q(end_date__isnull=False) | Q(storage_mode="仅文档"),
+        is_deleted=False,
+    ).order_by("end_date", "start_date", "id")
     items = [contract for contract in contracts if contract.status in {"待归档", "已归档"}]
     if keyword:
         items = [contract for contract in items if archive_lookup_matches(contract, keyword)]
@@ -2505,7 +2558,7 @@ def archive_contracts_for_page(sort: str = "end_date", direction: str = "asc", k
         "contract_number": lambda item: item.display_contract_number or "",
         "party_name": lambda item: item.party_name or "",
         "amount": lambda item: item.amount or Decimal("0"),
-        "end_date": lambda item: item.end_date or date.max,
+        "end_date": lambda item: item.archive_due_date or date.max,
         "archived_at": lambda item: item.archived_at or timezone.datetime.min.replace(tzinfo=timezone.get_current_timezone()),
         "archive_number": lambda item: item.archive_number_display or "",
         "status": lambda item: item.archive_status_info["label"],
@@ -3684,10 +3737,12 @@ def production_contracts_from_dashboard_request(request) -> tuple[list[Contract]
     has_filter_values = any(
         [keyword, filter_contract_type, filter_invoice_status, filter_status, filter_responsible_person]
     )
-    has_production_inputs = bool(project_code) or bool(start_date_value) or bool(end_date_value) or has_filter_values
-    filter_active = has_filter_values or not has_production_inputs
-    project_mode = bool(project_code) and not filter_active
-    filter_mode = filter_active and not project_code
+    has_date_values = bool(start_date_value) or bool(end_date_value)
+    has_production_inputs = bool(project_code) or has_date_values or has_filter_values
+    has_project_filter_conflict = bool(project_code) and has_filter_values
+    project_mode = bool(project_code) and not has_project_filter_conflict
+    filter_mode = not project_mode and not project_code and (has_filter_values or has_date_values or not has_production_inputs)
+    filter_active = has_filter_values
     parsed_start_date = parse_date(start_date_value) if start_date_value else None
     parsed_end_date = parse_date(end_date_value) if end_date_value else None
 
@@ -4655,6 +4710,7 @@ def contract_list_export(request):
         "业务编号",
         "存档编号",
         UI_LABELS["contract_type"],
+        UI_LABELS["storage_mode"],
         UI_LABELS["party_name"],
         UI_LABELS["contract_amount"],
         UI_LABELS["invoice_status"],
@@ -4674,6 +4730,7 @@ def contract_list_export(request):
                 contract.display_contract_number,
                 contract.archive_number_display,
                 contract.contract_type,
+                contract.storage_mode,
                 contract.party_name,
                 float(contract.amount or 0),
                 contract.invoice_status,
@@ -4686,7 +4743,7 @@ def contract_list_export(request):
         )
 
     response = HttpResponse(
-        build_contract_list_xlsx(headers, rows, numeric_columns={8}),
+        build_contract_list_xlsx(headers, rows, numeric_columns={9}),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     response["Content-Disposition"] = 'attachment; filename="contract_list.xlsx"'
@@ -4777,6 +4834,7 @@ def contract_records_export(request, pk: int):
 CONTRACT_IMPORT_COLUMNS = [
     ("contract_name", "合同名称"),
     ("contract_type", "合同类型"),
+    ("storage_mode", "保存模式"),
     ("party_name", "甲方名称"),
     ("amount", "合同金额"),
     ("invoice_status", "是否开票"),
@@ -4804,6 +4862,7 @@ CONTRACT_IMPORT_DEFAULT_MATCH_COLUMNS = [
 ]
 CONTRACT_IMPORT_BUSINESS_MATCH_COLUMNS = [
     ("business_number", "业务编号"),
+    ("storage_mode", "保存模式"),
     ("responsible_person", "负责人"),
     ("original_contract_folder", "文件夹编号"),
     ("storage_location_number", "位置编号"),
@@ -4814,6 +4873,7 @@ CONTRACT_IMPORT_UPDATE_FIELDS = {
     "default_match": [
         "contract_name",
         "contract_type",
+        "storage_mode",
         "party_name",
         "amount",
         "invoice_status",
@@ -4828,6 +4888,7 @@ CONTRACT_IMPORT_UPDATE_FIELDS = {
         "remark",
     ],
     "business_match": [
+        "storage_mode",
         "responsible_person",
         "original_contract_folder",
         "storage_location_number",
@@ -4887,6 +4948,9 @@ CONTRACT_IMPORT_HEADER_ALIASES = {
     "存档编号": "archive_number",
     "归档编号": "archive_number",
     "档案编号": "archive_number",
+    "保存模式": "storage_mode",
+    "存放模式": "storage_mode",
+    "存储模式": "storage_mode",
     "存储位置": "storage_location_number",
     "存储编号": "storage_location_number",
     "位置编号": "storage_location_number",
@@ -5222,6 +5286,7 @@ def contract_form_data_from_instance(contract: Contract) -> dict:
         "original_contract_inner_number": contract.original_contract_inner_number,
         "storage_location_number": contract.storage_location_number,
         "contract_type": contract.contract_type,
+        "storage_mode": contract.storage_mode,
         "party_name": contract.party_name,
         "amount": str(contract.amount),
         "invoice_status": contract.invoice_status,
@@ -5245,6 +5310,21 @@ def apply_contract_import_updates(base_data: dict, row_data: dict, import_mode: 
             if field_name in {"original_contract_folder", "storage_location_number"}:
                 archive_part_updated = True
     apply_contract_archive_number_import(data, prefer_parts=archive_part_updated)
+    return data
+
+
+def normalize_contract_import_storage_mode(data: dict) -> dict:
+    mode = normalize_import_cell(data.get("storage_mode"))
+    if not mode:
+        data["storage_mode"] = "文件夹"
+        return data
+    if mode in {"仅文档", "文档", "只文档", "无实体", "无文件夹"}:
+        data["storage_mode"] = "仅文档"
+        data["original_contract_folder"] = ""
+        data["storage_location_number"] = ""
+        data["end_date"] = ""
+        return data
+    data["storage_mode"] = mode
     return data
 
 
@@ -5308,6 +5388,7 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
                 data,
                 import_mode,
             )
+            form_data = normalize_contract_import_storage_mode(form_data)
         elif import_mode == "business_match":
             business_number = compact_archive_lookup_text(data.get("business_number"))
             existing_contract = business_lookup.get(business_number)
@@ -5318,7 +5399,9 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
                 data,
                 import_mode,
             )
+            form_data = normalize_contract_import_storage_mode(form_data)
         else:
+            data = normalize_contract_import_storage_mode(data)
             data["contract_number"] = contract_numbers[create_index]
             next_file_number += 1
             if next_file_number > 99999:
@@ -5337,6 +5420,7 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
                 original_contract_inner_number=data.get("original_contract_inner_number", ""),
                 storage_location_number=data.get("storage_location_number", ""),
                 contract_type=form_data.get("contract_type", "维保"),
+                storage_mode=form_data.get("storage_mode", "文件夹"),
                 party_name="",
                 amount=Decimal("0"),
                 invoice_status=form_data.get("invoice_status", "待开票"),
@@ -5364,6 +5448,7 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
             and import_mode in {"default_match", "business_match"}
             and existing_contract
         )
+        form_data = normalize_contract_import_storage_mode(form_data)
         form = (
             ContractForm(data=form_data, instance=existing_contract, skip_display_number_unique=force_update)
             if existing_contract
@@ -5392,6 +5477,7 @@ def validate_contract_import_rows(parsed_rows, contract_numbers=None):
             original_contract_inner_number=cleaned.get("original_contract_inner_number") or inner_number,
             storage_location_number=cleaned.get("storage_location_number") or storage_location,
             contract_type=cleaned.get("contract_type") or form_data.get("contract_type", ""),
+            storage_mode=cleaned.get("storage_mode") or form_data.get("storage_mode", "文件夹"),
             party_name=cleaned.get("party_name") or form_data.get("party_name", ""),
             amount=cleaned.get("amount") or Decimal("0"),
             invoice_status=cleaned.get("invoice_status") or form_data.get("invoice_status", ""),
@@ -5993,6 +6079,7 @@ def contract_import_template(request):
     comments = {
         "合同名称": "必填。填写要导入的合同名称。",
         "合同类型": "必填。填写维保、项目或其他系统支持的合同类型。",
+        "保存模式": "可选。留空默认为文件夹；填写仅文档时，会忽略文件夹编号、位置编号和截止日期。",
         "甲方名称": "必填。填写甲方单位名称。",
         "合同金额": "填写数字金额，例如 10000。",
         "是否开票": "填写开票状态，例如 开收据、待开票或票已给。",
@@ -6011,6 +6098,7 @@ def contract_import_template(request):
         "默认编号": "必填。填写系统自动生成的 12 位默认编号，用于匹配已有合同。",
         "合同名称": "可选。填写后修改合同名称，留空则不改。",
         "合同类型": "可选。填写后修改合同类型，留空则不改。",
+        "保存模式": "可选。留空默认为文件夹；填写仅文档时，会忽略文件夹编号、位置编号和截止日期。",
         "甲方名称": "可选。填写后修改甲方名称，留空则不改。",
         "合同金额": "可选。填写后修改合同金额，留空则不改。",
         "是否开票": "可选。填写后修改开票状态，留空则不改。",
@@ -6027,6 +6115,7 @@ def contract_import_template(request):
     business_match_headers = [label for _field, label in CONTRACT_IMPORT_BUSINESS_MATCH_COLUMNS]
     business_match_comments = {
         "业务编号": "必填。填写已有业务编号，可带横线；该工作表不会修改业务编号本身。",
+        "保存模式": "可选。留空默认为文件夹；填写仅文档时，会忽略文件夹编号、位置编号和截止日期。",
         "负责人": "可选。填写后修改已有合同负责人，留空则不改。",
         "文件夹编号": "可选。填写 3 位文件夹编号，留空则不改。",
         "位置编号": "可选。填写 3 位位置编号，留空则不改。第 1 位为柜号，第 2 位为栏目号，第 3 位为排位号。",
@@ -6262,7 +6351,9 @@ def contract_import(request):
                         if not form.is_valid():
                             raise RuntimeError("确认导入时数据校验失败，请重新上传 Excel。")
                         contract = form.save()
-                        if not existing_contract:
+                        if contract.is_document_only:
+                            release_record_volume_sequences_for_contract(contract, app_setting)
+                        else:
                             reserve_default_record_volume_sequence(contract)
                         changed_contract_ids.add(contract.pk)
                         ensure_contract_image_folder(contract)
@@ -6885,6 +6976,10 @@ def contract_update(request, pk: int):
                 if field_name in form.fields
             ]
             updated = form.save()
+            if updated.is_document_only:
+                release_record_volume_sequences_for_contract(updated, AppSetting.current())
+            else:
+                reserve_default_record_volume_sequence(updated)
             if "file" in request.FILES and old_file and old_file != updated.file:
                 delete_file_from_storage(old_file)
             uploaded_count = len(save_contract_files_and_return(updated, request.FILES.getlist("files")))

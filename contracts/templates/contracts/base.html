@@ -2200,9 +2200,9 @@
     }
     .production-panel {
       display: grid;
-      grid-template-columns: minmax(210px, 0.75fr) minmax(0, 1.55fr) auto;
+      grid-template-columns: minmax(210px, 0.75fr) minmax(0, 1.55fr);
       gap: 10px;
-      align-items: stretch;
+      align-items: start;
       padding: 12px 14px;
       border: 1px solid #d9dee7;
       background: #fff;
@@ -2246,7 +2246,10 @@
       grid-template-columns: repeat(3, minmax(150px, 1fr));
       gap: 8px 10px;
       min-width: 0;
-      align-content: center;
+      align-content: start;
+      padding-top: 2px;
+      grid-column: 2;
+      grid-row: 1;
     }
     .production-controls label {
       display: grid;
@@ -2268,10 +2271,19 @@
     }
     .production-actions {
       display: flex;
-      flex-direction: column;
-      justify-content: center;
+      flex-direction: row;
+      justify-content: flex-end;
+      align-items: center;
       gap: 8px;
       white-space: nowrap;
+      grid-column: 2;
+      grid-row: 1;
+      align-self: end;
+      justify-self: end;
+    }
+    .production-actions .button {
+      min-width: 58px;
+      text-align: center;
     }
     .production-actions button:disabled {
       border-color: #d0d5dd;

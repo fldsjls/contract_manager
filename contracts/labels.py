@@ -6,6 +6,7 @@ UI_LABELS = {
     "contract_name": "合同名称",
     "contract_number": "合同编号",
     "contract_type": "合同类型",
+    "storage_mode": "保存模式",
     "party_name": "甲方名称",
     "contract_amount": "合同金额",
     "invoice_status": "是否开票",

@@ -124,6 +124,10 @@ class Contract(models.Model):
         ("待开票", "待开票"),
         ("票已结", "票已结"),
     ]
+    STORAGE_MODES = [
+        ("文件夹", "文件夹"),
+        ("仅文档", "仅文档"),
+    ]
     CONTRACT_TYPE_SEQUENCE_CODES = {
         "维保": "1",
         "评估": "2",
@@ -146,6 +150,7 @@ class Contract(models.Model):
     original_contract_inner_number = models.CharField("文件编号", max_length=100, blank=True)
     storage_location_number = models.CharField("位置编号", max_length=100, default="000", blank=True)
     contract_type = models.CharField("合同类型", max_length=20, choices=CONTRACT_TYPES, default="维保")
+    storage_mode = models.CharField("保存模式", max_length=20, choices=STORAGE_MODES, default="文件夹")
     party_name = models.CharField("甲方名称", max_length=200)
     amount = models.DecimalField("金额", max_digits=14, decimal_places=2, default=0)
     invoice_status = models.CharField("是否开票", max_length=20, choices=INVOICE_STATUS, default="开收据")
@@ -193,7 +198,19 @@ class Contract(models.Model):
         return not normalize_contract_number_part(self.original_contract_inner_number, 5)
 
     @property
+    def is_document_only(self) -> bool:
+        return self.storage_mode == "仅文档"
+
+    @property
+    def archive_due_date(self):
+        if self.is_document_only:
+            return add_years(self.start_date, int(self.archive_years or 0)) if self.start_date else None
+        return self.end_date
+
+    @property
     def missing_storage_position(self) -> bool:
+        if self.is_document_only:
+            return False
         folder_number = normalize_contract_number_part(self.original_contract_folder, 3)
         storage_number = normalize_storage_location_number(self.storage_location_number)
         return not folder_number or folder_number == "000" or storage_number == "000"
@@ -228,6 +245,8 @@ class Contract(models.Model):
     @property
     def archive_number(self) -> str:
         # 存档编号由文件夹编号 3 位和位置编号 3 位组成。
+        if self.is_document_only:
+            return ""
         folder_number = normalize_contract_number_part(self.original_contract_folder, 3)
         if not folder_number:
             return ""
@@ -237,6 +256,8 @@ class Contract(models.Model):
     @property
     def archive_number_display(self) -> str:
         # 归档页编辑中即使文件夹编号为空，也用 000 补齐显示。
+        if self.is_document_only:
+            return ""
         folder_number = normalize_contract_number_part(self.original_contract_folder, 3) or "000"
         location_number = normalize_storage_location_number(self.storage_location_number)
         return f"{folder_number}{location_number}"
@@ -247,6 +268,11 @@ class Contract(models.Model):
         # 根据截止日期实时计算合同状态。
         if self.is_archived:
             return "已归档"
+        if self.is_document_only:
+            archive_due_date = self.archive_due_date
+            if archive_due_date and archive_due_date <= timezone.localdate():
+                return "待归档"
+            return "进行中"
         if not self.end_date:
             return "进行中"
 
